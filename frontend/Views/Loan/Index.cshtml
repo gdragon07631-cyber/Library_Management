@@ -3,6 +3,7 @@
     ViewData["Title"] = "Phiếu mượn";
 }
 <div class="container py-4">
+    <a asp-controller="DirectLoan" asp-action="Index" class="btn btn-primary mb-3">Cho mượn trực tiếp tại quầy</a>
     <div class="mb-4"><h1 class="h3 mb-1 text-primary fw-bold">Phiếu mượn</h1><p class="text-muted mb-0">Hạn trả được tự động chuyển sang ngày thư viện mở cửa kế tiếp.</p></div>
     @if (TempData["SuccessMessage"] is string success) { <div class="alert alert-success">@success</div> }
     @if (TempData["ErrorMessage"] is string error) {
