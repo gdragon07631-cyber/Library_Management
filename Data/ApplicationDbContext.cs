@@ -241,8 +241,12 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
             entity.Property(loan => loan.DueDate).HasColumnType("date");
             entity.Property(loan => loan.RenewalCount).HasDefaultValue(0);
             entity.Property(loan => loan.CreatedAtUtc).HasColumnType("datetime2");
+            entity.Property(loan => loan.ReturnedAtUtc).HasColumnType("datetime2");
+            entity.HasIndex(loan => loan.BookCopyId);
             entity.HasOne(loan => loan.Book).WithMany()
                 .HasForeignKey(loan => loan.BookId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(loan => loan.BookCopy).WithMany()
+                .HasForeignKey(loan => loan.BookCopyId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne(loan => loan.ReaderAccount).WithMany()
                 .HasForeignKey(loan => loan.ReaderAccountId).OnDelete(DeleteBehavior.Restrict);
         });

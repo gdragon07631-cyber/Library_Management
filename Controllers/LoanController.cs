@@ -6,7 +6,7 @@ using Project.Services;
 
 namespace Project.Controllers;
 
-public sealed class LoanController(IBookLoanService loans, ApplicationDbContext db) : Controller
+public sealed class LoanController(IBookLoanService loans, ApplicationDbContext db, ILogger<LoanController> logger) : Controller
 {
     [HttpGet]
     public async Task<IActionResult> Index(CancellationToken ct = default)
@@ -31,7 +31,7 @@ public sealed class LoanController(IBookLoanService loans, ApplicationDbContext 
             return View(nameof(Index), await BuildModel(ct));
         }
 
-        var result = await loans.CreateAsync(model.BookId, model.ReaderAccountId, model.LoanDate.Value, ct);
+        var result = await loans.CreateAsync(model.BookId, model.ReaderAccountId, model.LoanDate.Value, ct, model.BookCopyId);
         TempData[result.IsSuccess ? "SuccessMessage" : "ErrorMessage"] = result.IsSuccess
             ? $"Đã tạo phiếu mượn. Hạn trả: {result.Loan!.DueDate:dd/MM/yyyy}."
             : result.ErrorMessage;
@@ -48,16 +48,78 @@ public sealed class LoanController(IBookLoanService loans, ApplicationDbContext 
         return RedirectToAction(nameof(Index));
     }
 
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> Return(long id, CancellationToken ct = default)
+    {
+        var result = await loans.ReturnAsync(id, DateTime.UtcNow, ct);
+        TempData[result.IsSuccess ? "SuccessMessage" : "ErrorMessage"] = result.IsSuccess
+            ? "Đã xác nhận trả sách."
+            : result.ErrorMessage;
+        return RedirectToAction(nameof(Index));
+    }
+
     [HttpGet("api/loans")]
     public async Task<IActionResult> GetAllApi(CancellationToken ct = default) =>
         Ok((await loans.GetAllAsync(ct)).Select(ToApiModel));
+
+    [HttpGet("api/loans/lookup")]
+    public async Task<IActionResult> LookupByBarcodeApi([FromQuery] string? barcode, CancellationToken ct = default)
+    {
+        var normalizedBarcode = barcode?.Trim();
+        if (string.IsNullOrWhiteSpace(normalizedBarcode))
+            return BadRequest(new { status = "invalidBarcode", message = "Vui lòng nhập mã vạch bản sao." });
+        if (normalizedBarcode.Length > 50)
+            return BadRequest(new { status = "invalidBarcode", message = "Mã vạch không được vượt quá 50 ký tự." });
+
+        BookCopyLoanLookupOutcome result;
+        try
+        {
+            result = await loans.LookupByCopyCodeAsync(normalizedBarcode, DateOnly.FromDateTime(DateTime.Today), ct);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            logger.LogError(exception, "Lỗi khi tra cứu phiếu mượn theo mã bản sao.");
+            return StatusCode(StatusCodes.Status500InternalServerError,
+                new { status = "error", message = "Không thể tra cứu lúc này. Vui lòng thử lại." });
+        }
+
+        return result.Status switch
+        {
+            BookCopyLoanLookupStatus.CopyNotFound => NotFound(new
+            {
+                status = "notFound", message = "Không tìm thấy bản sao có mã vạch này."
+            }),
+            BookCopyLoanLookupStatus.NotBorrowed => Ok(new
+            {
+                status = "notBorrowed", message = "Bản sao này hiện không có ai mượn.", result.CopyCode
+            }),
+            BookCopyLoanLookupStatus.Borrowed => Ok(new
+            {
+                status = "borrowed", result.CopyCode, result.ReaderName,
+                result.DueDate, result.OverdueDays
+            }),
+            BookCopyLoanLookupStatus.UnassignedOpenLoan => Conflict(new
+            {
+                status = "unassignedOpenLoan",
+                message = "Còn phiếu mượn cũ chưa gán bản sao cho sách này nên chưa thể xác định người mượn theo mã vạch."
+            }),
+            _ => Conflict(new
+            {
+                status = "inconsistent", message = "Dữ liệu phiếu mượn của bản sao này chưa nhất quán."
+            })
+        };
+    }
 
     [HttpPost("api/loans")]
     public async Task<IActionResult> CreateApi([FromBody] CreateBookLoanViewModel? model, CancellationToken ct = default)
     {
         if (model?.LoanDate == null || !TryValidateModel(model))
             return BadRequest(new { message = "Dữ liệu phiếu mượn không hợp lệ." });
-        var result = await loans.CreateAsync(model.BookId, model.ReaderAccountId, model.LoanDate.Value, ct);
+        var result = await loans.CreateAsync(model.BookId, model.ReaderAccountId, model.LoanDate.Value, ct, model.BookCopyId);
         if (!result.IsSuccess) return BadRequest(new { message = result.ErrorMessage });
         return Created($"/api/loans/{result.Loan!.Id}", ToApiModel(result.Loan));
     }
@@ -82,6 +144,17 @@ public sealed class LoanController(IBookLoanService loans, ApplicationDbContext 
         });
     }
 
+    [HttpPost("api/loans/{id:long}/return")]
+    public async Task<IActionResult> ReturnApi(long id, CancellationToken ct = default)
+    {
+        var result = await loans.ReturnAsync(id, DateTime.UtcNow, ct);
+        if (!result.IsSuccess)
+            return result.Loan is null
+                ? NotFound(new { success = false, message = result.ErrorMessage })
+                : Conflict(new { success = false, message = result.ErrorMessage });
+        return Ok(new { success = true, returnedAtUtc = result.Loan!.ReturnedAtUtc, bookCopyId = result.Loan.BookCopyId });
+    }
+
     [HttpGet("api/loans/adjust-due-date/{proposedDate}")]
     public async Task<IActionResult> PreviewDueDateApi(DateOnly proposedDate, CancellationToken ct = default)
     {
@@ -100,6 +173,10 @@ public sealed class LoanController(IBookLoanService loans, ApplicationDbContext 
     {
         Loans = await loans.GetAllAsync(ct),
         Books = await db.Books.AsNoTracking().OrderBy(book => book.Title).ToListAsync(ct),
+        AvailableCopies = await db.BookCopies.AsNoTracking().Include(copy => copy.Book)
+            .Where(copy => copy.Status == BookCopyStatuses.Available &&
+                !db.BookLoans.Any(loan => loan.BookCopyId == copy.Id && loan.ReturnedAtUtc == null))
+            .OrderBy(copy => copy.CopyCode).ToListAsync(ct),
         Readers = await db.ReaderAccounts.AsNoTracking()
             .Where(reader => reader.Status == "Đang hoạt động").OrderBy(reader => reader.FullName).ToListAsync(ct),
         NewLoan = new CreateBookLoanViewModel { LoanDate = DateOnly.FromDateTime(DateTime.Today) }
@@ -107,11 +184,12 @@ public sealed class LoanController(IBookLoanService loans, ApplicationDbContext 
 
     private static object ToApiModel(BookLoan loan) => new
     {
-        loan.Id, loan.BookId, bookTitle = loan.Book?.Title, loan.ReaderAccountId,
+        loan.Id, loan.BookId, bookTitle = loan.Book?.Title, loan.BookCopyId,
+        copyCode = loan.BookCopy?.CopyCode, loan.ReturnedAtUtc, loan.ReaderAccountId,
         readerName = loan.ReaderAccount?.FullName, loan.LoanDate, loan.OriginalDueDate, loan.DueDate,
         renewalCount = loan.RenewalCount,
         renewalLimit = loan.ReaderAccount?.LibraryCard?.LibraryCardType?.MaxRenewals ?? 0,
         wasDueDateAdjusted = loan.OriginalDueDate != loan.DueDate,
-        canRenew = loan.DueDate >= DateOnly.FromDateTime(DateTime.Today)
+        canRenew = !loan.ReturnedAtUtc.HasValue && loan.DueDate >= DateOnly.FromDateTime(DateTime.Today)
     };
 }
