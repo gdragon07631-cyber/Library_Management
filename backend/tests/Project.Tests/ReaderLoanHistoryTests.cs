@@ -1,10 +1,17 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc.Abstractions;
+using Microsoft.AspNetCore.Mvc.Filters;
+using Microsoft.AspNetCore.Routing;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
 using Project.Controllers;
 using Project.Data;
 using Project.Filters;
 using Project.Models;
+using Project.Services;
 
 namespace Project.Tests;
 
@@ -132,6 +139,57 @@ public sealed class ReaderLoanHistoryTests : IDisposable
         Assert.Equal([AccountRoles.Librarian, AccountRoles.LibraryManager], access.Roles);
     }
 
+    [Theory]
+    [InlineData(AccountRoles.Librarian, true)]
+    [InlineData(AccountRoles.LibraryManager, true)]
+    [InlineData(AccountRoles.SystemAdmin, false)]
+    public async Task ServerFilterOnlyExecutesHistoryForAllowedStaff(string role, bool expectedAllowed)
+    {
+        var context = await CreateAuthorizationContextAsync(role);
+        var actionDescriptor = new ActionDescriptor();
+        actionDescriptor.EndpointMetadata.Add(Attribute.GetCustomAttribute(
+            typeof(ReaderLoanHistoryController), typeof(StaffOnlyAttribute))!);
+        context.ActionDescriptor = actionDescriptor;
+        var executingContext = new ActionExecutingContext(
+            context, [], new Dictionary<string, object?>(), new ReaderLoanHistoryController(db));
+        var filter = new StaffOnlyAttribute(AccountRoles.Librarian, AccountRoles.LibraryManager);
+        var executed = false;
+
+        await filter.OnActionExecutionAsync(executingContext, () =>
+        {
+            executed = true;
+            return Task.FromResult(new ActionExecutedContext(
+                context, [], executingContext.Controller));
+        });
+
+        Assert.Equal(expectedAllowed, executed);
+        if (!expectedAllowed)
+            Assert.IsType<RedirectToActionResult>(executingContext.Result);
+    }
+
+    [Fact]
+    public async Task ServerFilterRedirectsUnauthenticatedHistoryRequest()
+    {
+        var context = await CreateAuthorizationContextAsync(null);
+        var actionDescriptor = new ActionDescriptor();
+        actionDescriptor.EndpointMetadata.Add(Attribute.GetCustomAttribute(
+            typeof(ReaderLoanHistoryController), typeof(StaffOnlyAttribute))!);
+        context.ActionDescriptor = actionDescriptor;
+        var executingContext = new ActionExecutingContext(
+            context, [], new Dictionary<string, object?>(), new ReaderLoanHistoryController(db));
+        var executed = false;
+
+        await new StaffOnlyAttribute(AccountRoles.Librarian, AccountRoles.LibraryManager)
+            .OnActionExecutionAsync(executingContext, () =>
+            {
+                executed = true;
+                return Task.FromResult(new ActionExecutedContext(context, [], executingContext.Controller));
+            });
+
+        Assert.False(executed);
+        Assert.IsType<RedirectToActionResult>(executingContext.Result);
+    }
+
     private static ReaderAccount NewReader(string email, string code) => new()
     {
         FullName = "Test Reader",
@@ -173,5 +231,37 @@ public sealed class ReaderLoanHistoryTests : IDisposable
     {
         var result = Assert.IsType<ViewResult>(await controller.Details(readerId, startDate, endDate));
         return Assert.IsType<ReaderLoanHistoryViewModel>(result.Model);
+    }
+
+    private async Task<ActionContext> CreateAuthorizationContextAsync(string? role)
+    {
+        var httpContext = new DefaultHttpContext();
+        var services = new ServiceCollection();
+        services.AddSingleton<IAuditLogService>(new AuditLogService(db, NullLogger<AuditLogService>.Instance));
+        httpContext.RequestServices = services.BuildServiceProvider();
+
+        if (role is not null)
+        {
+            var token = "history-test-token-" + role;
+            var staff = new AdminAccount
+            {
+                Email = $"{role}@example.com",
+                PasswordHash = "test",
+                Role = role,
+                IsActive = true
+            };
+            db.AdminAccounts.Add(staff);
+            db.RefreshTokens.Add(new RefreshToken
+            {
+                AdminAccount = staff,
+                TokenHash = TokenService.HashRefreshToken(token),
+                CreatedAtUtc = DateTime.UtcNow,
+                ExpiresAtUtc = DateTime.UtcNow.AddHours(1)
+            });
+            await db.SaveChangesAsync();
+            httpContext.Request.Headers.Cookie = $"admin_refresh={token}";
+        }
+
+        return new ActionContext(httpContext, new RouteData(), new ActionDescriptor());
     }
 }
