@@ -138,8 +138,8 @@
             const response = await fetch(form.action, { method: 'POST', body: new FormData(form), headers: { Accept: 'application/json' } });
             if (!response.ok || response.redirected) throw new Error('Không nhận được kết quả xác nhận.');
             const result = await response.json();
-            if (result.isSuccess) { window.location.assign(result.url); return; }
-            uncertain = result.isUncertain || result.requestConflict;
+            if (result.isSuccess) { uncertain = true; window.location.assign(result.url); return; }
+            uncertain = Boolean(result.isUncertain || result.requestConflict);
             if (result.rows) state.rows = result.rows.map(row => ({ ...row, version: 0, checking: false, editing: false }));
             remember(uncertain ? 'pending' : 'retry');
             show(result.errorMessage);
@@ -153,8 +153,8 @@
             const response = await fetch(url, { headers: { Accept: 'application/json' } });
             if (!response.ok || response.redirected) throw new Error();
             const result = await response.json();
-            if (result.isSuccess) { window.location.assign(result.url); return; }
-            uncertain = result.isUncertain || result.requestConflict;
+            if (result.isSuccess) { uncertain = true; window.location.assign(result.url); return; }
+            uncertain = Boolean(result.isUncertain || result.requestConflict);
             show(result.errorMessage); remember(uncertain ? 'pending' : 'retry');
             if (!uncertain && card.value.trim() !== originalCard) {
                 const destination = new URL(form.dataset.indexUrl, location.origin);

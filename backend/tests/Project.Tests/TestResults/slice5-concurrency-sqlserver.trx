@@ -1,0 +1,52 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="ef5dee31-8dc1-4ef3-b7d6-90b77af868f4" name="PC@DESKTOP-5I4M2FD 2026-10-11 22:05:08" runUser="DESKTOP-5I4M2FD\PC" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Times creation="2026-10-11T22:05:08.8749708+07:00" queuing="2026-10-11T22:05:08.8749712+07:00" start="2026-10-11T22:05:03.4353563+07:00" finish="2026-10-11T22:05:11.0790989+07:00" />
+  <TestSettings name="default" id="dadec401-bf90-42ca-b1d2-11b107a92058">
+    <Deployment runDeploymentRoot="PC_DESKTOP-5I4M2FD_2026-10-11_22_05_08" />
+  </TestSettings>
+  <Results>
+    <UnitTestResult executionId="b0627d8e-a298-4e14-9f80-bee5d16fd4e4" testId="a73d936c-5d1c-10d0-7d6f-a4d0afb22602" testName="Project.Tests.DirectLoanTests.ConcurrentBatchesCannotPartiallySaveOrExceedQuota(overlap: False, keyed: False)" computerName="DESKTOP-5I4M2FD" duration="00:00:00.7548962" startTime="2026-10-11T22:05:08.8613295+07:00" endTime="2026-10-11T22:05:09.5924036+07:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="b0627d8e-a298-4e14-9f80-bee5d16fd4e4" />
+    <UnitTestResult executionId="a2c3b243-a80d-41a6-ae46-4eb67a0308af" testId="59e7a6b2-1527-7ac8-a3ca-f218cf33feaa" testName="Project.Tests.DirectLoanTests.ConcurrentBatchesCannotPartiallySaveOrExceedQuota(overlap: True, keyed: True)" computerName="DESKTOP-5I4M2FD" duration="00:00:00.6750206" startTime="2026-10-11T22:05:10.3053700+07:00" endTime="2026-10-11T22:05:10.9809013+07:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="a2c3b243-a80d-41a6-ae46-4eb67a0308af" />
+    <UnitTestResult executionId="8a881113-53f3-43b2-86e5-1d4fb8b763f7" testId="b80aedd1-b34b-f9fe-541f-2bb037f83581" testName="Project.Tests.DirectLoanTests.ConcurrentBatchesCannotPartiallySaveOrExceedQuota(overlap: False, keyed: True)" computerName="DESKTOP-5I4M2FD" duration="00:00:00.7118230" startTime="2026-10-11T22:05:09.5943562+07:00" endTime="2026-10-11T22:05:10.3048790+07:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="8a881113-53f3-43b2-86e5-1d4fb8b763f7" />
+    <UnitTestResult executionId="a052109f-88d2-41e1-9dc5-065fa0967e64" testId="6a4a2afd-5f3c-5f5c-719a-930cc2da95f6" testName="Project.Tests.DirectLoanTests.ConcurrentBatchesCannotPartiallySaveOrExceedQuota(overlap: True, keyed: False)" computerName="DESKTOP-5I4M2FD" duration="00:00:04.2365224" startTime="2026-10-11T22:05:04.5837878+07:00" endTime="2026-10-11T22:05:08.8352121+07:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="a052109f-88d2-41e1-9dc5-065fa0967e64" />
+  </Results>
+  <TestDefinitions>
+    <UnitTest name="Project.Tests.DirectLoanTests.ConcurrentBatchesCannotPartiallySaveOrExceedQuota(overlap: False, keyed: False)" storage="c:\users\pc\onedrive\documents\github\h-th-ng-m-n-tr-s-ch-th-vi-n\backend\tests\project.tests\bin\debug\net10.0\project.tests.dll" id="a73d936c-5d1c-10d0-7d6f-a4d0afb22602">
+      <Execution id="b0627d8e-a298-4e14-9f80-bee5d16fd4e4" />
+      <TestMethod codeBase="C:\Users\PC\OneDrive\Documents\GitHub\H-th-ng-m-n-tr-s-ch-th-vi-n\backend\tests\Project.Tests\bin\Debug\net10.0\Project.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="Project.Tests.DirectLoanTests" name="ConcurrentBatchesCannotPartiallySaveOrExceedQuota" />
+    </UnitTest>
+    <UnitTest name="Project.Tests.DirectLoanTests.ConcurrentBatchesCannotPartiallySaveOrExceedQuota(overlap: True, keyed: True)" storage="c:\users\pc\onedrive\documents\github\h-th-ng-m-n-tr-s-ch-th-vi-n\backend\tests\project.tests\bin\debug\net10.0\project.tests.dll" id="59e7a6b2-1527-7ac8-a3ca-f218cf33feaa">
+      <Execution id="a2c3b243-a80d-41a6-ae46-4eb67a0308af" />
+      <TestMethod codeBase="C:\Users\PC\OneDrive\Documents\GitHub\H-th-ng-m-n-tr-s-ch-th-vi-n\backend\tests\Project.Tests\bin\Debug\net10.0\Project.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="Project.Tests.DirectLoanTests" name="ConcurrentBatchesCannotPartiallySaveOrExceedQuota" />
+    </UnitTest>
+    <UnitTest name="Project.Tests.DirectLoanTests.ConcurrentBatchesCannotPartiallySaveOrExceedQuota(overlap: True, keyed: False)" storage="c:\users\pc\onedrive\documents\github\h-th-ng-m-n-tr-s-ch-th-vi-n\backend\tests\project.tests\bin\debug\net10.0\project.tests.dll" id="6a4a2afd-5f3c-5f5c-719a-930cc2da95f6">
+      <Execution id="a052109f-88d2-41e1-9dc5-065fa0967e64" />
+      <TestMethod codeBase="C:\Users\PC\OneDrive\Documents\GitHub\H-th-ng-m-n-tr-s-ch-th-vi-n\backend\tests\Project.Tests\bin\Debug\net10.0\Project.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="Project.Tests.DirectLoanTests" name="ConcurrentBatchesCannotPartiallySaveOrExceedQuota" />
+    </UnitTest>
+    <UnitTest name="Project.Tests.DirectLoanTests.ConcurrentBatchesCannotPartiallySaveOrExceedQuota(overlap: False, keyed: True)" storage="c:\users\pc\onedrive\documents\github\h-th-ng-m-n-tr-s-ch-th-vi-n\backend\tests\project.tests\bin\debug\net10.0\project.tests.dll" id="b80aedd1-b34b-f9fe-541f-2bb037f83581">
+      <Execution id="8a881113-53f3-43b2-86e5-1d4fb8b763f7" />
+      <TestMethod codeBase="C:\Users\PC\OneDrive\Documents\GitHub\H-th-ng-m-n-tr-s-ch-th-vi-n\backend\tests\Project.Tests\bin\Debug\net10.0\Project.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="Project.Tests.DirectLoanTests" name="ConcurrentBatchesCannotPartiallySaveOrExceedQuota" />
+    </UnitTest>
+  </TestDefinitions>
+  <TestEntries>
+    <TestEntry testId="a73d936c-5d1c-10d0-7d6f-a4d0afb22602" executionId="b0627d8e-a298-4e14-9f80-bee5d16fd4e4" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="59e7a6b2-1527-7ac8-a3ca-f218cf33feaa" executionId="a2c3b243-a80d-41a6-ae46-4eb67a0308af" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="b80aedd1-b34b-f9fe-541f-2bb037f83581" executionId="8a881113-53f3-43b2-86e5-1d4fb8b763f7" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="6a4a2afd-5f3c-5f5c-719a-930cc2da95f6" executionId="a052109f-88d2-41e1-9dc5-065fa0967e64" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+  </TestEntries>
+  <TestLists>
+    <TestList name="Results Not in a List" id="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestList name="All Loaded Results" id="19431567-8539-422a-85d7-44ee4e166bda" />
+  </TestLists>
+  <ResultSummary outcome="Completed">
+    <Counters total="4" executed="4" passed="4" failed="0" error="0" timeout="0" aborted="0" inconclusive="0" passedButRunAborted="0" notRunnable="0" notExecuted="0" disconnected="0" warning="0" completed="0" inProgress="0" pending="0" />
+    <Output>
+      <StdOut>[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v3.1.4+50e68bbb8b (64-bit .NET 10.0.12)&#xD;
+[xUnit.net 00:00:00.18]   Discovering: Project.Tests&#xD;
+[xUnit.net 00:00:00.43]   Discovered:  Project.Tests&#xD;
+[xUnit.net 00:00:00.47]   Starting:    Project.Tests&#xD;
+[xUnit.net 00:00:06.93]   Finished:    Project.Tests&#xD;
+</StdOut>
+    </Output>
+  </ResultSummary>
+</TestRun>

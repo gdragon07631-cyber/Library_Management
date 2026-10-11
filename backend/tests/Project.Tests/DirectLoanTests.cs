@@ -349,9 +349,11 @@ public sealed partial class DirectLoanTests : IDisposable
     }
 
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task ConcurrentBatchesCannotPartiallySaveOrExceedQuota(bool overlap)
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    public async Task ConcurrentBatchesCannotPartiallySaveOrExceedQuota(bool overlap, bool keyed)
     {
         await AddCopies(6);
         using var barrier = new Barrier(2);
@@ -361,7 +363,7 @@ public sealed partial class DirectLoanTests : IDisposable
             var schedule = new WorkingScheduleService(context);
             var direct = new DirectLoanService(context, new BookLoanService(context, schedule), schedule, NullLogger<DirectLoanService>.Instance);
             barrier.SignalAndWait(TimeSpan.FromSeconds(10));
-            return await direct.ConfirmManyAsync("CARD01", codes, staff);
+            return await direct.ConfirmManyAsync("CARD01", codes, staff, requestId: keyed ? Guid.NewGuid() : null);
         });
         var results = await Task.WhenAll(Run(["COPY01", "COPY02", "COPY03"]),
             Run(overlap ? ["COPY03", "COPY04", "COPY05"] : ["COPY04", "COPY05", "COPY06"]));
