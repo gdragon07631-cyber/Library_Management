@@ -13,6 +13,7 @@ namespace Project.Controllers;
 public sealed class HoldPickupController(
     IHoldPickupService holdPickupService,
     IHoldPickupConfirmationService confirmationService,
+    IHoldPickupExpiryService expiryService,
     IAuditLogService auditLogService,
     ILogger<HoldPickupController> logger) : Controller
 {
@@ -24,10 +25,35 @@ public sealed class HoldPickupController(
     public async Task<IActionResult> Index(CancellationToken ct = default)
     {
         var items = await holdPickupService.GetWaitingPickupHoldsAsync(ct);
+        var staff = await auditLogService.GetSignedInStaffAsync(Request, ct);
         return View(new HoldPickupListViewModel
         {
-            Items = items
+            Items = items,
+            CanProcessOverdue = staff?.Role is AccountRoles.LibraryManager or AccountRoles.SystemAdmin
         });
+    }
+
+    [HttpPost, ValidateAntiForgeryToken]
+    public async Task<IActionResult> ProcessExpired(CancellationToken ct = default)
+    {
+        var staff = await auditLogService.GetSignedInStaffAsync(Request, ct);
+        if (staff is null) return Unauthorized();
+        if (staff.Role != AccountRoles.LibraryManager && staff.Role != AccountRoles.SystemAdmin) return Forbid();
+
+        try
+        {
+            var result = await expiryService.ProcessOverdueAsync(DateTime.UtcNow, ct);
+            TempData[result.Errors.Count == 0 ? "SuccessMessage" : "ErrorMessage"] = result.Errors.Count > 0
+                ? $"Đã xử lý {result.CancelledCount}/{result.CheckedCount} đơn quá hạn; có {result.Errors.Count} lỗi."
+                : $"Đã kiểm tra {result.CheckedCount} đơn; hủy {result.CancelledCount}, chuyển {result.AssignedToNextReaderCount} bản sao cho người tiếp theo, trả {result.ReturnedToAvailableCount} bản về trạng thái sẵn sàng.";
+            return RedirectToAction(nameof(Index));
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            logger.LogError(exception, "Failed to manually process overdue book holds.");
+            TempData["ErrorMessage"] = "Không thể xử lý đơn quá hạn do lỗi hệ thống. Vui lòng thử lại.";
+            return RedirectToAction(nameof(Index));
+        }
     }
 
     [HttpGet]

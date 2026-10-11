@@ -77,6 +77,52 @@ public sealed class HoldPickupExpiryTests : IDisposable
         Assert.Equal(BookCopyStatus.OnHold, (await db.BookCopies.AsNoTracking().SingleAsync()).Status);
     }
 
+    [Fact]
+    public async Task ManualRunReportsCancelledAndReleasedCopyCounts()
+    {
+        var (book, copy) = await AddBookWithCopyAsync();
+        await AddReadyHoldAsync(book, copy, DateTime.UtcNow.AddMinutes(-1));
+
+        var result = await service.ProcessOverdueAsync(DateTime.UtcNow);
+
+        Assert.Equal(1, result.CheckedCount);
+        Assert.Equal(1, result.CancelledCount);
+        Assert.Equal(0, result.AssignedToNextReaderCount);
+        Assert.Equal(1, result.ReturnedToAvailableCount);
+        Assert.Empty(result.Errors);
+    }
+
+    [Fact]
+    public async Task ExpiredHoldsAreRemovedBeforeReleasedCopiesAreAssigned()
+    {
+        var (book, firstCopy) = await AddBookWithCopyAsync();
+        var secondCopy = new BookCopy
+        {
+            BookId = book.Id,
+            Shelf = new Shelf
+            {
+                Warehouse = new Warehouse { Code = "WH-" + Guid.NewGuid().ToString("N")[..6], Name = "Kho" },
+                Code = Guid.NewGuid().ToString("N"), Name = "Kệ"
+            },
+            CopyCode = "COPY-" + Guid.NewGuid().ToString("N")[..8],
+            Status = BookCopyStatus.OnHold
+        };
+        db.BookCopies.Add(secondCopy);
+        await db.SaveChangesAsync();
+        var firstExpired = await AddReadyHoldAsync(book, firstCopy, DateTime.UtcNow.AddMinutes(-2));
+        var secondExpired = await AddReadyHoldAsync(book, secondCopy, DateTime.UtcNow.AddMinutes(-1));
+        var next = await AddWaitingHoldAsync(book, DateTime.UtcNow);
+
+        var result = await service.ProcessOverdueAsync(DateTime.UtcNow);
+
+        Assert.Equal(2, result.CancelledCount);
+        Assert.Equal(BookHoldStatus.Cancelled, (await db.BookHolds.AsNoTracking().SingleAsync(item => item.Id == firstExpired.Id)).Status);
+        Assert.Equal(BookHoldStatus.Cancelled, (await db.BookHolds.AsNoTracking().SingleAsync(item => item.Id == secondExpired.Id)).Status);
+        Assert.Equal(BookHoldStatus.Available, (await db.BookHolds.AsNoTracking().SingleAsync(item => item.Id == next.Id)).Status);
+        Assert.Equal(1, result.AssignedToNextReaderCount);
+        Assert.Equal(1, result.ReturnedToAvailableCount);
+    }
+
     [Theory]
     [InlineData(BookHoldStatus.Waiting)]
     [InlineData(BookHoldStatus.Cancelled)]

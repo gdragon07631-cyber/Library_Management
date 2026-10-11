@@ -4,6 +4,14 @@
 }
 
 <div class="container-fluid py-3 px-4">
+    @if (TempData["SuccessMessage"] is string successMessage)
+    {
+        <div class="alert alert-success" role="status">@successMessage</div>
+    }
+    @if (TempData["ErrorMessage"] is string errorMessage)
+    {
+        <div class="alert alert-danger" role="alert">@errorMessage</div>
+    }
     <!-- Header -->
     <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-2">
         <div>
@@ -16,6 +24,13 @@
             <span class="badge bg-primary fs-6 px-3 py-2 rounded-pill">
                 @Model.TotalCount bản sao chờ nhận
             </span>
+@if (Model.CanProcessOverdue)
+            {
+            <form asp-action="ProcessExpired" method="post" class="d-inline ms-2">
+                @Html.AntiForgeryToken()
+                <button type="submit" class="btn btn-warning" onclick="return confirm('Xử lý các đơn đã quá hạn nhận sách?')">Xử lý đơn đặt giữ quá hạn</button>
+            </form>
+            }
         </div>
     </div>
 

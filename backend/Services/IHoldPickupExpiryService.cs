@@ -1,5 +1,8 @@
 namespace Project.Services;
 
+public sealed record HoldPickupExpiryRunResult(int CheckedCount, int CancelledCount,
+    int AssignedToNextReaderCount, int ReturnedToAvailableCount, IReadOnlyList<string> Errors);
+
 public interface IHoldPickupExpiryService
 {
     /// <summary>
@@ -7,4 +10,5 @@ public interface IHoldPickupExpiryService
     /// Trả về số đơn đã hủy.
     /// </summary>
     Task<int> ExpireOverdueAsync(DateTime nowUtc, CancellationToken cancellationToken = default);
+    Task<HoldPickupExpiryRunResult> ProcessOverdueAsync(DateTime nowUtc, CancellationToken cancellationToken = default);
 }

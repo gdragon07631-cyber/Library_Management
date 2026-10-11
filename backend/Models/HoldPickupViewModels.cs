@@ -42,6 +42,7 @@ public sealed class ConfirmHoldPickupViewModel
 public sealed class HoldPickupListViewModel
 {
     public IReadOnlyList<HoldPickupItemViewModel> Items { get; set; } = [];
+    public bool CanProcessOverdue { get; set; }
     public int TotalCount => Items.Count;
 }
 
