@@ -6,18 +6,41 @@
     <div class="mb-4"><h1 class="h3 mb-1 text-primary fw-bold">Phiếu mượn</h1><p class="text-muted mb-0">Hạn trả được tự động chuyển sang ngày thư viện mở cửa kế tiếp.</p></div>
     @if (TempData["SuccessMessage"] is string success) { <div class="alert alert-success">@success</div> }
     @if (TempData["ErrorMessage"] is string error) { <div class="alert alert-danger">@error</div> }
+    <div class="card shadow-sm border-0 mb-4">
+        <div class="card-header bg-white"><h2 class="h5 mb-0">Tra cứu và nhận trả bằng mã vạch</h2></div>
+        <div class="card-body">
+            <form id="copyLoanLookupForm" class="row g-3 align-items-end" data-lookup-url="/api/loans/lookup" data-return-url="/api/loans" novalidate>
+                @Html.AntiForgeryToken()
+                <div class="col-md-8">
+                    <label for="copyLoanBarcode" class="form-label">Mã vạch bản sao</label>
+                    <input id="copyLoanBarcode" name="barcode" class="form-control" type="text" maxlength="50" autocomplete="off" required />
+                </div>
+                <div class="col-md-4">
+                    <button id="copyLoanLookupButton" class="btn btn-primary" type="submit">
+                        <span class="lookup-button-label">Tra cứu</span>
+                        <span class="lookup-loading d-none" aria-hidden="true"><span class="spinner-border spinner-border-sm me-1"></span>Đang tra cứu…</span>
+                    </button>
+                </div>
+            </form>
+            <div id="copyLoanLookupResult" class="mt-3" role="status" aria-live="polite"></div>
+        </div>
+    </div>
     <div class="card shadow-sm border-0 mb-4"><div class="card-header bg-white"><h2 class="h5 mb-0">Tạo phiếu mượn</h2></div><div class="card-body">
         <form asp-action="Create" method="post" class="row g-3 align-items-end">
             @Html.AntiForgeryToken()
-            <div class="col-md-4"><label class="form-label">Sách</label><select class="form-select" name="BookId" required><option value="">-- Chọn sách --</option>@foreach (var book in Model.Books) { <option value="@book.Id">@book.Title</option> }</select></div>
+            <div class="col-md-3"><label class="form-label">Sách</label><select class="form-select" name="BookId" required><option value="">-- Chọn sách --</option>@foreach (var book in Model.Books) { <option value="@book.Id">@book.Title</option> }</select></div>
             <div class="col-md-4"><label class="form-label">Bạn đọc</label><select class="form-select" name="ReaderAccountId" required><option value="">-- Chọn bạn đọc --</option>@foreach (var reader in Model.Readers) { <option value="@reader.Id">@reader.FullName (@reader.StudentOrStaffCode)</option> }</select></div>
+            <div class="col-md-3"><label class="form-label">Bản sao</label><select class="form-select" name="BookCopyId"><option value="">-- Chưa gán bản sao --</option>@foreach (var copy in Model.AvailableCopies) { <option value="@copy.Id">@copy.CopyCode — @copy.Book?.Title</option> }</select></div>
             <div class="col-md-2"><label class="form-label">Ngày mượn</label><input class="form-control" type="date" name="LoanDate" value="@Model.NewLoan.LoanDate?.ToString("yyyy-MM-dd")" required /></div>
-            <div class="col-md-2"><button class="btn btn-primary w-100" type="submit">Tạo phiếu</button></div>
+            <div class="col-md-12"><button class="btn btn-primary" type="submit">Tạo phiếu</button></div>
         </form>
     </div></div>
     <div class="card shadow-sm border-0"><div class="card-header bg-white"><h2 class="h5 mb-0">Danh sách phiếu mượn</h2></div><div class="table-responsive"><table class="table table-hover align-middle mb-0">
-        <thead class="table-light"><tr><th>Sách</th><th>Bạn đọc</th><th>Ngày mượn</th><th>Hạn trả</th><th>Thao tác</th></tr></thead><tbody>
-        @if (Model.Loans.Count == 0) { <tr><td colspan="5" class="text-center text-muted py-4">Chưa có phiếu mượn.</td></tr> }
-        @foreach (var loan in Model.Loans) { var renewalLimit = loan.ReaderAccount?.LibraryCard?.LibraryCardType?.MaxRenewals ?? 0; <tr><td>@loan.Book?.Title</td><td>@loan.ReaderAccount?.FullName</td><td>@loan.LoanDate.ToString("dd/MM/yyyy")</td><td class="fw-semibold">@loan.DueDate.ToString("dd/MM/yyyy") @if (loan.DueDate != loan.OriginalDueDate) { <span class="badge bg-info text-dark">Đã điều chỉnh</span> }<div class="small text-muted">Số lần gia hạn: @loan.RenewalCount / @renewalLimit</div></td><td>@if (loan.DueDate >= DateOnly.FromDateTime(DateTime.Today)) { <form asp-action="Renew" method="post" class="d-inline">@Html.AntiForgeryToken()<input type="hidden" name="id" value="@loan.Id" /><button class="btn btn-sm btn-outline-primary" type="submit">Gia hạn</button></form> }</td></tr> }
+        <thead class="table-light"><tr><th>Sách / bản sao</th><th>Bạn đọc</th><th>Ngày mượn</th><th>Hạn trả</th><th>Trạng thái</th><th>Thao tác</th></tr></thead><tbody>
+        @if (Model.Loans.Count == 0) { <tr><td colspan="6" class="text-center text-muted py-4">Chưa có phiếu mượn.</td></tr> }
+        @foreach (var loan in Model.Loans) { var renewalLimit = loan.ReaderAccount?.LibraryCard?.LibraryCardType?.MaxRenewals ?? 0; <tr><td>@loan.Book?.Title<div class="small text-muted">@(loan.BookCopy?.CopyCode ?? "Chưa gán bản sao")</div></td><td>@loan.ReaderAccount?.FullName</td><td>@loan.LoanDate.ToString("dd/MM/yyyy")</td><td class="fw-semibold">@loan.DueDate.ToString("dd/MM/yyyy") @if (loan.DueDate != loan.OriginalDueDate) { <span class="badge bg-info text-dark">Đã điều chỉnh</span> }<div class="small text-muted">Số lần gia hạn: @loan.RenewalCount / @renewalLimit</div></td><td>@if (loan.ReturnedAtUtc.HasValue) { <span class="badge bg-success">Đã trả</span><div class="small text-muted">@loan.ReturnedAtUtc.Value.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</div> } else { <span class="badge bg-warning text-dark">Đang mượn</span> }</td><td>@if (!loan.ReturnedAtUtc.HasValue && loan.DueDate >= DateOnly.FromDateTime(DateTime.Today)) { <form asp-action="Renew" method="post" class="d-inline">@Html.AntiForgeryToken()<input type="hidden" name="id" value="@loan.Id" /><button class="btn btn-sm btn-outline-primary" type="submit">Gia hạn</button></form> }</td></tr> }
     </tbody></table></div></div>
 </div>
+@section Scripts {
+    <script src="~/js/book-loan-lookup.js" asp-append-version="true"></script>
+}
