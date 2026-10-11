@@ -87,7 +87,7 @@ public sealed class LoanController(IBookLoanService loans, ApplicationDbContext 
             }),
             BookCopyLoanLookupStatus.Borrowed => Ok(new
             {
-                status = "borrowed", result.LoanId, result.CopyCode, result.ReaderName,
+                status = "borrowed", result.LoanId, result.CopyCode, result.ReaderName, result.BookTitle,
                 result.DueDate, result.OverdueDays
             }),
             BookCopyLoanLookupStatus.UnassignedOpenLoan => Conflict(new

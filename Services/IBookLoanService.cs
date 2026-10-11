@@ -9,7 +9,7 @@ public sealed record RenewBookLoanOutcome(
 public enum BookCopyLoanLookupStatus { CopyNotFound, NotBorrowed, Borrowed, Inconsistent, UnassignedOpenLoan }
 public sealed record BookCopyLoanLookupOutcome(
     BookCopyLoanLookupStatus Status, long? LoanId = null, string? CopyCode = null,
-    string? ReaderName = null, DateOnly? DueDate = null, int OverdueDays = 0);
+    string? ReaderName = null, DateOnly? DueDate = null, int OverdueDays = 0, string? BookTitle = null);
 public sealed record ReturnBookLoanOutcome(
     bool IsSuccess, string? ErrorMessage = null, BookLoan? Loan = null,
     bool IsNotFound = false, bool IsConflict = false,

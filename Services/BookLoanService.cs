@@ -201,6 +201,7 @@ public sealed class BookLoanService(ApplicationDbContext db, IWorkingScheduleSer
     {
         var normalizedCode = copyCode.Trim();
         var copy = await db.BookCopies.AsNoTracking()
+            .Include(item => item.Book)
             .FirstOrDefaultAsync(item => item.CopyCode == normalizedCode, cancellationToken);
         if (copy is null) return new(BookCopyLoanLookupStatus.CopyNotFound);
 
@@ -222,7 +223,7 @@ public sealed class BookLoanService(ApplicationDbContext db, IWorkingScheduleSer
         var openLoan = openLoans[0];
         return new(BookCopyLoanLookupStatus.Borrowed, openLoan.Id, copy.CopyCode,
             openLoan.ReaderAccount?.FullName, openLoan.DueDate,
-            Math.Max(0, today.DayNumber - openLoan.DueDate.DayNumber));
+            Math.Max(0, today.DayNumber - openLoan.DueDate.DayNumber), copy.Book?.Title);
     }
 
     public async Task<DateOnly> AdjustDueDateAsync(DateOnly proposedDate, CancellationToken cancellationToken = default)
