@@ -14,6 +14,18 @@
     const originalCard = form.elements.CardCode.value;
     const remaining = Number(form.dataset.remaining);
     let submitted = false;
+    let uncertain = form.dataset.verifyOnly === 'true';
+    let attempted = form.dataset.retrying === 'true';
+    const verify = document.getElementById('verifyDirectLoan');
+    const requestKey = form.elements.RequestId;
+    const storageKey = 'directLoanPending';
+    const locked = () => submitted || uncertain;
+    function remember(phase) {
+        sessionStorage.setItem(storageKey, JSON.stringify({ requestId: requestKey.value, cardCode: card.value.trim(), rows: state.rows, phase }));
+    }
+    function changed() {
+        if (attempted) { requestKey.value = crypto.randomUUID(); attempted = false; sessionStorage.removeItem(storageKey); }
+    }
     const readerValid = () => form.dataset.readerValid === 'true' && card.value.trim() === originalCard;
     const show = text => { message.textContent = text; message.hidden = !text; };
     function hidden(cell, name, value) {
@@ -23,7 +35,7 @@
     function button(cell, text, label, action) {
         const element = document.createElement('button');
         element.type = 'button'; element.className = 'btn btn-outline-secondary btn-sm me-2'; element.textContent = text;
-        element.setAttribute('aria-label', label); element.disabled = submitted;
+        element.setAttribute('aria-label', label); element.disabled = locked();
         element.addEventListener('click', action); cell.append(element);
     }
     function render() {
@@ -60,10 +72,10 @@
             const cell = row.insertCell();
             hidden(cell, 'CopyCodes', copy.copyCode); hidden(cell, 'RowIds', copy.rowId);
             if (!copy.editing && (copy.error || copy.checking)) button(cell, 'Sửa', `Sửa ${copy.copyCode}`, () => {
-                state.edit(copy.rowId); render();
+                changed(); state.edit(copy.rowId); render();
                 Array.from(body.querySelectorAll('[data-edit-id]')).find(e => e.dataset.editId === copy.rowId)?.focus();
             });
-            button(cell, 'Xóa', `Xóa ${copy.copyCode}`, () => { state.remove(copy.rowId); show(''); render(); input.focus(); });
+            button(cell, 'Xóa', `Xóa ${copy.copyCode}`, () => { changed(); state.remove(copy.rowId); show(''); render(); input.focus(); });
         });
         if (focusId) {
             const edit = Array.from(body.querySelectorAll('[data-edit-id]')).find(e => e.dataset.editId === focusId);
@@ -76,8 +88,13 @@
         warning.hidden = counts.valid <= remaining;
         warning.textContent = `Có ${counts.valid} bản sao hợp lệ, nhưng chỉ còn được mượn thêm ${remaining} sách. Vui lòng xóa bớt bản sao.`;
         document.getElementById('rowWarning').hidden = counts.errors === 0 && counts.pending === 0;
-        confirm.disabled = submitted || !state.canConfirm(remaining, readerValid());
-        input.disabled = submitted || !readerValid();
+        confirm.disabled = locked() || !state.canConfirm(remaining, readerValid());
+        confirm.textContent = attempted ? 'Thử lại' : 'Xác nhận mượn';
+        verify.hidden = !uncertain;
+        verify.disabled = submitted;
+        card.disabled = locked();
+        card.form.querySelector('button').disabled = locked();
+        input.disabled = locked() || !readerValid();
         addForm.querySelector('button').disabled = input.disabled;
     }
     async function lookup(row) {
@@ -95,25 +112,77 @@
         render();
     }
     function recheck(rowId, code) {
-        if (submitted) return;
+        if (locked()) return;
+        changed();
         const row = state.check(rowId, code); render();
         if (row?.checking) void lookup(row);
     }
-    card.addEventListener('input', () => { show(readerValid() ? '' : 'Vui lòng tra cứu lại mã thẻ trước khi tiếp tục.'); render(); });
+    card.addEventListener('input', () => { changed(); show(readerValid() ? '' : 'Vui lòng tra cứu lại mã thẻ trước khi tiếp tục.'); render(); });
     addForm.addEventListener('submit', event => {
         event.preventDefault();
-        if (submitted || !readerValid()) return;
+        if (locked() || !readerValid()) return;
         const code = input.value.trim();
         if (!code) { show('Vui lòng nhập mã vạch bản sao.'); input.focus(); return; }
+        if (state.duplicate(code)) { show('Mã vạch này đã có trong danh sách mượn.'); input.select(); return; }
+        changed();
         const row = state.add(crypto.randomUUID(), code);
         if (!row) { show('Mã vạch này đã có trong danh sách mượn.'); input.select(); return; }
         show(''); input.value = ''; render(); input.focus(); void lookup(row);
     });
-    form.addEventListener('submit', event => {
-        if (submitted || !state.canConfirm(remaining, readerValid())) { event.preventDefault(); return; }
-        submitted = true; render();
+    form.addEventListener('submit', async event => {
+        event.preventDefault();
+        if (locked() || !state.canConfirm(remaining, readerValid())) return;
+        try { remember('pending'); } catch { show('Không thể lưu thông tin khôi phục trong trình duyệt. Vui lòng cho phép lưu trữ phiên trước khi xác nhận.'); return; }
+        attempted = true; submitted = true; render();
+        try {
+            const response = await fetch(form.action, { method: 'POST', body: new FormData(form), headers: { Accept: 'application/json' } });
+            if (!response.ok || response.redirected) throw new Error('Không nhận được kết quả xác nhận.');
+            const result = await response.json();
+            if (result.isSuccess) { window.location.assign(result.url); return; }
+            uncertain = result.isUncertain || result.requestConflict;
+            if (result.rows) state.rows = result.rows.map(row => ({ ...row, version: 0, checking: false, editing: false }));
+            remember(uncertain ? 'pending' : 'retry');
+            show(result.errorMessage);
+        } catch { uncertain = true; show('Đang xác minh kết quả lượt mượn. Hãy kiểm tra kết quả trước khi thử lại.'); }
+        finally { submitted = false; render(); }
     });
-    window.addEventListener('pageshow', () => { submitted = false; render(); });
+    async function verifyResult() {
+        submitted = true; render();
+        try {
+            const url = new URL(form.dataset.statusUrl, location.origin); url.searchParams.set('requestId', requestKey.value);
+            const response = await fetch(url, { headers: { Accept: 'application/json' } });
+            if (!response.ok || response.redirected) throw new Error();
+            const result = await response.json();
+            if (result.isSuccess) { window.location.assign(result.url); return; }
+            uncertain = result.isUncertain || result.requestConflict;
+            show(result.errorMessage); remember(uncertain ? 'pending' : 'retry');
+            if (!uncertain && card.value.trim() !== originalCard) {
+                const destination = new URL(form.dataset.indexUrl, location.origin);
+                destination.searchParams.set('cardCode', card.value.trim()); window.location.assign(destination); return;
+            }
+        } catch { uncertain = true; show('Chưa thể xác minh kết quả. Vui lòng kiểm tra lại, không tạo lượt mới.'); }
+        finally { submitted = false; render(); }
+    }
+    verify.addEventListener('click', verifyResult);
+    window.addEventListener('pageshow', () => {
+        submitted = false;
+        try {
+            const saved = JSON.parse(sessionStorage.getItem(storageKey) || 'null');
+            if (form.dataset.completed === 'true') {
+                if (saved?.requestId === requestKey.value) sessionStorage.removeItem(storageKey);
+                requestKey.value = crypto.randomUUID(); attempted = false;
+            } else if (saved) {
+                if (saved.phase === 'retry' && saved.cardCode !== originalCard) {
+                    const url = new URL(form.dataset.indexUrl, location.origin); url.searchParams.set('cardCode', saved.cardCode);
+                    window.location.assign(url); return;
+                }
+                requestKey.value = saved.requestId; card.value = saved.cardCode;
+                state.rows = saved.rows; attempted = true; uncertain = saved.phase === 'pending';
+                if (uncertain) void verifyResult();
+            }
+        } catch { uncertain = true; show('Không thể đọc thông tin lượt trước. Vui lòng kiểm tra kết quả.'); }
+        render();
+    });
     render();
     if (readerValid()) input.focus();
 })();

@@ -38,35 +38,66 @@ public sealed class DirectLoanController(DirectLoanService service, IAuditLogSer
     {
         var staff = await audit.GetSignedInStaffAsync(Request, ct);
         if (staff == null) return Unauthorized();
+        if (request.RequestId == Guid.Empty) ModelState.AddModelError(nameof(request.RequestId), "Thiếu định danh lượt mượn. Vui lòng tải lại trang.");
         var result = ModelState.IsValid
             ? await service.ConfirmManyAsync(request.CardCode, request.CopyCodes, staff, ct, AuditLogService.ClientIp(HttpContext),
-                request.RowIds.Count == 0 ? null : request.RowIds)
+                request.RowIds.Count == 0 ? null : request.RowIds, request.RequestId)
             : new DirectLoanBatchOutcome(false, "Thông tin mượn không hợp lệ.");
         if (result.IsSuccess)
         {
-            TempData["DirectLoanSuccess"] = "Cho mượn thành công.";
+            TempData["DirectLoanSuccess"] = "Xác nhận mượn sách thành công.";
+            if (Request.Headers.Accept.ToString().Contains("application/json"))
+                return Json(new { isSuccess = true, url = Url.Action(nameof(Status), new { requestId = request.RequestId }) });
             return RedirectToAction(nameof(Index), new { cardCode = request.CardCode.Trim(), loanIds = result.Loans!.Select(l => l.Id).ToArray() });
         }
         ModelState.AddModelError(string.Empty, result.ErrorMessage ?? "Không thể tạo phiếu mượn.");
+        if (Request.Headers.Accept.ToString().Contains("application/json"))
+            return Json(new { result.IsSuccess, result.IsUncertain, result.RequestConflict, result.ErrorMessage, result.Rows });
+        if (result.IsUncertain || result.RequestConflict)
+            return View("Index", new DirectLoanViewModel { CardCode = request.CardCode, RequestId = request.RequestId, VerifyOnly = true,
+                SelectedCopies = request.CopyCodes.Select((c, i) => new DirectLoanSelection(c, "", "")
+                { RowId = i < request.RowIds.Count ? request.RowIds[i] : Guid.NewGuid().ToString("N"), Error = "Đang xác minh kết quả" }).ToList() });
         var model = await service.LookupAsync(request.CardCode, null, ct);
+        model.RequestId = request.RequestId;
+        model.Retrying = true;
         model.SelectedCopies = result.Rows?.ToList() ?? await service.ValidateRowsAsync(request.CopyCodes,
             request.RowIds.Count == 0 ? null : request.RowIds, ct, request.CardCode);
+        return View("Index", model);
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> Status(Guid requestId, CancellationToken ct)
+    {
+        var staff = await audit.GetSignedInStaffAsync(Request, ct);
+        if (staff == null) return Unauthorized();
+        var result = await service.VerifyAsync(requestId, staff.Id);
+        if (Request.Headers.Accept.ToString().Contains("application/json"))
+            return Json(new { result.IsSuccess, result.IsUncertain, result.RequestConflict, result.ErrorMessage,
+                url = result.IsSuccess ? Url.Action(nameof(Status), new { requestId }) : null });
+        if (result.RequestConflict) return Forbid();
+        var model = new DirectLoanViewModel { RequestId = requestId, VerifyOnly = result.IsUncertain, Retrying = true };
+        if (result.Operation is { } operation)
+        {
+            model = await service.LookupAsync(operation.CardCode, null, ct);
+            model.RequestId = requestId;
+            model.Retrying = true;
+            if (result.IsSuccess)
+            {
+                model.Receipts = result.Loans!.ToList();
+                TempData["DirectLoanSuccess"] = "Xác nhận mượn sách thành công.";
+            }
+            else model.SelectedCopies = await service.ValidateRowsAsync(
+                System.Text.Json.JsonSerializer.Deserialize<string[]>(operation.CopyCodesJson)!,
+                System.Text.Json.JsonSerializer.Deserialize<string[]>(operation.RowIdsJson)!, ct, operation.CardCode);
+        }
+        if (!result.IsSuccess) ModelState.AddModelError("", result.ErrorMessage!);
         return View("Index", model);
     }
 
     [HttpPost, ValidateAntiForgeryToken]
     public async Task<IActionResult> Confirm(DirectLoanRequest request, CancellationToken ct)
     {
-        if (!ModelState.IsValid) return View("Index", await service.LookupAsync(request.CardCode, request.CopyCode, ct));
-        var staff = await audit.GetSignedInStaffAsync(Request, ct);
-        if (staff == null) return Unauthorized();
-        var result = await service.ConfirmAsync(request.CardCode, request.CopyCode, staff, ct, AuditLogService.ClientIp(HttpContext));
-        if (!result.IsSuccess)
-        {
-            ModelState.AddModelError(string.Empty, result.ErrorMessage ?? "Không thể tạo phiếu mượn.");
-            return View("Index", await service.LookupAsync(request.CardCode, request.CopyCode, ct));
-        }
-        TempData["DirectLoanSuccess"] = "Cho mượn thành công.";
-        return RedirectToAction(nameof(Index), new { cardCode = request.CardCode.Trim(), copyCode = request.CopyCode.Trim(), loanId = result.Loan!.Id });
+        return await ConfirmMany(new DirectLoanBatchRequest { RequestId = request.RequestId, CardCode = request.CardCode,
+            CopyCodes = [request.CopyCode] }, ct);
     }
 }

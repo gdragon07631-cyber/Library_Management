@@ -25,6 +25,8 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     public DbSet<BookHold> BookHolds => Set<BookHold>();
     public DbSet<HoldPickupExpiryRun> HoldPickupExpiryRuns => Set<HoldPickupExpiryRun>();
     public DbSet<BookLoan> BookLoans => Set<BookLoan>();
+    public DbSet<DirectLoanOperation> DirectLoanOperations => Set<DirectLoanOperation>();
+    public DbSet<DirectLoanOperationItem> DirectLoanOperationItems => Set<DirectLoanOperationItem>();
     public DbSet<LoanContactHistory> LoanContactHistories => Set<LoanContactHistory>();
     public DbSet<BookCopy> BookCopies => Set<BookCopy>();
     public DbSet<BookCopyStatusHistory> BookCopyStatusHistories => Set<BookCopyStatusHistory>();
@@ -60,6 +62,23 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
+        modelBuilder.Entity<DirectLoanOperation>(entity =>
+        {
+            entity.HasKey(x => x.RequestId);
+            entity.Property(x => x.RequestId).ValueGeneratedNever();
+            entity.Property(x => x.PayloadHash).HasMaxLength(64).IsRequired();
+            entity.Property(x => x.CardCode).HasMaxLength(32).IsRequired();
+            entity.Property(x => x.CopyCodesJson).IsRequired();
+            entity.Property(x => x.RowIdsJson).IsRequired();
+            entity.HasOne<AdminAccount>().WithMany().HasForeignKey(x => x.StaffId).OnDelete(DeleteBehavior.Restrict);
+        });
+        modelBuilder.Entity<DirectLoanOperationItem>(entity =>
+        {
+            entity.HasKey(x => new { x.RequestId, x.Position });
+            entity.HasIndex(x => x.BookLoanId).IsUnique();
+            entity.HasOne<DirectLoanOperation>().WithMany().HasForeignKey(x => x.RequestId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(x => x.BookLoan).WithMany().HasForeignKey(x => x.BookLoanId).OnDelete(DeleteBehavior.Restrict);
+        });
 
         modelBuilder.Entity<Author>(entity =>
         {
@@ -224,6 +243,7 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
 
         modelBuilder.Entity<BookHold>(entity =>
         {
+            entity.HasIndex(hold => hold.ExpiredBookCopyId);
             entity.HasIndex(hold => new { hold.ReaderAccountId, hold.Status, hold.BookId });
             entity.Property(hold => hold.HeldAtUtc).HasColumnType("datetime2");
             entity.Property(hold => hold.Status).HasMaxLength(50).HasDefaultValue(BookHoldStatus.Waiting).IsRequired();

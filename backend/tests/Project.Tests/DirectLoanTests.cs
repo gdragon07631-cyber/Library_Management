@@ -456,7 +456,7 @@ public sealed partial class DirectLoanTests : IDisposable
             var antiforgeryInput = Regex.Match(html, "<input[^>]*name=\"__RequestVerificationToken\"[^>]*>").Value;
             var antiforgery = WebUtility.HtmlDecode(Regex.Match(antiforgeryInput, "value=\"([^\"]+)\"").Groups[1].Value);
             Assert.NotEmpty(antiforgery);
-            var fields = new Dictionary<string, string> { ["CardCode"] = "CARD01", ["CopyCode"] = "COPY01" };
+            var fields = new Dictionary<string, string> { ["CardCode"] = "CARD01", ["CopyCode"] = "COPY01", ["RequestId"] = Guid.NewGuid().ToString() };
             var endpoint = batch ? "/DirectLoan/ConfirmMany" : "/DirectLoan/Confirm";
             if (batch)
             {
@@ -475,7 +475,7 @@ public sealed partial class DirectLoanTests : IDisposable
                 Assert.Equal("Mã vạch không tồn tại trong hệ thống.", invalidRow.GetProperty("error").GetString());
                 var duplicateFields = new Dictionary<string, string>(fields)
                 {
-                    ["CopyCodes[1]"] = "COPY01", ["__RequestVerificationToken"] = antiforgery
+                    ["CopyCodes[1]"] = "COPY01", ["__RequestVerificationToken"] = antiforgery, ["RequestId"] = Guid.NewGuid().ToString()
                 };
                 using var duplicate = await client.PostAsync(endpoint, new FormUrlEncodedContent(duplicateFields));
                 var duplicateHtml = WebUtility.HtmlDecode(await duplicate.Content.ReadAsStringAsync());
@@ -484,7 +484,7 @@ public sealed partial class DirectLoanTests : IDisposable
                 Assert.Empty(await db.BookLoans.ToListAsync());
                 await db.BookCopies.Where(c => c.CopyCode == "COPY02")
                     .ExecuteUpdateAsync(s => s.SetProperty(c => c.Status, BookCopyStatus.UnderRepair));
-                var changedFields = new Dictionary<string, string>(fields) { ["__RequestVerificationToken"] = antiforgery };
+                var changedFields = new Dictionary<string, string>(fields) { ["__RequestVerificationToken"] = antiforgery, ["RequestId"] = Guid.NewGuid().ToString() };
                 using var changedResponse = await client.PostAsync(endpoint, new FormUrlEncodedContent(changedFields));
                 var changedHtml = WebUtility.HtmlDecode(await changedResponse.Content.ReadAsStringAsync());
                 var secondRow = Regex.Match(changedHtml, "<tr[^>]*data-row-id=\"http-row-1\"[^>]*>[\\s\\S]*?</tr>").Value;
@@ -511,7 +511,7 @@ public sealed partial class DirectLoanTests : IDisposable
                 Assert.DoesNotContain("private@test.local", holdJson);
                 Assert.DoesNotContain("0998765432", holdJson);
                 Assert.False(holdRow.TryGetProperty("readerAccount", out _));
-                var rejectedFields = new Dictionary<string, string>(fields) { ["__RequestVerificationToken"] = antiforgery };
+                var rejectedFields = new Dictionary<string, string>(fields) { ["__RequestVerificationToken"] = antiforgery, ["RequestId"] = Guid.NewGuid().ToString() };
                 using var rejected = await client.PostAsync(endpoint, new FormUrlEncodedContent(rejectedFields));
                 var rejectedHtml = WebUtility.HtmlDecode(await rejected.Content.ReadAsStringAsync());
                 var heldHtml = Regex.Match(rejectedHtml, "<tr[^>]*data-row-id=\"http-row-1\"[^>]*>[\\s\\S]*?</tr>").Value;
@@ -529,7 +529,7 @@ public sealed partial class DirectLoanTests : IDisposable
             using var response = await client.PostAsync(endpoint, new FormUrlEncodedContent(fields));
             response.EnsureSuccessStatusCode();
             var receipt = WebUtility.HtmlDecode(await response.Content.ReadAsStringAsync());
-            Assert.Contains("Cho mượn thành công.", receipt);
+            Assert.Contains("Xác nhận mượn sách thành công.", receipt);
             Assert.Contains("Phiếu mượn #", receipt);
             Assert.Contains("Đang mượn", receipt);
             Assert.Contains($"id=\"remainingLoans\">{(batch ? 2 : 4)}", receipt);
@@ -549,7 +549,7 @@ public sealed partial class DirectLoanTests : IDisposable
             }
             using var repeat = await client.PostAsync(endpoint, new FormUrlEncodedContent(fields));
             var repeatHtml = WebUtility.HtmlDecode(await repeat.Content.ReadAsStringAsync());
-            Assert.Contains("Bản sao này đang được mượn, không thể tiếp tục cho mượn.", repeatHtml);
+            Assert.Contains("Xác nhận mượn sách thành công.", repeatHtml);
             Assert.Equal(batch ? 3 : 1, await db.BookLoans.CountAsync());
         }
         finally { await app.StopAsync(); }

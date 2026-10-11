@@ -6,7 +6,7 @@ using Project.Models;
 
 namespace Project.Services;
 
-public sealed class DirectLoanService(ApplicationDbContext db, IBookLoanService loans,
+public sealed partial class DirectLoanService(ApplicationDbContext db, IBookLoanService loans,
     IWorkingScheduleService schedules, ILogger<DirectLoanService> logger)
 {
     public async Task<DirectLoanViewModel> LookupAsync(string? cardCode, string? copyCode, CancellationToken ct = default)
@@ -129,18 +129,34 @@ public sealed class DirectLoanService(ApplicationDbContext db, IBookLoanService 
     }
 
     public async Task<DirectLoanBatchOutcome> ConfirmManyAsync(string cardCode, IReadOnlyList<string> copyCodes,
-        AdminAccount staff, CancellationToken ct = default, string? ipAddress = null, IReadOnlyList<string>? rowIds = null)
+        AdminAccount staff, CancellationToken ct = default, string? ipAddress = null, IReadOnlyList<string>? rowIds = null, Guid? requestId = null)
     {
         if (string.IsNullOrWhiteSpace(cardCode) || copyCodes.Count == 0)
             return new(false, "Vui lòng nhập mã thẻ và chọn ít nhất một bản sao.");
         var codes = copyCodes.Select(c => c?.Trim() ?? "").ToArray();
         if (cardCode.Trim().Length > 32 || (rowIds != null && rowIds.Count != codes.Length))
             return new(false, "Mã thẻ hoặc mã vạch không hợp lệ.");
+        if (codes.Any(c => c.Length > 50)) return new(false, "Mã vạch không hợp lệ.");
+        var hash = PayloadHash(cardCode.Trim(), codes);
         // A serializable transaction includes the existing loan service's SaveChanges.
         // SQL Server update locks serialize requests for the same reader before checking their limit.
         try
         {
+            if (requestId.HasValue)
+            {
+                if (requestId == Guid.Empty) return new(false, "Thiếu định danh lượt mượn.", RequestConflict: true);
+                var registered = await RegisterAsync(requestId.Value, hash, cardCode.Trim(), codes, rowIds, staff.Id, ct);
+                if (registered != null) return registered;
+            }
             await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
+            DirectLoanOperation? operation = null;
+            if (requestId.HasValue)
+            {
+                operation = await LockedOperationAsync(db, requestId.Value, ct);
+                if (operation == null) return UnknownResult();
+                if (operation.StaffId != staff.Id || operation.PayloadHash != hash) return ConflictResult();
+                if (operation.CompletedAtUtc != null) return await CompletedResultAsync(db, operation.RequestId, ct);
+            }
             var normalizedCard = cardCode.Trim();
             if (db.Database.IsSqlServer())
             {
@@ -215,14 +231,23 @@ public sealed class DirectLoanService(ApplicationDbContext db, IBookLoanService 
                 await db.SaveChangesAsync(ct);
                 created.Add(result.Loan);
             }
+            if (operation != null)
+            {
+                operation.CompletedAtUtc = DateTime.UtcNow;
+                for (var i = 0; i < copies.Count; i++)
+                    db.DirectLoanOperationItems.Add(new() { RequestId = operation.RequestId, Position = i,
+                        BookLoanId = created.Single(l => l.BookCopyId == copies[i].Id).Id });
+                await db.SaveChangesAsync(ct);
+            }
             await transaction.CommitAsync(ct);
             return new(true, Loans: copies.Select(c => created.Single(l => l.BookCopyId == c.Id)).ToList());
         }
-        catch (Exception ex) when (ex is DbUpdateException or DbException
-            or InvalidOperationException { InnerException: DbException })
+        catch (Exception ex)
         {
             logger.LogWarning(ex, "Không thể lưu lượt mượn trực tiếp.");
-            return new(false, "Không thể lưu phiếu mượn. Dữ liệu chưa được ghi nhận; vui lòng tra cứu lại và thử lại.");
+            if (requestId.HasValue)
+                return await VerifyAsync(requestId.Value, staff.Id, hash);
+            return new(false, "Không thể xác nhận lượt mượn. Vui lòng kiểm tra lại kết quả trước khi thử lại.");
         }
         finally
         {

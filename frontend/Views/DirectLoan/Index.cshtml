@@ -37,8 +37,12 @@
         </form>
         <div id="selectionMessage" class="alert alert-warning" role="alert" hidden></div>
         <form asp-action="ConfirmMany" method="post" id="confirmDirectLoan"
+              data-status-url="@Url.Action("Status")" data-index-url="@Url.Action("Index")"
+              data-verify-only="@Model.VerifyOnly.ToString().ToLowerInvariant()" data-retrying="@Model.Retrying.ToString().ToLowerInvariant()"
+              data-completed="@((Model.Receipts.Count > 0 || Model.Receipt != null).ToString().ToLowerInvariant())"
               data-remaining="@Model.RemainingLoans" data-reader-valid="@((Model.ReaderName != null && Model.ReaderError == null).ToString().ToLowerInvariant())">
             <input type="hidden" name="CardCode" value="@Model.CardCode" />
+            <input type="hidden" name="RequestId" value="@Model.RequestId" />
             <div class="table-responsive">
                 <table class="table align-middle">
                     <thead><tr><th>STT</th><th>Mã vạch</th><th>Tên đầu sách</th><th>Trạng thái</th><th>Kiểm tra</th><th>Thao tác</th></tr></thead>
@@ -60,6 +64,7 @@
             <div id="rowWarning" class="alert alert-warning" role="status" hidden>Vui lòng sửa hoặc xóa hết dòng lỗi và chờ kiểm tra xong trước khi xác nhận.</div>
             <div id="limitWarning" class="alert alert-warning" role="alert" hidden></div>
             <button type="submit" class="btn btn-primary" disabled>Xác nhận mượn</button>
+            <button type="button" id="verifyDirectLoan" class="btn btn-outline-primary" hidden>Kiểm tra kết quả</button>
             <p class="text-muted small mt-2 mb-0">Nhập mã vạch rồi nhấn Enter để thêm sách. Xác nhận một lần cho toàn bộ danh sách.</p>
         </form>
     </div></div>
