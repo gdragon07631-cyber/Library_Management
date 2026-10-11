@@ -4,6 +4,26 @@
 }
 <div class="container py-4">
     <a asp-controller="Loan" asp-action="Index" class="btn btn-outline-secondary btn-sm mb-3">Quay lại phiếu mượn</a>
+    <form asp-controller="ReaderLoanHistory" asp-action="Details" asp-route-id="@Model.Reader.Id" method="get" class="card card-body shadow-sm border-0 mb-4">
+        <div class="row g-3 align-items-end">
+            <div class="col-sm-4">
+                <label for="startDate" class="form-label">Từ ngày mượn</label>
+                <input type="date" id="startDate" name="startDate" value="@Model.StartDate?.ToString("yyyy-MM-dd")" class="form-control" />
+            </div>
+            <div class="col-sm-4">
+                <label for="endDate" class="form-label">Đến ngày mượn</label>
+                <input type="date" id="endDate" name="endDate" value="@Model.EndDate?.ToString("yyyy-MM-dd")" class="form-control" />
+            </div>
+            <div class="col-sm-4 d-flex gap-2">
+                <button type="submit" class="btn btn-primary">Lọc</button>
+                <a asp-controller="ReaderLoanHistory" asp-action="Details" asp-route-id="@Model.Reader.Id" class="btn btn-outline-secondary">Bỏ bộ lọc</a>
+            </div>
+        </div>
+    </form>
+    @if (!string.IsNullOrWhiteSpace(Model.DateFilterError))
+    {
+        <div class="alert alert-danger" role="alert">@Model.DateFilterError</div>
+    }
     <h1 class="h3 fw-bold">Lịch sử mượn trả</h1>
     <p class="text-muted">@Model.Reader.FullName · Mã bạn đọc: @Model.Reader.StudentOrStaffCode</p>
 
@@ -21,7 +41,7 @@
                 <tbody>
                 @if (Model.Loans.Count == 0)
                 {
-                    <tr><td colspan="6" class="text-center text-muted py-4">Bạn đọc chưa có phiếu mượn nào.</td></tr>
+                    <tr><td colspan="6" class="text-center text-muted py-4">@(Model.IsFiltered ? "Không có phiếu mượn trong khoảng ngày đã chọn." : "Bạn đọc chưa có phiếu mượn nào.")</td></tr>
                 }
                 @foreach (var loan in Model.Loans)
                 {

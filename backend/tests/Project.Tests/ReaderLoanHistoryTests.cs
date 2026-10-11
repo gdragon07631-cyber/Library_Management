@@ -67,6 +67,65 @@ public sealed class ReaderLoanHistoryTests : IDisposable
     }
 
     [Fact]
+    public async Task DateFiltersAreInclusiveAndRecalculateTheVisibleSummary()
+    {
+        var (reader, book) = await AddHistoryFixtureAsync();
+        var dates = new[]
+        {
+            new DateOnly(2026, 5, 9),
+            new DateOnly(2026, 5, 10),
+            new DateOnly(2026, 5, 12),
+            new DateOnly(2026, 5, 13)
+        };
+        foreach (var date in dates) await AddLoanAsync(reader, book, date);
+
+        var controller = new ReaderLoanHistoryController(db);
+
+        var fromOnly = await GetModelAsync(controller, reader.Id, new DateOnly(2026, 5, 10), null);
+        Assert.Equal([dates[3], dates[2], dates[1]], fromOnly.Loans.Select(loan => loan.LoanDate));
+        Assert.Equal(3, fromOnly.TotalLoanCount);
+
+        var throughOnly = await GetModelAsync(controller, reader.Id, null, new DateOnly(2026, 5, 12));
+        Assert.Equal([dates[2], dates[1], dates[0]], throughOnly.Loans.Select(loan => loan.LoanDate));
+        Assert.Equal(3, throughOnly.TotalLoanCount);
+
+        var range = await GetModelAsync(controller, reader.Id, dates[1], dates[2]);
+        Assert.Equal([dates[2], dates[1]], range.Loans.Select(loan => loan.LoanDate));
+        Assert.Equal(2, range.OpenLoanCount);
+        Assert.Equal(2, range.TotalLoanCount);
+        Assert.Null(range.LateReturnCount);
+
+        var cleared = await GetModelAsync(controller, reader.Id, null, null);
+        Assert.Equal([dates[3], dates[2], dates[1], dates[0]], cleared.Loans.Select(loan => loan.LoanDate));
+        Assert.Equal(4, cleared.TotalLoanCount);
+    }
+
+    [Fact]
+    public async Task EmptyRangeAndInvalidDateRangeAreHandledWithoutMisleadingRows()
+    {
+        var (reader, book) = await AddHistoryFixtureAsync();
+        await AddLoanAsync(reader, book, new DateOnly(2026, 5, 10));
+        var controller = new ReaderLoanHistoryController(db);
+
+        var emptyRange = await GetModelAsync(controller, reader.Id, new DateOnly(2026, 6, 1), new DateOnly(2026, 6, 30));
+        Assert.Empty(emptyRange.Loans);
+        Assert.Equal(0, emptyRange.OpenLoanCount);
+        Assert.Equal(0, emptyRange.TotalLoanCount);
+        Assert.Null(emptyRange.DateFilterError);
+
+        var invalidRange = await GetModelAsync(controller, reader.Id, new DateOnly(2026, 6, 30), new DateOnly(2026, 6, 1));
+        Assert.Empty(invalidRange.Loans);
+        Assert.Equal(0, invalidRange.TotalLoanCount);
+        Assert.Equal("Ngày bắt đầu không được sau ngày kết thúc.", invalidRange.DateFilterError);
+
+        var malformedController = new ReaderLoanHistoryController(db);
+        malformedController.ModelState.AddModelError("startDate", "Invalid date");
+        var malformed = await GetModelAsync(malformedController, reader.Id, null, null);
+        Assert.Empty(malformed.Loans);
+        Assert.Equal("Ngày lọc không hợp lệ. Vui lòng chọn lại ngày theo định dạng hợp lệ.", malformed.DateFilterError);
+    }
+
+    [Fact]
     public void HistoryControllerIsRestrictedToLibrariansAndManagers()
     {
         var access = Assert.IsType<StaffOnlyAttribute>(Attribute.GetCustomAttribute(typeof(ReaderLoanHistoryController), typeof(StaffOnlyAttribute)));
@@ -82,4 +141,37 @@ public sealed class ReaderLoanHistoryTests : IDisposable
         StudentOrStaffCode = code,
         PasswordHash = "test"
     };
+
+    private async Task<(ReaderAccount Reader, Book Book)> AddHistoryFixtureAsync()
+    {
+        var reader = NewReader("filtered@example.com", "R-FILTERED");
+        var author = new Author { Name = "Filter author" };
+        db.ReaderAccounts.Add(reader);
+        db.Authors.Add(author);
+        await db.SaveChangesAsync();
+        var book = new Book { Title = "Filter book", AuthorId = author.Id };
+        db.Books.Add(book);
+        await db.SaveChangesAsync();
+        return (reader, book);
+    }
+
+    private async Task AddLoanAsync(ReaderAccount reader, Book book, DateOnly loanDate)
+    {
+        db.BookLoans.Add(new BookLoan
+        {
+            ReaderAccountId = reader.Id,
+            BookId = book.Id,
+            LoanDate = loanDate,
+            OriginalDueDate = loanDate.AddDays(14),
+            DueDate = loanDate.AddDays(14)
+        });
+        await db.SaveChangesAsync();
+    }
+
+    private static async Task<ReaderLoanHistoryViewModel> GetModelAsync(
+        ReaderLoanHistoryController controller, int readerId, DateOnly? startDate, DateOnly? endDate)
+    {
+        var result = Assert.IsType<ViewResult>(await controller.Details(readerId, startDate, endDate));
+        return Assert.IsType<ReaderLoanHistoryViewModel>(result.Model);
+    }
 }
