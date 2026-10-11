@@ -20,6 +20,17 @@
             </div>
         </div>
     </form>
+    <form asp-controller="ReaderLoanHistory" asp-action="ExportCsv" asp-route-id="@Model.Reader.Id" method="get" class="mb-4">
+        @if (Model.StartDate is { } startDate)
+        {
+            <input type="hidden" name="startDate" value="@startDate.ToString("yyyy-MM-dd")" />
+        }
+        @if (Model.EndDate is { } endDate)
+        {
+            <input type="hidden" name="endDate" value="@endDate.ToString("yyyy-MM-dd")" />
+        }
+        <button type="submit" class="btn btn-outline-primary" disabled="@(Model.DateFilterError is not null)">Xuất CSV</button>
+    </form>
     @if (!string.IsNullOrWhiteSpace(Model.DateFilterError))
     {
         <div class="alert alert-danger" role="alert">@Model.DateFilterError</div>
