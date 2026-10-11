@@ -24,5 +24,18 @@ public sealed class DirectLoanViewModel
     public string? CopyStatus { get; set; }
     public string? CopyError { get; set; }
     public BookLoan? Receipt { get; set; }
+    public List<DirectLoanSelection> SelectedCopies { get; set; } = [];
+    public List<BookLoan> Receipts { get; set; } = [];
     public bool CanConfirm => ReaderName != null && BookTitle != null && ReaderError == null && CopyError == null;
 }
+
+public sealed record DirectLoanSelection(string CopyCode, string BookTitle, string Status);
+
+public sealed class DirectLoanBatchRequest
+{
+    [Required, MaxLength(32)]
+    public string CardCode { get; set; } = string.Empty;
+    public List<string> CopyCodes { get; set; } = [];
+}
+
+public sealed record DirectLoanBatchOutcome(bool IsSuccess, string? ErrorMessage = null, IReadOnlyList<BookLoan>? Loans = null);

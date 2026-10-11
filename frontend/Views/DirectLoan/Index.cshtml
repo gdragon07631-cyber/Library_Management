@@ -26,29 +26,43 @@
                 </dl>
             }
             @if (Model.ReaderError != null) { <div class="alert alert-warning">@Model.ReaderError</div> }
+        </form>
+        <form id="addDirectLoanCopy" data-lookup-url="@Url.Action("LookupCopy")">
             <label for="CopyCode" class="form-label fw-semibold">2. Mã vạch bản sao</label>
             <div class="input-group mb-3">
-                <input id="CopyCode" name="copyCode" value="@Model.CopyCode" maxlength="50" class="form-control" autocomplete="off" />
-                <button class="btn btn-outline-primary" type="submit">Tra cứu bản sao</button>
+                <input id="CopyCode" name="copyCode" maxlength="50" class="form-control" autocomplete="off" />
+                <button class="btn btn-outline-primary" type="submit">Thêm bản sao</button>
             </div>
-            @if (Model.BookTitle != null)
-            {
-                <dl class="row">
-                    <dt class="col-sm-4">Tên đầu sách</dt><dd class="col-sm-8">@Model.BookTitle</dd>
-                    <dt class="col-sm-4">Mã vạch</dt><dd class="col-sm-8">@Model.CopyCode</dd>
-                    <dt class="col-sm-4">Trạng thái</dt><dd class="col-sm-8">@Model.CopyStatus</dd>
-                </dl>
-            }
             @if (Model.CopyError != null && Model.Receipt == null) { <div class="alert alert-warning">@Model.CopyError</div> }
         </form>
-        <form asp-action="Confirm" method="post" id="confirmDirectLoan">
+        <div id="selectionMessage" class="alert alert-warning" role="alert" hidden></div>
+        <form asp-action="ConfirmMany" method="post" id="confirmDirectLoan"
+              data-remaining="@Model.RemainingLoans" data-reader-valid="@((Model.ReaderName != null && Model.ReaderError == null).ToString().ToLowerInvariant())">
             <input type="hidden" name="CardCode" value="@Model.CardCode" />
-            <input type="hidden" name="CopyCode" value="@Model.CopyCode" />
-            <button type="submit" class="btn btn-primary" disabled="@(!Model.CanConfirm)">Xác nhận mượn</button>
-            <p class="text-muted small mt-2 mb-0">Tra cứu mã thẻ và một mã vạch hợp lệ trước khi xác nhận.</p>
+            <div class="table-responsive">
+                <table class="table align-middle">
+                    <thead><tr><th>STT</th><th>Mã vạch</th><th>Tên đầu sách</th><th>Trạng thái</th><th>Thao tác</th></tr></thead>
+                    <tbody id="selectedCopies">
+                    @foreach (var copy in Model.SelectedCopies)
+                    {
+                        <tr data-code="@copy.CopyCode" data-title="@copy.BookTitle" data-status="@copy.Status">
+                            <td></td><td>@copy.CopyCode</td><td>@copy.BookTitle</td><td>@copy.Status</td><td></td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+            <p aria-live="polite">Đang chọn: <strong id="selectedCount">0</strong>. Còn được chọn: <strong id="remainingSelection">@Model.RemainingLoans</strong>.</p>
+            <div id="limitWarning" class="alert alert-warning" role="alert" hidden></div>
+            <button type="submit" class="btn btn-primary" disabled>Xác nhận mượn</button>
+            <p class="text-muted small mt-2 mb-0">Nhập mã vạch rồi nhấn Enter để thêm sách. Xác nhận một lần cho toàn bộ danh sách.</p>
         </form>
     </div></div>
-    @if (Model.Receipt is { } receipt)
+    @if (Model.Receipts.Count > 0)
+    {
+        <h2 class="h5">Đã mượn thành công @Model.Receipts.Count bản sao</h2>
+    }
+    @foreach (var receipt in Model.Receipts.Concat(Model.Receipt == null ? Enumerable.Empty<Project.Models.BookLoan>() : new[] { Model.Receipt }))
     {
         <div class="card shadow-sm border-0"><div class="card-body">
             <h2 class="h5">Phiếu mượn #@receipt.Id</h2>
@@ -63,12 +77,5 @@
     }
 </div>
 @section Scripts {
-    <script>
-        const confirmForm = document.getElementById('confirmDirectLoan');
-        confirmForm.addEventListener('submit', () => confirmForm.querySelector('button').disabled = true);
-        // Edited lookup values must be looked up again; never confirm a stale hidden selection.
-        for (const id of ['CardCode', 'CopyCode']) {
-            document.getElementById(id).addEventListener('input', () => confirmForm.querySelector('button').disabled = true);
-        }
-    </script>
+    <script src="~/js/direct-loan.js" asp-append-version="true"></script>
 }

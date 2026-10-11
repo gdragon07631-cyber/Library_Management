@@ -179,6 +179,115 @@ public sealed class DirectLoanTests : IDisposable
         Assert.Empty(await db.BookLoans.ToListAsync());
     }
 
+    private async Task<string[]> AddCopies(int count)
+    {
+        var first = await db.BookCopies.FirstAsync();
+        for (var i = 2; i <= count; i++)
+            db.BookCopies.Add(new BookCopy { CopyCode = $"COPY{i:00}", BookId = first.BookId, ShelfId = first.ShelfId });
+        await db.SaveChangesAsync();
+        return Enumerable.Range(1, count).Select(i => $"COPY{i:00}").ToArray();
+    }
+
+    [Theory]
+    [InlineData(2)]
+    [InlineData(3)]
+    [InlineData(5)]
+    public async Task BatchCreatesEveryLoanAndUpdatesCountsTogether(int count)
+    {
+        var codes = await AddCopies(count);
+        var result = await service.ConfirmManyAsync("CARD01", codes, staff);
+        Assert.True(result.IsSuccess, result.ErrorMessage);
+        Assert.Equal(count, result.Loans!.Count);
+        Assert.Equal(count, await db.BookLoans.CountAsync());
+        Assert.Equal(count, await db.BookCopies.CountAsync(c => c.Status == BookCopyStatus.OnLoan));
+        Assert.Equal(count, await db.BookCopyStatusHistories.CountAsync());
+        Assert.Equal(count, await db.AuditLogs.CountAsync());
+        Assert.All(result.Loans, loan => { Assert.NotNull(loan.BookCopyId); Assert.Equal(today.AddDays(7), loan.DueDate); });
+        var page = await service.LookupAsync("CARD01", null);
+        Assert.Equal(count, page.CurrentLoans);
+        Assert.Equal(5 - count, page.RemainingLoans);
+        Assert.False((await service.ConfirmManyAsync("CARD01", codes, staff)).IsSuccess);
+        Assert.Equal(count, await db.BookLoans.CountAsync());
+    }
+
+    [Theory]
+    [InlineData("empty")]
+    [InlineData("duplicate")]
+    [InlineData("missing")]
+    [InlineData("changed")]
+    [InlineData("limit")]
+    [InlineData("locked")]
+    public async Task InvalidBatchLeavesAllAvailableCopiesUnchanged(string scenario)
+    {
+        var codes = await AddCopies(3);
+        var card = await db.LibraryCards.Include(c => c.ReaderAccount).SingleAsync();
+        switch (scenario)
+        {
+            case "empty": codes = []; break;
+            case "duplicate": codes = ["COPY01", " COPY01 "]; break;
+            case "missing": codes[2] = "MISSING"; break;
+            case "changed": (await db.BookCopies.SingleAsync(c => c.CopyCode == "COPY03")).Status = BookCopyStatus.OnHold; break;
+            case "limit": AddLoans(card.ReaderAccountId, 3, today.AddDays(3)); break;
+            case "locked": card.ReaderAccount!.IsLocked = true; break;
+        }
+        await db.SaveChangesAsync();
+        var before = await db.BookLoans.CountAsync();
+        Assert.False((await service.ConfirmManyAsync("CARD01", codes, staff)).IsSuccess);
+        Assert.Equal(before, await db.BookLoans.CountAsync());
+        Assert.Equal(0, await db.BookCopies.CountAsync(c => c.Status == BookCopyStatus.OnLoan));
+        Assert.Empty(await db.BookCopyStatusHistories.ToListAsync());
+    }
+
+    [Fact]
+    public async Task StaffCardCanBorrowTenWithoutSeparateBatchLimit()
+    {
+        (await db.LibraryCards.Include(c => c.LibraryCardType).SingleAsync()).LibraryCardType!.Name = "Thẻ cán bộ";
+        var codes = await AddCopies(10);
+        var result = await service.ConfirmManyAsync("CARD01", codes, staff);
+        Assert.True(result.IsSuccess, result.ErrorMessage);
+        Assert.Equal(10, await db.BookLoans.CountAsync());
+        Assert.Equal(0, (await service.LookupAsync("CARD01", null)).RemainingLoans);
+    }
+
+    [Fact]
+    public async Task FailureAfterFirstCompleteLineRollsBackEntireBatch()
+    {
+        var codes = await AddCopies(3);
+        failure.FailAt = 4;
+        failure.Enabled = true;
+        Assert.False((await service.ConfirmManyAsync("CARD01", codes, staff)).IsSuccess);
+        Assert.Equal(4, failure.Saves);
+        Assert.Empty(await db.BookLoans.ToListAsync());
+        Assert.Empty(await db.AuditLogs.ToListAsync());
+        Assert.Empty(await db.BookCopyStatusHistories.ToListAsync());
+        Assert.Equal(3, await db.BookCopies.CountAsync(c => c.Status == BookCopyStatus.Available));
+        failure.Enabled = false;
+        await db.SaveChangesAsync();
+        Assert.Empty(await db.BookLoans.ToListAsync());
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ConcurrentBatchesCannotPartiallySaveOrExceedQuota(bool overlap)
+    {
+        await AddCopies(6);
+        using var barrier = new Barrier(2);
+        async Task<DirectLoanBatchOutcome> Run(string[] codes) => await Task.Run(async () =>
+        {
+            using var context = new ApplicationDbContext(Options().Options);
+            var schedule = new WorkingScheduleService(context);
+            var direct = new DirectLoanService(context, new BookLoanService(context, schedule), schedule, NullLogger<DirectLoanService>.Instance);
+            barrier.SignalAndWait(TimeSpan.FromSeconds(10));
+            return await direct.ConfirmManyAsync("CARD01", codes, staff);
+        });
+        var results = await Task.WhenAll(Run(["COPY01", "COPY02", "COPY03"]),
+            Run(overlap ? ["COPY03", "COPY04", "COPY05"] : ["COPY04", "COPY05", "COPY06"]));
+        Assert.Single(results, r => r.IsSuccess);
+        Assert.Equal(3, await db.BookLoans.CountAsync());
+        Assert.Equal(3, await db.BookCopies.CountAsync(c => c.Status == BookCopyStatus.OnLoan));
+    }
+
     private void AddLoans(int readerId, int count, DateOnly dueDate)
     {
         var bookId = db.Books.Single().Id;
@@ -219,9 +328,12 @@ public sealed class DirectLoanTests : IDisposable
         return sqlConnection == null ? options.UseSqlite(connection.ConnectionString) : options.UseSqlServer(sqlConnection);
     }
 
-    [Fact]
-    public async Task StaffHttpFlowRendersLookupAndReceiptEnforcesAntiforgeryAndRejectsAnonymous()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task StaffHttpFlowRendersLookupAndReceiptEnforcesAntiforgeryAndRejectsAnonymous(bool batch)
     {
+        if (batch) await AddCopies(3);
         const string token = "direct-loan-test-session";
         db.RefreshTokens.Add(new RefreshToken { AdminAccountId = staff.Id, TokenHash = TokenService.HashRefreshToken(token), CreatedAtUtc = DateTime.UtcNow, ExpiresAtUtc = DateTime.UtcNow.AddHours(1) });
         await db.SaveChangesAsync();
@@ -262,21 +374,48 @@ public sealed class DirectLoanTests : IDisposable
             var antiforgery = WebUtility.HtmlDecode(Regex.Match(antiforgeryInput, "value=\"([^\"]+)\"").Groups[1].Value);
             Assert.NotEmpty(antiforgery);
             var fields = new Dictionary<string, string> { ["CardCode"] = "CARD01", ["CopyCode"] = "COPY01" };
-            using var invalidCsrf = await client.PostAsync("/DirectLoan/Confirm", new FormUrlEncodedContent(fields));
+            var endpoint = batch ? "/DirectLoan/ConfirmMany" : "/DirectLoan/Confirm";
+            if (batch)
+            {
+                fields.Remove("CopyCode");
+                for (var i = 0; i < 3; i++) fields[$"CopyCodes[{i}]"] = $"COPY{i + 1:00}";
+                using var lookup = await client.GetAsync("/DirectLoan/LookupCopy?cardCode=CARD01&copyCode=COPY02");
+                lookup.EnsureSuccessStatusCode();
+                Assert.Contains("COPY02", await lookup.Content.ReadAsStringAsync());
+                Assert.Empty(await db.BookLoans.ToListAsync());
+                var duplicateFields = new Dictionary<string, string>(fields)
+                {
+                    ["CopyCodes[1]"] = "COPY01", ["__RequestVerificationToken"] = antiforgery
+                };
+                using var duplicate = await client.PostAsync(endpoint, new FormUrlEncodedContent(duplicateFields));
+                var duplicateHtml = WebUtility.HtmlDecode(await duplicate.Content.ReadAsStringAsync());
+                Assert.Contains("Mã vạch này đã có trong danh sách mượn.", duplicateHtml);
+                Assert.Contains("data-code=\"COPY03\"", duplicateHtml);
+                Assert.Empty(await db.BookLoans.ToListAsync());
+            }
+            using var invalidCsrf = await client.PostAsync(endpoint, new FormUrlEncodedContent(fields));
             Assert.Equal(HttpStatusCode.BadRequest, invalidCsrf.StatusCode);
             Assert.Empty(await db.BookLoans.ToListAsync());
             fields["__RequestVerificationToken"] = antiforgery;
-            using var response = await client.PostAsync("/DirectLoan/Confirm", new FormUrlEncodedContent(fields));
+            using var response = await client.PostAsync(endpoint, new FormUrlEncodedContent(fields));
             response.EnsureSuccessStatusCode();
             var receipt = WebUtility.HtmlDecode(await response.Content.ReadAsStringAsync());
             Assert.Contains("Cho mượn thành công.", receipt);
             Assert.Contains("Phiếu mượn #", receipt);
             Assert.Contains("Đang mượn", receipt);
-            Assert.Contains("id=\"remainingLoans\">4", receipt);
-            Assert.Single(await db.BookLoans.ToListAsync());
-            using var repeat = await client.PostAsync("/DirectLoan/Confirm", new FormUrlEncodedContent(fields));
-            Assert.Contains("không thể cho mượn trực tiếp", WebUtility.HtmlDecode(await repeat.Content.ReadAsStringAsync()));
-            Assert.Single(await db.BookLoans.ToListAsync());
+            Assert.Contains($"id=\"remainingLoans\">{(batch ? 2 : 4)}", receipt);
+            Assert.Equal(batch ? 3 : 1, await db.BookLoans.CountAsync());
+            if (batch)
+            {
+                Assert.Contains("COPY02", receipt);
+                Assert.Contains("COPY03", receipt);
+                var refreshed = await client.GetStringAsync(response.RequestMessage!.RequestUri);
+                Assert.Contains("COPY03", refreshed);
+            }
+            using var repeat = await client.PostAsync(endpoint, new FormUrlEncodedContent(fields));
+            var repeatHtml = WebUtility.HtmlDecode(await repeat.Content.ReadAsStringAsync());
+            Assert.Contains(batch ? "chỉ còn được mượn thêm" : "không thể cho mượn trực tiếp", repeatHtml);
+            Assert.Equal(batch ? 3 : 1, await db.BookLoans.CountAsync());
         }
         finally { await app.StopAsync(); }
     }
@@ -285,9 +424,10 @@ public sealed class DirectLoanTests : IDisposable
     {
         public bool Enabled { get; set; }
         public int Saves { get; private set; }
+        public int FailAt { get; set; } = 2;
         public override ValueTask<InterceptionResult<int>> SavingChangesAsync(DbContextEventData eventData, InterceptionResult<int> result, CancellationToken cancellationToken = default)
         {
-            if (Enabled && ++Saves == 2) throw new DbUpdateException("Simulated final save failure");
+            if (Enabled && ++Saves == FailAt) throw new DbUpdateException("Simulated final save failure");
             return ValueTask.FromResult(result);
         }
     }

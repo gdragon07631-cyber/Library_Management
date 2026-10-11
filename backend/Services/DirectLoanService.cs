@@ -67,51 +67,78 @@ public sealed class DirectLoanService(ApplicationDbContext db, IBookLoanService 
 
     public async Task<BookLoanOutcome> ConfirmAsync(string cardCode, string copyCode, AdminAccount staff, CancellationToken ct = default, string? ipAddress = null)
     {
-        if (string.IsNullOrWhiteSpace(cardCode) || string.IsNullOrWhiteSpace(copyCode))
-            return new(false, "Vui lòng nhập mã thẻ và một mã vạch bản sao.");
+        var result = await ConfirmManyAsync(cardCode, [copyCode], staff, ct, ipAddress);
+        return new(result.IsSuccess, result.ErrorMessage, result.Loans?.FirstOrDefault());
+    }
+
+    public async Task<DirectLoanBatchOutcome> ConfirmManyAsync(string cardCode, IReadOnlyList<string> copyCodes,
+        AdminAccount staff, CancellationToken ct = default, string? ipAddress = null)
+    {
+        if (string.IsNullOrWhiteSpace(cardCode) || copyCodes.Count == 0)
+            return new(false, "Vui lòng nhập mã thẻ và chọn ít nhất một bản sao.");
+        var codes = copyCodes.Select(c => c?.Trim() ?? "").ToArray();
+        if (codes.Any(c => c.Length == 0 || c.Length > 50) || cardCode.Trim().Length > 32)
+            return new(false, "Mã thẻ hoặc mã vạch không hợp lệ.");
+        if (codes.Distinct(StringComparer.OrdinalIgnoreCase).Count() != codes.Length)
+            return new(false, "Mã vạch này đã có trong danh sách mượn.");
         // A serializable transaction includes the existing loan service's SaveChanges.
         // SQL Server update locks serialize requests for the same reader before checking their limit.
         try
         {
             await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
             var normalizedCard = cardCode.Trim();
-            var normalizedCopy = copyCode.Trim();
             if (db.Database.IsSqlServer())
             {
                 await db.ReaderAccounts.FromSqlInterpolated($"SELECT r.* FROM ReaderAccounts r WITH (UPDLOCK, HOLDLOCK) INNER JOIN LibraryCards c ON c.ReaderAccountId = r.Id WHERE c.CardCode = {normalizedCard}")
                     .AsNoTracking().ToListAsync(ct);
             }
-            var page = await LookupAsync(normalizedCard, normalizedCopy, ct);
-            if (!page.CanConfirm) return new(false, page.ReaderError ?? page.CopyError ?? "Thông tin mượn không hợp lệ.");
-            var card = await db.LibraryCards.Include(c => c.LibraryCardType).SingleAsync(c => c.CardCode == normalizedCard, ct);
-            var copy = await db.BookCopies.AsNoTracking().SingleAsync(c => c.CopyCode == normalizedCopy, ct);
-            // Atomic state transition also protects against another workflow issuing this copy.
-            var changed = await db.BookCopies.Where(c => c.Id == copy.Id && c.Status == BookCopyStatus.Available)
-                .ExecuteUpdateAsync(setters => setters.SetProperty(c => c.Status, BookCopyStatus.OnLoan)
-                    .SetProperty(c => c.StatusReason, "Cho mượn trực tiếp tại quầy"), ct);
-            if (changed != 1) return new(false, "Bản sao không còn sẵn sàng. Vui lòng tra cứu lại.");
+            var page = await LookupAsync(normalizedCard, null, ct);
+            if (page.ReaderName == null || page.ReaderError != null)
+                return new(false, page.ReaderError ?? "Thông tin bạn đọc không hợp lệ.");
+            if (codes.Length > page.RemainingLoans)
+                return new(false, $"Đã chọn {codes.Length} bản sao, nhưng bạn đọc chỉ còn được mượn thêm {page.RemainingLoans} sách.");
+            var copies = new List<BookCopy>();
+            foreach (var code in codes)
+            {
+                var lookup = await LookupAsync(normalizedCard, code, ct);
+                if (!lookup.CanConfirm) return new(false, lookup.ReaderError ?? lookup.CopyError ?? "Thông tin mượn không hợp lệ.");
+                copies.Add(await db.BookCopies.AsNoTracking().SingleAsync(c => c.CopyCode == code, ct));
+            }
+            if (copies.Select(c => c.Id).Distinct().Count() != copies.Count)
+                return new(false, "Mã vạch này đã có trong danh sách mượn.");
+            var card = await db.LibraryCards.AsNoTracking().Include(c => c.LibraryCardType).SingleAsync(c => c.CardCode == normalizedCard, ct);
             var loanDate = DateOnly.FromDateTime(DateTime.Today);
             var originalDueDate = loanDate.AddDays(card.LibraryCardType!.LoanDays!.Value);
             DateOnly dueDate;
             try { dueDate = await schedules.AdjustLoanDueDateAsync(originalDueDate, ct); }
             catch (InvalidOperationException ex) { return new(false, ex.Message); }
 
-            // Reuse all existing eligibility rules, without bypass privileges or new defaults.
-            var result = await loans.CreateForHoldAsync(copy.BookId, card.ReaderAccountId, loanDate,
-                originalDueDate, dueDate, staff.Email, ct);
-            if (!result.IsSuccess || result.Loan == null) return result;
-            result.Loan.BookCopyId = copy.Id;
-            result.Loan.CreatedByAdminAccountId = staff.Id;
-            db.BookCopyStatusHistories.Add(new BookCopyStatusHistory
+            var created = new List<BookLoan>();
+            // Stable ordering reduces lock conflicts for overlapping batches.
+            foreach (var copy in copies.OrderBy(c => c.Id))
             {
-                BookCopyId = copy.Id, FromStatus = BookCopyStatus.Available, ToStatus = BookCopyStatus.OnLoan,
-                Reason = $"Cho mượn trực tiếp tại quầy – phiếu #{result.Loan.Id}", ChangedBy = staff.Email, ChangedAtUtc = DateTime.UtcNow
-            });
-            db.AuditLogs.Add(AuditLogService.Create(staff.Email, AuditActions.CreateLoan,
-                $"Cho mượn trực tiếp – phiếu #{result.Loan.Id}, bạn đọc #{card.ReaderAccountId}, bản sao {copy.CopyCode}", ipAddress));
-            await db.SaveChangesAsync(ct);
+                var changed = await db.BookCopies.Where(c => c.Id == copy.Id && c.Status == BookCopyStatus.Available)
+                    .ExecuteUpdateAsync(setters => setters.SetProperty(c => c.Status, BookCopyStatus.OnLoan)
+                        .SetProperty(c => c.StatusReason, "Cho mượn trực tiếp tại quầy"), ct);
+                if (changed != 1) return new(false, "Bản sao không còn sẵn sàng. Vui lòng tra cứu lại.");
+                // Reuse existing eligibility rules and due dates inside the same transaction.
+                var result = await loans.CreateForHoldAsync(copy.BookId, card.ReaderAccountId, loanDate,
+                    originalDueDate, dueDate, staff.Email, ct);
+                if (!result.IsSuccess || result.Loan == null) return new(false, result.ErrorMessage);
+                result.Loan.BookCopyId = copy.Id;
+                result.Loan.CreatedByAdminAccountId = staff.Id;
+                db.BookCopyStatusHistories.Add(new BookCopyStatusHistory
+                {
+                    BookCopyId = copy.Id, FromStatus = BookCopyStatus.Available, ToStatus = BookCopyStatus.OnLoan,
+                    Reason = $"Cho mượn trực tiếp tại quầy – phiếu #{result.Loan.Id}", ChangedBy = staff.Email, ChangedAtUtc = DateTime.UtcNow
+                });
+                db.AuditLogs.Add(AuditLogService.Create(staff.Email, AuditActions.CreateLoan,
+                    $"Cho mượn trực tiếp – phiếu #{result.Loan.Id}, bạn đọc #{card.ReaderAccountId}, bản sao {copy.CopyCode}", ipAddress));
+                await db.SaveChangesAsync(ct);
+                created.Add(result.Loan);
+                }
             await transaction.CommitAsync(ct);
-            return result;
+            return new(true, Loans: copies.Select(c => created.Single(l => l.BookCopyId == c.Id)).ToList());
         }
         catch (Exception ex) when (ex is DbUpdateException or DbException)
         {
