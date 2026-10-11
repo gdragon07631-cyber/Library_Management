@@ -61,6 +61,7 @@
             </span>
 @if (Model.CanProcessOverdue)
             {
+            <a asp-controller="HoldPickupHistory" asp-action="Index" class="btn btn-outline-primary ms-2">Lịch sử tự động hủy</a>
             <form asp-action="ProcessExpired" method="post" class="d-inline ms-2">
                 @Html.AntiForgeryToken()
                 <button type="submit" class="btn btn-warning" onclick="return confirm('Xử lý các đơn đã quá hạn nhận sách?')">Xử lý đơn đặt giữ quá hạn</button>

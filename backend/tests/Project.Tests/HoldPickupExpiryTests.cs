@@ -38,6 +38,9 @@ public sealed class HoldPickupExpiryTests : IDisposable
         Assert.Null(stored.PickupDeadlineUtc);
         Assert.NotNull(stored.CancelledAtUtc);
         Assert.Null(stored.CancelledByAdminAccountId);
+        Assert.Equal(copy.Id, stored.ExpiredBookCopyId);
+        Assert.Equal(copy.CopyCode, stored.ExpiredBookCopyCode);
+        Assert.Equal(BookHoldExpiryCopyOutcome.ReturnedToAvailable, stored.ExpiryCopyOutcome);
         Assert.Equal(BookCopyStatus.Available, (await db.BookCopies.AsNoTracking().SingleAsync()).Status);
         var history = await db.BookCopyStatusHistories.AsNoTracking().SingleAsync();
         Assert.Equal(BookCopyStatus.OnHold, history.FromStatus);
@@ -61,6 +64,9 @@ public sealed class HoldPickupExpiryTests : IDisposable
         Assert.True(nextStored.PickupDeadlineUtc > DateTime.UtcNow);
         Assert.Equal(BookCopyStatus.OnHold, (await db.BookCopies.AsNoTracking().SingleAsync()).Status);
         Assert.Equal(BookHoldStatus.Cancelled, (await db.BookHolds.AsNoTracking().SingleAsync(item => item.Id == overdue.Id)).Status);
+        var expiredStored = await db.BookHolds.AsNoTracking().SingleAsync(item => item.Id == overdue.Id);
+        Assert.Equal(BookHoldExpiryCopyOutcome.TransferredToNextReader, expiredStored.ExpiryCopyOutcome);
+        Assert.Equal(next.Id, expiredStored.ExpiryNextHoldId);
     }
 
     [Fact]

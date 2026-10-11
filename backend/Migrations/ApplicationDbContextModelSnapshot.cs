@@ -368,6 +368,20 @@ namespace Project.Migrations
                     b.Property<int?>("CancelledByAdminAccountId")
                         .HasColumnType("int");
 
+                    b.Property<long?>("ExpiredBookCopyId")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("ExpiredBookCopyCode")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("ExpiryCopyOutcome")
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<long?>("ExpiryNextHoldId")
+                        .HasColumnType("bigint");
+
                     b.Property<DateTime>("HeldAtUtc")
                         .HasColumnType("datetime2");
 
@@ -387,6 +401,8 @@ namespace Project.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("BookCopyId");
+
+                    b.HasIndex("ExpiredBookCopyId");
 
                     b.HasIndex("BookId");
 

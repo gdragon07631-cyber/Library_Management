@@ -1,0 +1,83 @@
+@model Project.Models.AutoCancelledHoldHistoryPageViewModel
+@{
+    ViewData["Title"] = "Lịch sử tự động hủy đơn đặt giữ";
+}
+
+<div class="container-fluid py-3 px-4">
+    <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-2">
+        <div>
+            <h1 class="h3 mb-1 text-primary fw-bold">Lịch sử tự động hủy đơn đặt giữ</h1>
+            <p class="text-muted mb-0">Các đơn bị hệ thống hủy trong 30 ngày gần nhất.</p>
+        </div>
+        <a asp-controller="HoldPickup" asp-action="Index" class="btn btn-outline-primary">Quay lại sách chờ nhận</a>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
+    {
+        <div class="alert alert-danger" role="alert">@Model.ErrorMessage</div>
+    }
+    else if (Model.TotalCount == 0)
+    {
+        <div class="alert alert-info" role="status">Không có đơn đặt giữ nào bị tự động hủy trong 30 ngày gần nhất.</div>
+    }
+    else
+    {
+        <div class="card shadow-sm border-0">
+            <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                <h2 class="h5 mb-0">@Model.TotalCount đơn trong 30 ngày gần nhất</h2>
+                <small class="text-muted">Mới nhất trước</small>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Mã đơn</th>
+                            <th>Sách</th>
+                            <th>Mã bản sao</th>
+                            <th>Người đặt</th>
+                            <th>Thời điểm hủy (giờ Việt Nam)</th>
+                            <th>Lý do</th>
+                            <th>Trạng thái</th>
+                            <th>Kết quả bản sao</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    @foreach (var item in Model.Items)
+                    {
+                        var outcome = item.ExpiryCopyOutcome switch
+                        {
+                            Project.Models.BookHoldExpiryCopyOutcome.TransferredToNextReader => $"Đã chuyển cho đơn tiếp theo #{item.ExpiryNextHoldId}",
+                            Project.Models.BookHoldExpiryCopyOutcome.ReturnedToAvailable => "Đã trả về trạng thái Sẵn sàng",
+                            Project.Models.BookHoldExpiryCopyOutcome.NoCopyAttached => "Đơn không có bản sao được gán",
+                            _ => "Chưa ghi nhận kết quả"
+                        };
+                        <tr>
+                            <td><span class="badge bg-secondary font-monospace">#@item.HoldId</span></td>
+                            <td>@(string.IsNullOrWhiteSpace(item.BookTitle) ? "Không có dữ liệu" : item.BookTitle)</td>
+                            <td>@(string.IsNullOrWhiteSpace(item.ExpiredBookCopyCode) ? "Không có dữ liệu" : item.ExpiredBookCopyCode)</td>
+                            <td>@(string.IsNullOrWhiteSpace(item.ReaderName) ? "Không có dữ liệu" : item.ReaderName)</td>
+                            <td>@Project.Services.HoldPickupExpirySchedule.GetVietnamLocalTime(item.CancelledAtUtc).ToString("dd/MM/yyyy HH:mm")</td>
+                            <td>@item.CancellationReason</td>
+                            <td>@item.Status</td>
+                            <td>@outcome</td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+            <div class="card-footer bg-white d-flex justify-content-between align-items-center">
+                <span class="text-muted">Trang @Model.Page / @Model.TotalPages</span>
+                <div class="btn-group">
+                    @if (Model.HasPreviousPage)
+                    {
+                        <a asp-action="Index" asp-route-page="@(Model.Page - 1)" class="btn btn-outline-secondary">Trước</a>
+                    }
+                    @if (Model.HasNextPage)
+                    {
+                        <a asp-action="Index" asp-route-page="@(Model.Page + 1)" class="btn btn-outline-secondary">Tiếp</a>
+                    }
+                </div>
+            </div>
+        </div>
+    }
+</div>

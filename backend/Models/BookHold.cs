@@ -19,6 +19,14 @@ public static class BookHoldStatus
     public static readonly string[] ActiveStatuses = [Waiting, .. WaitingPickupStatuses];
 }
 
+public static class BookHoldExpiryCopyOutcome
+{
+    public const string TransferredToNextReader = "TransferredToNextReader";
+    public const string ReturnedToAvailable = "ReturnedToAvailable";
+    public const string NoCopyAttached = "NoCopyAttached";
+    public const string Unknown = "Unknown";
+}
+
 public sealed class BookHold
 {
     public long Id { get; set; }
@@ -37,4 +45,12 @@ public sealed class BookHold
     public string? CancellationReason { get; set; }
     public DateTime? CancelledAtUtc { get; set; }
     public int? CancelledByAdminAccountId { get; set; }
+
+    /// <summary>Copy snapshot and outcome captured when the system expires this hold.</summary>
+    public long? ExpiredBookCopyId { get; set; }
+    [System.ComponentModel.DataAnnotations.MaxLength(50)]
+    public string? ExpiredBookCopyCode { get; set; }
+    [System.ComponentModel.DataAnnotations.MaxLength(30)]
+    public string? ExpiryCopyOutcome { get; set; }
+    public long? ExpiryNextHoldId { get; set; }
 }

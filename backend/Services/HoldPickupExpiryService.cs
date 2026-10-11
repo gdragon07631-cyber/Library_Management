@@ -29,7 +29,7 @@ public sealed class HoldPickupExpiryService(
         var assigned = 0;
         var available = 0;
         var errors = new List<string>();
-        var releasedCopiesByBook = new Dictionary<int, int>();
+        var releasedCopiesByBook = new Dictionary<int, List<ExpiredCopy>>();
         foreach (var holdId in overdueIds)
         {
             try
@@ -38,7 +38,11 @@ public sealed class HoldPickupExpiryService(
                 if (result == null) continue;
                 expired++;
                 if (result.ReleasedCopy)
-                    releasedCopiesByBook[result.BookId] = releasedCopiesByBook.GetValueOrDefault(result.BookId) + 1;
+                {
+                    if (!releasedCopiesByBook.TryGetValue(result.BookId, out var copies))
+                        releasedCopiesByBook[result.BookId] = copies = [];
+                    copies.Add(new(result.HoldId, result.BookCopyId!.Value));
+                }
             }
             catch (Exception exception) when (exception is not OperationCanceledException)
             {
@@ -53,9 +57,9 @@ public sealed class HoldPickupExpiryService(
 
         // Cancel every expired pickup before assigning released copies so an expired request
         // later in the queue cannot receive a fresh pickup deadline during this same run.
-        foreach (var (bookId, releasedCount) in releasedCopiesByBook)
+        foreach (var (bookId, releasedCopies) in releasedCopiesByBook)
         {
-            for (var index = 0; index < releasedCount; index++)
+            for (var index = 0; index < releasedCopies.Count; index++)
             {
                 try
                 {
@@ -67,13 +71,50 @@ public sealed class HoldPickupExpiryService(
                 {
                     logger.LogError(exception, "Failed to reassign a released copy for book {BookId}.", bookId);
                     errors.Add($"Book #{bookId}: a released copy could not be reassigned.");
-                    available += releasedCount - index;
+                    available += releasedCopies.Count - index;
                     break;
                 }
                 finally
                 {
                     db.ChangeTracker.Clear();
                 }
+            }
+        }
+
+        foreach (var expiredCopy in releasedCopiesByBook.Values.SelectMany(copies => copies))
+        {
+            try
+            {
+                var copyStatus = await db.BookCopies.AsNoTracking()
+                    .Where(copy => copy.Id == expiredCopy.BookCopyId)
+                    .Select(copy => copy.Status)
+                    .SingleOrDefaultAsync(cancellationToken);
+                var nextHold = copyStatus == BookCopyStatus.OnHold
+                    ? await db.BookHolds.AsNoTracking()
+                        .Where(hold => hold.BookCopyId == expiredCopy.BookCopyId &&
+                            HoldPickupService.WaitingPickupStatuses.Contains(hold.Status))
+                        .OrderByDescending(hold => hold.Id)
+                        .Select(hold => new { hold.Id })
+                        .FirstOrDefaultAsync(cancellationToken)
+                    : null;
+                var outcome = nextHold != null
+                    ? BookHoldExpiryCopyOutcome.TransferredToNextReader
+                    : copyStatus == BookCopyStatus.Available
+                        ? BookHoldExpiryCopyOutcome.ReturnedToAvailable
+                        : BookHoldExpiryCopyOutcome.Unknown;
+                await db.BookHolds.Where(hold => hold.Id == expiredCopy.HoldId)
+                    .ExecuteUpdateAsync(setters => setters
+                        .SetProperty(hold => hold.ExpiryCopyOutcome, outcome)
+                        .SetProperty(hold => hold.ExpiryNextHoldId, nextHold == null ? null : nextHold.Id), cancellationToken);
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                logger.LogError(exception, "Failed to record copy outcome for expired hold {HoldId}.", expiredCopy.HoldId);
+                errors.Add($"Hold #{expiredCopy.HoldId}: copy outcome could not be recorded.");
+            }
+            finally
+            {
+                db.ChangeTracker.Clear();
             }
         }
 
@@ -115,6 +156,12 @@ public sealed class HoldPickupExpiryService(
         hold.Status = BookHoldStatus.Cancelled;
         hold.CancellationReason = ExpiredReason;
         hold.CancelledAtUtc = nowUtc;
+        hold.ExpiredBookCopyId = releasedCopy?.Id;
+        hold.ExpiredBookCopyCode = releasedCopy?.CopyCode;
+        hold.ExpiryCopyOutcome = releasedCopy == null
+            ? BookHoldExpiryCopyOutcome.NoCopyAttached
+            : BookHoldExpiryCopyOutcome.Unknown;
+        hold.ExpiryNextHoldId = null;
         var bookTitle = await db.Books.Where(book => book.Id == hold.BookId).Select(book => book.Title).SingleOrDefaultAsync(cancellationToken);
         var readerEmail = await db.ReaderAccounts.Where(reader => reader.Id == hold.ReaderAccountId)
             .Select(reader => reader.Email).SingleOrDefaultAsync(cancellationToken);
@@ -127,8 +174,13 @@ public sealed class HoldPickupExpiryService(
         await db.SaveChangesAsync(cancellationToken);
 
         await transaction.CommitAsync(cancellationToken);
-        return new(hold.BookId, releasedCopy != null);
+        return new(hold.Id, hold.BookId, releasedCopy?.Id);
     }
 
-    private sealed record ExpiryOutcome(int BookId, bool ReleasedCopy);
+    private sealed record ExpiryOutcome(long HoldId, int BookId, long? BookCopyId)
+    {
+        public bool ReleasedCopy => BookCopyId.HasValue;
+    }
+
+    private sealed record ExpiredCopy(long HoldId, long BookCopyId);
 }

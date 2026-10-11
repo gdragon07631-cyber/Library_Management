@@ -46,6 +46,7 @@ builder.Services.AddScoped<IBookHoldFulfillmentService, BookHoldFulfillmentServi
 builder.Services.AddScoped<IStaffHoldCancellationService, StaffHoldCancellationService>();
 builder.Services.AddScoped<IHoldPickupExpiryService, HoldPickupExpiryService>();
 builder.Services.AddScoped<IHoldPickupExpirySchedulingService, HoldPickupExpirySchedulingService>();
+builder.Services.AddScoped<IHoldPickupExpiryHistoryService, HoldPickupExpiryHistoryService>();
 builder.Services.AddScoped<IReaderAccountAdminService, ReaderAccountAdminService>();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddHostedService<HoldPickupExpiryScheduledWorker>();

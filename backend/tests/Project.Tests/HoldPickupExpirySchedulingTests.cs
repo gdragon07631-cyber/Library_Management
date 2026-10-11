@@ -41,6 +41,7 @@ public sealed class HoldPickupExpirySchedulingTests : IDisposable
         using var sqlServerDb = new ApplicationDbContext(options);
 
         Assert.Contains("20261011120000_AddHoldPickupExpiryRuns", sqlServerDb.Database.GetMigrations());
+        Assert.Contains("20261011150000_AddHoldPickupExpiryHistoryDetails", sqlServerDb.Database.GetMigrations());
         var script = sqlServerDb.GetService<IMigrator>().GenerateScript();
         Assert.Contains("CREATE UNIQUE INDEX [IX_HoldPickupExpiryRuns_BusinessDate]", script);
         Assert.Contains("CREATE TABLE [HoldPickupExpiryRuns]", script);

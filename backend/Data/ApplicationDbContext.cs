@@ -230,6 +230,8 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
             entity.Property(hold => hold.PickupDeadlineUtc).HasColumnType("datetime2");
             entity.Property(hold => hold.CancellationReason).HasMaxLength(1000);
             entity.Property(hold => hold.CancelledAtUtc).HasColumnType("datetime2");
+            entity.Property(hold => hold.ExpiredBookCopyCode).HasMaxLength(50);
+            entity.Property(hold => hold.ExpiryCopyOutcome).HasMaxLength(30);
             entity.HasOne(hold => hold.ReaderAccount).WithMany(reader => reader.BookHolds)
                 .HasForeignKey(hold => hold.ReaderAccountId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne(hold => hold.Book).WithMany()
