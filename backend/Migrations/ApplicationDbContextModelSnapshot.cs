@@ -597,6 +597,31 @@ namespace Project.Migrations
                     b.ToTable("LibraryCardTypes", (string)null);
                 });
 
+            modelBuilder.Entity("Project.Models.HoldPickupExpiryRun", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<int>("AssignedToNextReaderCount").HasColumnType("int");
+                    b.Property<int>("CancelledCount").HasColumnType("int");
+                    b.Property<DateOnly>("BusinessDate").HasColumnType("date");
+                    b.Property<int>("CheckedCount").HasColumnType("int");
+                    b.Property<DateTime?>("CompletedAtUtc").HasColumnType("datetime2");
+                    b.Property<string>("ErrorMessage").HasMaxLength(2000).HasColumnType("nvarchar(2000)");
+                    b.Property<int>("ReturnedToAvailableCount").HasColumnType("int");
+                    b.Property<string>("ResultMessage").HasMaxLength(500).HasColumnType("nvarchar(500)");
+                    b.Property<DateTime>("StartedAtUtc").HasColumnType("datetime2");
+                    b.Property<string>("Status").IsRequired().HasMaxLength(20).HasColumnType("nvarchar(20)");
+
+                    b.HasKey("Id");
+                    b.HasIndex("BusinessDate").IsUnique();
+                    b.HasIndex("StartedAtUtc");
+                    b.ToTable("HoldPickupExpiryRuns", (string)null);
+                });
+
             modelBuilder.Entity("Project.Models.LoanContactHistory", b =>
                 {
                     b.Property<long>("Id")

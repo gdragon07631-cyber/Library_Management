@@ -12,6 +12,41 @@
     {
         <div class="alert alert-danger" role="alert">@errorMessage</div>
     }
+    @if (Model.CanProcessOverdue)
+    {
+        <section class="card border-0 shadow-sm mb-4" aria-label="Trạng thái xử lý tự động đơn quá hạn">
+            <div class="card-body">
+                <h2 class="h5 mb-3">Tác vụ tự động hủy đơn quá hạn</h2>
+                @if (Model.LatestExpiryRun is null)
+                {
+                    <p class="text-muted mb-0">Tác vụ chưa từng chạy.</p>
+                }
+                else
+                {
+                    var run = Model.LatestExpiryRun;
+                    var runStatus = run.Status switch
+                    {
+                        Project.Models.HoldPickupExpiryRunStatus.Succeeded => "Thành công",
+                        Project.Models.HoldPickupExpiryRunStatus.Failed => "Thất bại",
+                        Project.Models.HoldPickupExpiryRunStatus.Running => "Đang chạy",
+                        _ => run.Status
+                    };
+                    <p class="mb-2">
+                        Ngày nghiệp vụ: <strong>@run.BusinessDate.ToString("dd/MM/yyyy")</strong>
+                        <span class="mx-2">·</span>
+                        Trạng thái: <strong>@runStatus</strong>
+                        <span class="mx-2">·</span>
+                        Bắt đầu: <strong>@Project.Services.HoldPickupExpirySchedule.GetVietnamLocalTime(run.StartedAtUtc).ToString("dd/MM/yyyy HH:mm")</strong>
+                    </p>
+                    <p class="mb-1">Đã kiểm tra @run.CheckedCount đơn; hủy @run.CancelledCount; chuyển cho người tiếp theo @run.AssignedToNextReaderCount bản sao; trả về sẵn sàng @run.ReturnedToAvailableCount bản sao.</p>
+                    @if (!string.IsNullOrWhiteSpace(run.ErrorMessage))
+                    {
+                        <div class="alert alert-danger mb-0 mt-2" role="alert">@run.ErrorMessage</div>
+                    }
+                }
+            </div>
+        </section>
+    }
     <!-- Header -->
     <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-2">
         <div>

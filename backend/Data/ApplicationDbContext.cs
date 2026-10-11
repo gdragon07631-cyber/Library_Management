@@ -23,6 +23,7 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     public DbSet<LibraryCardType> LibraryCardTypes => Set<LibraryCardType>();
     public DbSet<LibraryCard> LibraryCards => Set<LibraryCard>();
     public DbSet<BookHold> BookHolds => Set<BookHold>();
+    public DbSet<HoldPickupExpiryRun> HoldPickupExpiryRuns => Set<HoldPickupExpiryRun>();
     public DbSet<BookLoan> BookLoans => Set<BookLoan>();
     public DbSet<LoanContactHistory> LoanContactHistories => Set<LoanContactHistory>();
     public DbSet<BookCopy> BookCopies => Set<BookCopy>();
@@ -235,6 +236,18 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
                 .HasForeignKey(hold => hold.BookId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne(hold => hold.BookCopy).WithMany()
                 .HasForeignKey(hold => hold.BookCopyId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<HoldPickupExpiryRun>(entity =>
+        {
+            entity.HasIndex(run => run.BusinessDate).IsUnique();
+            entity.HasIndex(run => run.StartedAtUtc);
+            entity.Property(run => run.BusinessDate).HasColumnType("date").IsRequired();
+            entity.Property(run => run.StartedAtUtc).HasColumnType("datetime2").IsRequired();
+            entity.Property(run => run.CompletedAtUtc).HasColumnType("datetime2");
+            entity.Property(run => run.Status).HasMaxLength(20).IsRequired();
+            entity.Property(run => run.ErrorMessage).HasMaxLength(2000);
+            entity.Property(run => run.ResultMessage).HasMaxLength(500);
         });
 
         modelBuilder.Entity<Warehouse>(entity =>

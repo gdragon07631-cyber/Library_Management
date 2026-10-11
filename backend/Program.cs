@@ -45,7 +45,10 @@ builder.Services.AddScoped<IBookHoldQueueService, BookHoldQueueService>();
 builder.Services.AddScoped<IBookHoldFulfillmentService, BookHoldFulfillmentService>();
 builder.Services.AddScoped<IStaffHoldCancellationService, StaffHoldCancellationService>();
 builder.Services.AddScoped<IHoldPickupExpiryService, HoldPickupExpiryService>();
+builder.Services.AddScoped<IHoldPickupExpirySchedulingService, HoldPickupExpirySchedulingService>();
 builder.Services.AddScoped<IReaderAccountAdminService, ReaderAccountAdminService>();
+builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddHostedService<HoldPickupExpiryScheduledWorker>();
 builder.Services.Configure<BookCopyLabelPrintOptions>(builder.Configuration.GetSection("BookCopyLabels"));
 builder.Services.AddDataProtection()
     .PersistKeysToFileSystem(new DirectoryInfo(Path.Combine(builder.Environment.ContentRootPath, "Data", "Keys")));

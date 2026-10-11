@@ -14,6 +14,7 @@ public sealed class HoldPickupController(
     IHoldPickupService holdPickupService,
     IHoldPickupConfirmationService confirmationService,
     IHoldPickupExpiryService expiryService,
+    IHoldPickupExpirySchedulingService expirySchedulingService,
     IAuditLogService auditLogService,
     ILogger<HoldPickupController> logger) : Controller
 {
@@ -26,10 +27,12 @@ public sealed class HoldPickupController(
     {
         var items = await holdPickupService.GetWaitingPickupHoldsAsync(ct);
         var staff = await auditLogService.GetSignedInStaffAsync(Request, ct);
+        var canProcessOverdue = staff?.Role is AccountRoles.LibraryManager or AccountRoles.SystemAdmin;
         return View(new HoldPickupListViewModel
         {
             Items = items,
-            CanProcessOverdue = staff?.Role is AccountRoles.LibraryManager or AccountRoles.SystemAdmin
+            CanProcessOverdue = canProcessOverdue,
+            LatestExpiryRun = canProcessOverdue ? await expirySchedulingService.GetLatestRunAsync(ct) : null
         });
     }
 
