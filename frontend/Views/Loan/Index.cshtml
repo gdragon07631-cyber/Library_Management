@@ -45,6 +45,7 @@
                     }
                 </select>
                 <div id="readerLoanLimitInfo" class="form-text mt-1 text-muted" style="min-height: 20px;"></div>
+                <a id="readerLoanHistoryLink" class="small" href="#" hidden>Xem hồ sơ và lịch sử mượn</a>
             </div>
             <div class="col-md-2"><label class="form-label">Ngày mượn</label><input class="form-control" type="date" name="LoanDate" id="loanDateInput" value="@Model.NewLoan.LoanDate?.ToString("yyyy-MM-dd")" required /></div>
             <div class="col-md-2"><button class="btn btn-primary w-100" type="submit">Tạo phiếu</button></div>
@@ -174,11 +175,16 @@
     (function () {
         var readerSelect = document.getElementById('readerSelect');
         var info = document.getElementById('readerLoanLimitInfo');
+        var historyLink = document.getElementById('readerLoanHistoryLink');
         var canOverride = @(Model.CanOverride ? "true" : "false");
         if (!readerSelect || !info) return;
 
         function updateLoanInfo() {
             var selected = readerSelect.selectedOptions[0];
+            if (historyLink) {
+                historyLink.hidden = !selected || !selected.value;
+                if (selected && selected.value) historyLink.href = '/ReaderLoanHistory/Details/' + encodeURIComponent(selected.value);
+            }
             if (selected && selected.value) {
                 var current = parseInt(selected.getAttribute('data-current-loans') || '0', 10);
                 var max = parseInt(selected.getAttribute('data-max-loans') || '5', 10);

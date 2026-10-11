@@ -1,0 +1,43 @@
+@model Project.Models.ReaderLoanHistoryViewModel
+@{
+    ViewData["Title"] = "Lịch sử mượn trả";
+}
+<div class="container py-4">
+    <a asp-controller="Loan" asp-action="Index" class="btn btn-outline-secondary btn-sm mb-3">Quay lại phiếu mượn</a>
+    <h1 class="h3 fw-bold">Lịch sử mượn trả</h1>
+    <p class="text-muted">@Model.Reader.FullName · Mã bạn đọc: @Model.Reader.StudentOrStaffCode</p>
+
+    <div class="row g-3 mb-4">
+        <div class="col-sm-4"><div class="card h-100"><div class="card-body"><div class="text-muted small">Phiếu đang mở</div><div class="fs-3 fw-bold">@Model.OpenLoanCount</div></div></div></div>
+        <div class="col-sm-4"><div class="card h-100"><div class="card-body"><div class="text-muted small">Tổng lượt mượn</div><div class="fs-3 fw-bold">@Model.TotalLoanCount</div></div></div></div>
+        <div class="col-sm-4"><div class="card h-100"><div class="card-body"><div class="text-muted small">Lượt trả trễ</div><div class="fs-3 fw-bold">@(Model.LateReturnCount?.ToString() ?? "Chưa có dữ liệu")</div><div class="small text-muted">Hệ thống chưa lưu ngày trả thực tế.</div></div></div></div>
+    </div>
+
+    <div class="card shadow-sm border-0">
+        <div class="card-header bg-white"><h2 class="h5 mb-0">Phiếu mượn</h2></div>
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light"><tr><th>Mã phiếu</th><th>Sách</th><th>Ngày mượn</th><th>Hạn trả</th><th>Ngày trả thực tế</th><th>Trạng thái</th></tr></thead>
+                <tbody>
+                @if (Model.Loans.Count == 0)
+                {
+                    <tr><td colspan="6" class="text-center text-muted py-4">Bạn đọc chưa có phiếu mượn nào.</td></tr>
+                }
+                @foreach (var loan in Model.Loans)
+                {
+                    var isOpen = !loan.IsReturned;
+                    var isOverdue = isOpen && loan.DueDate < DateOnly.FromDateTime(DateTime.Today);
+                    <tr>
+                        <td>#@loan.Id</td>
+                        <td>@loan.Book?.Title</td>
+                        <td>@loan.LoanDate.ToString("dd/MM/yyyy")</td>
+                        <td>@loan.DueDate.ToString("dd/MM/yyyy")</td>
+                        <td>@(loan.ReturnDate?.ToString("dd/MM/yyyy") ?? "—")</td>
+                        <td>@(isOverdue ? "Quá hạn, chưa trả" : isOpen ? "Đang mở" : "Đã trả")</td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
