@@ -9,7 +9,7 @@
     const confirm = form.querySelector('button[type="submit"]');
     const state = new DirectLoanSelectionState(Array.from(body.rows, row => ({
         rowId: row.dataset.rowId, copyCode: row.dataset.code, bookTitle: row.dataset.title,
-        status: row.dataset.status, error: row.dataset.error || null
+        status: row.dataset.status, error: row.dataset.error || null, holdId: row.dataset.holdId || null
     })));
     const originalCard = form.elements.CardCode.value;
     const remaining = Number(form.dataset.remaining);
@@ -51,6 +51,10 @@
             row.insertCell().textContent = copy.status;
             const validation = row.insertCell();
             validation.textContent = copy.editing ? 'Đang sửa mã' : copy.checking ? 'Đang kiểm tra' : copy.error || 'Hợp lệ';
+            if (copy.holdId && !copy.editing && !copy.checking) {
+                const hold = document.createElement('div'); hold.className = 'small';
+                hold.textContent = `Đơn đặt trước #${copy.holdId}`; validation.append(hold);
+            }
             validation.className = copy.error ? 'text-danger' : copy.checking || copy.editing ? 'text-muted' : 'text-success';
             validation.setAttribute('aria-live', 'polite');
             const cell = row.insertCell();

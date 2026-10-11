@@ -22,7 +22,7 @@ class DirectLoanSelectionState {
     check(rowId, code) {
         const row = this.rows.find(row => row.rowId === rowId);
         if (!row) return null;
-        Object.assign(row, { copyCode: code.trim(), bookTitle: '', status: '', error: null, checking: true, editing: false, version: row.version + 1 });
+        Object.assign(row, { copyCode: code.trim(), bookTitle: '', status: '', error: null, holdId: null, checking: true, editing: false, version: row.version + 1 });
         if (!row.copyCode || this.duplicate(row.copyCode, rowId)) {
             row.error = !row.copyCode ? 'Vui lòng nhập mã vạch bản sao.' : 'Mã vạch này đã có trong danh sách mượn.';
             row.checking = false;
@@ -32,7 +32,7 @@ class DirectLoanSelectionState {
     apply(rowId, version, result) {
         const row = this.rows.find(row => row.rowId === rowId);
         if (!row || row.version !== version || row.editing) return false;
-        Object.assign(row, { bookTitle: result.bookTitle || '', status: result.status || '', error: result.error || null, checking: false });
+        Object.assign(row, { bookTitle: result.bookTitle || '', status: result.status || '', error: result.error || null, holdId: result.holdId ?? null, checking: false });
         return true;
     }
     remove(rowId) { this.rows = this.rows.filter(row => row.rowId !== rowId); }

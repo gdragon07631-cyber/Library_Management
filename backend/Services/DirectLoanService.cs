@@ -13,6 +13,7 @@ public sealed class DirectLoanService(ApplicationDbContext db, IBookLoanService 
     {
         var model = new DirectLoanViewModel { CardCode = cardCode?.Trim() ?? "", CopyCode = copyCode?.Trim() ?? "" };
         var today = DateOnly.FromDateTime(DateTime.Today);
+        int? readerId = null;
         if (model.CardCode.Length > 0)
         {
             var card = await db.LibraryCards.AsNoTracking().Include(c => c.ReaderAccount)
@@ -22,6 +23,7 @@ public sealed class DirectLoanService(ApplicationDbContext db, IBookLoanService 
             else
             {
                 var reader = card.ReaderAccount;
+                readerId = reader.Id;
                 var existing = await db.BookLoans.AsNoTracking().Where(l => l.ReaderAccountId == reader.Id).ToListAsync(ct);
                 model.ReaderName = reader.FullName;
                 model.CardTypeName = card.LibraryCardType.Name;
@@ -52,7 +54,26 @@ public sealed class DirectLoanService(ApplicationDbContext db, IBookLoanService 
             {
                 model.BookTitle = copy.Book.Title;
                 model.CopyStatus = copy.Status;
-                if (copy.Status != BookCopyStatus.Available)
+                var now = DateTime.UtcNow;
+                // Read reservations even if the displayed copy status is inconsistent.
+                var holds = await db.BookHolds.AsNoTracking()
+                    .Where(h => h.BookCopyId == copy.Id && BookHoldStatus.WaitingPickupStatuses.Contains(h.Status)
+                        && (h.PickupDeadlineUtc == null || h.PickupDeadlineUtc >= now))
+                    .ToListAsync(ct);
+                var ownHold = false;
+                if (holds.Count > 1)
+                    model.CopyError = "Có nhiều đơn đặt trước cùng giữ bản sao. Vui lòng kiểm tra dữ liệu trước khi cho mượn.";
+                else if (holds.Count == 1)
+                {
+                    var hold = holds[0];
+                    model.HoldId = hold.Id;
+                    if (hold.ReaderAccountId != readerId)
+                        model.CopyError = $"Bản sao đang được giữ cho đơn đặt trước #{hold.Id} của bạn đọc khác. Không thể cho mượn.";
+                    else if (hold.BookId != copy.BookId || copy.Status != BookCopyStatus.OnHold)
+                        model.CopyError = $"Dữ liệu bản sao và đơn đặt trước #{hold.Id} không nhất quán. Vui lòng kiểm tra lại.";
+                    else ownHold = true;
+                }
+                if (model.CopyError == null && !ownHold && copy.Status != BookCopyStatus.Available)
                     model.CopyError = copy.Status switch
                     {
                         BookCopyStatus.OnLoan => "Bản sao này đang được mượn, không thể tiếp tục cho mượn.",
@@ -61,7 +82,7 @@ public sealed class DirectLoanService(ApplicationDbContext db, IBookLoanService 
                         BookCopyStatus.OnHold => "Bản sao đang được giữ cho đặt trước, chưa đủ điều kiện cho mượn.",
                         _ => $"Bản sao ở trạng thái {copy.Status}, không thể cho mượn trực tiếp."
                     };
-                else if (await db.BookLoans.AnyAsync(l => l.BookCopyId == copy.Id, ct))
+                if (model.CopyError == null && await db.BookLoans.AnyAsync(l => l.BookCopyId == copy.Id, ct))
                     model.CopyError = "Bản sao đã có phiếu mượn. Vui lòng kiểm tra lại dữ liệu bản sao.";
             }
         }
@@ -70,10 +91,10 @@ public sealed class DirectLoanService(ApplicationDbContext db, IBookLoanService 
 
     public Task<BookLoan?> ReceiptAsync(long id, CancellationToken ct = default) =>
         db.BookLoans.AsNoTracking().Include(l => l.BookCopy).Include(l => l.ReaderAccount)
-            .FirstOrDefaultAsync(l => l.Id == id && l.BookCopyId != null && l.SourceBookHoldId == null, ct);
+            .FirstOrDefaultAsync(l => l.Id == id && l.BookCopyId != null, ct);
 
     public async Task<List<DirectLoanSelection>> ValidateRowsAsync(IReadOnlyList<string> codes,
-        IReadOnlyList<string>? rowIds = null, CancellationToken ct = default)
+        IReadOnlyList<string>? rowIds = null, CancellationToken ct = default, string? cardCode = null)
     {
         var rows = new List<DirectLoanSelection>();
         var seenCodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -84,7 +105,7 @@ public sealed class DirectLoanService(ApplicationDbContext db, IBookLoanService 
             var code = codes[i]?.Trim() ?? "";
             var id = rowIds != null && i < rowIds.Count ? rowIds[i] : Guid.NewGuid().ToString("N");
             var badId = string.IsNullOrWhiteSpace(id) || id.Length > 64 || !seenIds.Add(id);
-            var lookup = code.Length is > 0 and <= 50 ? await LookupAsync(null, code, ct) : new DirectLoanViewModel();
+            var lookup = code.Length is > 0 and <= 50 ? await LookupAsync(cardCode, code, ct) : new DirectLoanViewModel();
             var error = code.Length == 0 ? "Vui lòng nhập mã vạch bản sao."
                 : code.Length > 50 ? "Mã vạch không được vượt quá 50 ký tự." : lookup.CopyError;
             if (!seenCodes.Add(code)) error = "Mã vạch này đã có trong danh sách mượn.";
@@ -96,7 +117,7 @@ public sealed class DirectLoanService(ApplicationDbContext db, IBookLoanService 
             }
             if (badId) error = "Định danh dòng không hợp lệ. Vui lòng xóa dòng và nhập lại.";
             rows.Add(new(code, lookup.BookTitle ?? "Không tìm thấy", lookup.CopyStatus ?? "Không xác định")
-            { RowId = id ?? "", Error = error });
+            { RowId = id ?? "", Error = error, HoldId = lookup.HoldId });
         }
         return rows;
     }
@@ -127,7 +148,7 @@ public sealed class DirectLoanService(ApplicationDbContext db, IBookLoanService 
                     .AsNoTracking().ToListAsync(ct);
             }
             var page = await LookupAsync(normalizedCard, null, ct);
-            var rows = await ValidateRowsAsync(codes, rowIds, ct);
+            var rows = await ValidateRowsAsync(codes, rowIds, ct, normalizedCard);
             if (page.ReaderName == null || page.ReaderError != null)
                 return new(false, page.ReaderError ?? "Thông tin bạn đọc không hợp lệ.", Rows: rows);
             if (rows.Any(r => !r.IsValid))
@@ -152,12 +173,28 @@ public sealed class DirectLoanService(ApplicationDbContext db, IBookLoanService 
             // Stable ordering reduces lock conflicts for overlapping batches.
             foreach (var copy in copies.OrderBy(c => c.Id))
             {
-                var changed = await db.BookCopies.Where(c => c.Id == copy.Id && c.Status == BookCopyStatus.Available)
+                var index = copies.FindIndex(c => c.Id == copy.Id);
+                var holdId = rows[index].HoldId;
+                if (holdId.HasValue)
+                {
+                    var now = DateTime.UtcNow;
+                    var claimed = await db.BookHolds.Where(h => h.Id == holdId.Value && h.BookCopyId == copy.Id
+                        && h.BookId == copy.BookId && h.ReaderAccountId == card.ReaderAccountId
+                        && BookHoldStatus.WaitingPickupStatuses.Contains(h.Status)
+                        && (h.PickupDeadlineUtc == null || h.PickupDeadlineUtc >= now))
+                        .ExecuteUpdateAsync(s => s.SetProperty(h => h.Status, BookHoldStatus.ConvertedToLoan), ct);
+                    if (claimed != 1)
+                    {
+                        rows[index] = rows[index] with { Error = $"Đơn đặt trước #{holdId} không còn hiệu lực hoặc quyền giữ đã thay đổi. Vui lòng kiểm tra lại." };
+                        return new(false, "Vui lòng xử lý dòng lỗi trước khi xác nhận.", Rows: rows);
+                    }
+                }
+                var expectedStatus = holdId.HasValue ? BookCopyStatus.OnHold : BookCopyStatus.Available;
+                var changed = await db.BookCopies.Where(c => c.Id == copy.Id && c.Status == expectedStatus)
                     .ExecuteUpdateAsync(setters => setters.SetProperty(c => c.Status, BookCopyStatus.OnLoan)
                         .SetProperty(c => c.StatusReason, "Cho mượn trực tiếp tại quầy"), ct);
                 if (changed != 1)
                 {
-                    var index = copies.FindIndex(c => c.Id == copy.Id);
                     rows[index] = rows[index] with { Error = "Bản sao không còn sẵn sàng. Vui lòng kiểm tra lại." };
                     return new(false, "Vui lòng xử lý dòng lỗi trước khi xác nhận.", Rows: rows);
                 }
@@ -166,10 +203,11 @@ public sealed class DirectLoanService(ApplicationDbContext db, IBookLoanService 
                     originalDueDate, dueDate, staff.Email, ct);
                 if (!result.IsSuccess || result.Loan == null) return new(false, result.ErrorMessage);
                 result.Loan.BookCopyId = copy.Id;
+                result.Loan.SourceBookHoldId = holdId;
                 result.Loan.CreatedByAdminAccountId = staff.Id;
                 db.BookCopyStatusHistories.Add(new BookCopyStatusHistory
                 {
-                    BookCopyId = copy.Id, FromStatus = BookCopyStatus.Available, ToStatus = BookCopyStatus.OnLoan,
+                    BookCopyId = copy.Id, FromStatus = expectedStatus, ToStatus = BookCopyStatus.OnLoan,
                     Reason = $"Cho mượn trực tiếp tại quầy – phiếu #{result.Loan.Id}", ChangedBy = staff.Email, ChangedAtUtc = DateTime.UtcNow
                 });
                 db.AuditLogs.Add(AuditLogService.Create(staff.Email, AuditActions.CreateLoan,
@@ -180,7 +218,8 @@ public sealed class DirectLoanService(ApplicationDbContext db, IBookLoanService 
             await transaction.CommitAsync(ct);
             return new(true, Loans: copies.Select(c => created.Single(l => l.BookCopyId == c.Id)).ToList());
         }
-        catch (Exception ex) when (ex is DbUpdateException or DbException)
+        catch (Exception ex) when (ex is DbUpdateException or DbException
+            or InvalidOperationException { InnerException: DbException })
         {
             logger.LogWarning(ex, "Không thể lưu lượt mượn trực tiếp.");
             return new(false, "Không thể lưu phiếu mượn. Dữ liệu chưa được ghi nhận; vui lòng tra cứu lại và thử lại.");

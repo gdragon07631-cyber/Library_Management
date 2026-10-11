@@ -81,5 +81,27 @@ test('remaining quota, reader validity and pending checks gate confirmation', ()
     assert.equal(state.canConfirm(1, true), false);
     assert.equal(state.canConfirm(2, true), true);
 });
+test('hold metadata stays on its row and disappears after a valid edit', () => {
+    const state = new State(); state.add('one', 'HELD'); state.add('two', 'FREE');
+    state.apply('two', 1, valid);
+    state.apply('one', 1, { ...valid, holdId: 55, error: 'Đang giữ cho đơn #55 của bạn đọc khác' });
+    assert.equal(state.rows[0].holdId, 55);
+    assert.equal(state.rows[1].holdId, null);
+    assert.equal(state.canConfirm(5, true), false);
+    state.edit('one'); const version = state.check('one', 'OTHERFREE').version;
+    assert.equal(state.rows[0].holdId, null);
+    state.apply('one', version, valid);
+    assert.equal(state.rows[0].holdId, null);
+    assert.equal(state.apply('one', 1, { holdId: 55, error: 'stale' }), false);
+    assert.equal(state.canConfirm(5, true), true);
+});
+test('own hold is valid and deleting a foreign hold leaves other rows intact', () => {
+    const state = new State(); state.add('own', 'OWN'); state.add('foreign', 'FOREIGN');
+    state.apply('own', 1, { ...valid, holdId: 1 });
+    state.apply('foreign', 1, { holdId: 2, error: 'Đang giữ' });
+    state.remove('foreign');
+    assert.equal(state.rows[0].holdId, 1);
+    assert.equal(state.canConfirm(1, true), true);
+});
 for (const { name, run } of cases) { run(); console.log(`PASS ${name}`); }
 console.log(`${cases.length}/${cases.length} frontend state tests passed`);

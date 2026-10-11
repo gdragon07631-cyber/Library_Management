@@ -45,9 +45,11 @@
                     <tbody id="selectedCopies">
                     @foreach (var copy in Model.SelectedCopies)
                     {
-                        <tr data-code="@copy.CopyCode" data-title="@copy.BookTitle" data-status="@copy.Status" data-row-id="@copy.RowId" data-error="@copy.Error">
+                        <tr data-code="@copy.CopyCode" data-title="@copy.BookTitle" data-status="@copy.Status" data-row-id="@copy.RowId" data-error="@copy.Error" data-hold-id="@copy.HoldId">
                             <td></td><td>@copy.CopyCode</td><td>@copy.BookTitle</td><td>@copy.Status</td>
-                            <td class="@(copy.IsValid ? "text-success" : "text-danger")">@(copy.Error ?? "Hợp lệ")</td><td></td>
+                            <td class="@(copy.IsValid ? "text-success" : "text-danger")">@(copy.Error ?? "Hợp lệ")
+                                @if (copy.HoldId.HasValue) { <div class="small">Đơn đặt trước #@copy.HoldId</div> }
+                            </td><td></td>
                         </tr>
                     }
                     </tbody>
@@ -72,6 +74,10 @@
             <dl class="row mb-0">
                 <dt class="col-sm-4">Bạn đọc</dt><dd class="col-sm-8">@receipt.ReaderAccount?.FullName</dd>
                 <dt class="col-sm-4">Mã vạch</dt><dd class="col-sm-8">@receipt.BookCopy?.CopyCode</dd>
+                @if (receipt.SourceBookHoldId.HasValue)
+                {
+                    <dt class="col-sm-4">Đơn đặt trước</dt><dd class="col-sm-8">#@receipt.SourceBookHoldId</dd>
+                }
                 <dt class="col-sm-4">Ngày mượn</dt><dd class="col-sm-8">@receipt.LoanDate.ToString("dd/MM/yyyy")</dd>
                 <dt class="col-sm-4">Hạn trả</dt><dd class="col-sm-8">@receipt.DueDate.ToString("dd/MM/yyyy")</dd>
                 <dt class="col-sm-4">Trạng thái</dt><dd class="col-sm-8">Đang mượn</dd>

@@ -14,7 +14,7 @@ public sealed class DirectLoanController(DirectLoanService service, IAuditLogSer
         var model = await service.LookupAsync(cardCode, copyCode, ct);
         if (loanId.HasValue) model.Receipt = await service.ReceiptAsync(loanId.Value, ct);
         if (!string.IsNullOrWhiteSpace(copyCode) && !loanId.HasValue)
-            model.SelectedCopies = await service.ValidateRowsAsync([copyCode], ct: ct);
+            model.SelectedCopies = await service.ValidateRowsAsync([copyCode], ct: ct, cardCode: cardCode);
         foreach (var id in (loanIds ?? []).Distinct())
         {
             var receipt = await service.ReceiptAsync(id, ct);
@@ -29,7 +29,7 @@ public sealed class DirectLoanController(DirectLoanService service, IAuditLogSer
         var model = await service.LookupAsync(cardCode, copyCode, ct);
         if (model.ReaderName == null || model.ReaderError != null)
             return BadRequest(new { error = model.ReaderError ?? "Vui lòng nhập mã thẻ bạn đọc." });
-        var rows = await service.ValidateRowsAsync([copyCode ?? ""], rowId == null ? null : [rowId], ct);
+        var rows = await service.ValidateRowsAsync([copyCode ?? ""], rowId == null ? null : [rowId], ct, cardCode);
         return Json(rows[0]);
     }
 
@@ -50,7 +50,7 @@ public sealed class DirectLoanController(DirectLoanService service, IAuditLogSer
         ModelState.AddModelError(string.Empty, result.ErrorMessage ?? "Không thể tạo phiếu mượn.");
         var model = await service.LookupAsync(request.CardCode, null, ct);
         model.SelectedCopies = result.Rows?.ToList() ?? await service.ValidateRowsAsync(request.CopyCodes,
-            request.RowIds.Count == 0 ? null : request.RowIds, ct);
+            request.RowIds.Count == 0 ? null : request.RowIds, ct, request.CardCode);
         return View("Index", model);
     }
 

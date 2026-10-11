@@ -23,6 +23,7 @@ public sealed class DirectLoanViewModel
     public string? BookTitle { get; set; }
     public string? CopyStatus { get; set; }
     public string? CopyError { get; set; }
+    public long? HoldId { get; set; }
     public BookLoan? Receipt { get; set; }
     public List<DirectLoanSelection> SelectedCopies { get; set; } = [];
     public List<BookLoan> Receipts { get; set; } = [];
@@ -33,6 +34,7 @@ public sealed record DirectLoanSelection(string CopyCode, string BookTitle, stri
 {
     public string RowId { get; init; } = Guid.NewGuid().ToString("N");
     public string? Error { get; init; }
+    public long? HoldId { get; init; }
     public bool IsValid => Error == null;
 }
 

@@ -17,7 +17,7 @@ using Project.Services;
 
 namespace Project.Tests;
 
-public sealed class DirectLoanTests : IDisposable
+public sealed partial class DirectLoanTests : IDisposable
 {
     private readonly SqliteConnection connection = new($"Data Source=DirectLoanTest_{Guid.NewGuid():N};Mode=Memory;Cache=Shared;Default Timeout=5");
     private readonly string? sqlConnection = Environment.GetEnvironmentVariable("DIRECT_LOAN_SQLSERVER_TEST") == "1"
@@ -411,9 +411,10 @@ public sealed class DirectLoanTests : IDisposable
     }
 
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task StaffHttpFlowRendersLookupAndReceiptEnforcesAntiforgeryAndRejectsAnonymous(bool batch)
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task StaffHttpFlowRendersLookupAndReceiptEnforcesAntiforgeryAndRejectsAnonymous(bool batch, bool ownHold)
     {
         if (batch) await AddCopies(3);
         const string token = "direct-loan-test-session";
@@ -498,6 +499,32 @@ public sealed class DirectLoanTests : IDisposable
             using var invalidCsrf = await client.PostAsync(endpoint, new FormUrlEncodedContent(fields));
             Assert.Equal(HttpStatusCode.BadRequest, invalidCsrf.StatusCode);
             Assert.Empty(await db.BookLoans.ToListAsync());
+            if (ownHold)
+            {
+                var foreign = await AddHoldAsync("COPY02", other: true);
+                using var holdLookup = await client.GetAsync("/DirectLoan/LookupCopy?cardCode=CARD01&copyCode=COPY02&rowId=hold-row");
+                var holdJson = await holdLookup.Content.ReadAsStringAsync();
+                var holdRow = System.Text.Json.JsonDocument.Parse(holdJson).RootElement;
+                Assert.Equal(foreign.Id, holdRow.GetProperty("holdId").GetInt64());
+                Assert.Equal("hold-row", holdRow.GetProperty("rowId").GetString());
+                Assert.False(holdRow.GetProperty("isValid").GetBoolean());
+                Assert.DoesNotContain("private@test.local", holdJson);
+                Assert.DoesNotContain("0998765432", holdJson);
+                Assert.False(holdRow.TryGetProperty("readerAccount", out _));
+                var rejectedFields = new Dictionary<string, string>(fields) { ["__RequestVerificationToken"] = antiforgery };
+                using var rejected = await client.PostAsync(endpoint, new FormUrlEncodedContent(rejectedFields));
+                var rejectedHtml = WebUtility.HtmlDecode(await rejected.Content.ReadAsStringAsync());
+                var heldHtml = Regex.Match(rejectedHtml, "<tr[^>]*data-row-id=\"http-row-1\"[^>]*>[\\s\\S]*?</tr>").Value;
+                Assert.Contains($"#{foreign.Id}", heldHtml);
+                Assert.Contains("của bạn đọc khác", heldHtml);
+                Assert.DoesNotContain("Tên người giữ riêng tư", rejectedHtml);
+                Assert.Empty(await db.BookLoans.ToListAsync());
+                foreign.ReaderAccountId = (await db.LibraryCards.SingleAsync(c => c.CardCode == "CARD01")).ReaderAccountId;
+                await db.SaveChangesAsync();
+                using var ownerLookup = await client.GetAsync("/DirectLoan/LookupCopy?cardCode=CARD01&copyCode=COPY02&rowId=hold-row");
+                var ownerRow = System.Text.Json.JsonDocument.Parse(await ownerLookup.Content.ReadAsStringAsync()).RootElement;
+                Assert.True(ownerRow.GetProperty("isValid").GetBoolean());
+            }
             fields["__RequestVerificationToken"] = antiforgery;
             using var response = await client.PostAsync(endpoint, new FormUrlEncodedContent(fields));
             response.EnsureSuccessStatusCode();
@@ -507,6 +534,12 @@ public sealed class DirectLoanTests : IDisposable
             Assert.Contains("Đang mượn", receipt);
             Assert.Contains($"id=\"remainingLoans\">{(batch ? 2 : 4)}", receipt);
             Assert.Equal(batch ? 3 : 1, await db.BookLoans.CountAsync());
+            if (ownHold)
+            {
+                Assert.Contains("Đơn đặt trước", receipt);
+                Assert.Equal(BookHoldStatus.ConvertedToLoan, (await db.BookHolds.AsNoTracking().SingleAsync()).Status);
+                Assert.Single(await db.BookLoans.Where(l => l.SourceBookHoldId != null).ToListAsync());
+            }
             if (batch)
             {
                 Assert.Contains("COPY02", receipt);
@@ -527,9 +560,14 @@ public sealed class DirectLoanTests : IDisposable
         public bool Enabled { get; set; }
         public int Saves { get; private set; }
         public int FailAt { get; set; } = 2;
+        public bool WrappedFailure { get; set; }
         public override ValueTask<InterceptionResult<int>> SavingChangesAsync(DbContextEventData eventData, InterceptionResult<int> result, CancellationToken cancellationToken = default)
         {
-            if (Enabled && ++Saves == FailAt) throw new DbUpdateException("Simulated final save failure");
+            if (Enabled && ++Saves == FailAt)
+            {
+                if (WrappedFailure) throw new InvalidOperationException("Simulated EF wrapped database failure", new SqliteException("Simulated lock failure", 5));
+                throw new DbUpdateException("Simulated final save failure");
+            }
             return ValueTask.FromResult(result);
         }
     }
