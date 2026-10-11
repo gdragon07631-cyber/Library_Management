@@ -462,3 +462,16 @@ textarea.form-control { min-height: 96px; }
     border-radius: .2rem;
     box-shadow: 0 .125rem .35rem rgba(0, 0, 0, .14);
 }
+.loan-feedback-message {
+    white-space: pre-line;
+}
+.loan-override-dialog {
+    border: 0;
+    border-radius: .5rem;
+    max-width: 38rem;
+    padding: 0;
+    width: calc(100% - 2rem);
+}
+.loan-override-dialog::backdrop {
+    background: rgb(0 0 0 / 50%);
+}

@@ -6,6 +6,7 @@
     var canViewAuditLogs = Project.Services.AuditLogService.CanViewLogs(staff);
     var isAdmin = role == AccountRoles.SystemAdmin;
     var canManageLibrary = role is AccountRoles.SystemAdmin or AccountRoles.LibraryManager;
+    var isLibraryManager = role == AccountRoles.LibraryManager;
     var isLibrarian = role == AccountRoles.Librarian;
     var currentController = ViewContext.RouteData.Values["controller"]?.ToString();
     string Active(string controller) => string.Equals(currentController, controller, StringComparison.OrdinalIgnoreCase) ? "active" : "";
@@ -39,6 +40,10 @@
                 <a class="side-link @Active("Shelf")" aria-current="@Current("Shelf")" asp-controller="Shelf" asp-action="Index"><span>▥</span> Kệ sách</a>
                 <a class="side-link @Active("Loan")" aria-current="@Current("Loan")" asp-controller="Loan" asp-action="Index"><span>⇄</span> Mượn trả</a>
                 <a class="side-link @Active("WorkingSchedule")" aria-current="@Current("WorkingSchedule")" asp-controller="WorkingSchedule" asp-action="Index"><span>◷</span> Lịch làm việc</a>
+            }
+            @if (isLibraryManager)
+            {
+                <a class="side-link @Active("LoanBlockHistory")" aria-current="@Current("LoanBlockHistory")" asp-controller="LoanBlockHistory" asp-action="Index"><span>◷</span> Lịch sử chặn mượn</a>
             }
             <div class="side-label">BẠN ĐỌC</div>
             @if (isLibrarian)

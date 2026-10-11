@@ -14,6 +14,7 @@ public sealed class BookLoan
     public DateOnly DueDate { get; set; }
     public int RenewalCount { get; set; }
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
+    public DateTime? ReturnedAtUtc { get; set; }
 }
 
 public sealed class CreateBookLoanViewModel
@@ -24,6 +25,14 @@ public sealed class CreateBookLoanViewModel
     public int ReaderAccountId { get; set; }
     [Required(ErrorMessage = "Vui lòng chọn ngày mượn.")]
     public DateOnly? LoanDate { get; set; }
+
+    public bool OverrideBlocked { get; set; }
+
+    [MaxLength(1000, ErrorMessage = "Lý do bỏ qua không được vượt quá 1.000 ký tự.")]
+    public string? OverrideReason { get; set; }
+
+    [MaxLength(36)]
+    public string? OverrideRequestId { get; set; }
 }
 
 public sealed class LoanIndexViewModel
@@ -32,4 +41,5 @@ public sealed class LoanIndexViewModel
     public IReadOnlyList<Book> Books { get; set; } = [];
     public IReadOnlyList<ReaderAccount> Readers { get; set; } = [];
     public CreateBookLoanViewModel NewLoan { get; set; } = new();
+    public bool CanOverrideLoanBlock { get; set; }
 }

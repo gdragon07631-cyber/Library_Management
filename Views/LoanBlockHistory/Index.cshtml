@@ -1,0 +1,155 @@
+@model Project.Models.LoanBlockHistoryIndexViewModel
+@using Project.Models
+@using Project.Services
+@{
+    ViewData["Title"] = "Lịch sử chặn và bỏ qua chặn";
+    var filter = Model.Filter;
+    var selected = Model.SelectedRecord;
+}
+<div class="container-fluid py-4">
+    <header class="mb-4">
+        <h1 class="h3 mb-1 text-primary fw-bold">Lịch sử chặn và bỏ qua chặn</h1>
+        <p class="text-muted mb-0">Tra cứu các lần lập phiếu mượn bị chặn và các kết quả ngoại lệ đã được ghi nhận.</p>
+    </header>
+
+    <section class="card shadow-sm border-0 mb-4" aria-label="Bộ lọc lịch sử">
+        <div class="card-body">
+            <form asp-action="Index" method="get" class="row g-3 align-items-end" role="search">
+                <div class="col-sm-6 col-xl-3">
+                    <label for="ReaderQuery" class="form-label fw-semibold">Mã hoặc họ tên bạn đọc</label>
+                    <input id="ReaderQuery" name="ReaderQuery" value="@filter.ReaderQuery" maxlength="100" class="form-control" />
+                </div>
+                <div class="col-sm-6 col-xl-2">
+                    <label for="FromDate" class="form-label fw-semibold">Từ ngày</label>
+                    <input type="date" id="FromDate" name="FromDate" value="@filter.FromDate?.ToString("yyyy-MM-dd")" class="form-control" />
+                </div>
+                <div class="col-sm-6 col-xl-2">
+                    <label for="ToDate" class="form-label fw-semibold">Đến ngày</label>
+                    <input type="date" id="ToDate" name="ToDate" value="@filter.ToDate?.ToString("yyyy-MM-dd")" class="form-control" />
+                </div>
+                <div class="col-sm-6 col-xl-3">
+                    <label for="EventType" class="form-label fw-semibold">Loại sự kiện</label>
+                    <select id="EventType" name="EventType" class="form-select">
+                        @foreach (var eventType in Model.EventTypes)
+                        {
+                            <option value="@eventType.Value" selected="@(eventType.Value == filter.EventType)">@eventType.Label</option>
+                        }
+                    </select>
+                </div>
+                <input type="hidden" name="PageSize" value="@filter.PageSize" />
+                <div class="col-xl-2 d-flex gap-2">
+                    <button type="submit" class="btn btn-primary flex-fill">Tra cứu</button>
+                    <a asp-action="Index" class="btn btn-outline-secondary">Xóa lọc</a>
+                </div>
+            </form>
+        </div>
+    </section>
+
+    @if (Model.ErrorMessage is not null)
+    {
+        <div class="alert alert-danger" role="alert">@Model.ErrorMessage</div>
+    }
+    <p class="text-muted small" role="status">
+        @if (Model.ErrorMessage is null)
+        {
+            <text>@Model.TotalCount bản ghi · Trang @Model.Filter.Page / @Model.PageCount</text>
+        }
+    </p>
+
+    @if (selected is not null)
+    {
+        var detailReasons = selected.Reasons.Split("; ", StringSplitOptions.RemoveEmptyEntries);
+        <section class="card border-primary shadow-sm mb-4" aria-labelledby="history-detail-title">
+            <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                <h2 class="h5 mb-0" id="history-detail-title">Chi tiết bản ghi #@selected.Id</h2>
+                <a class="btn btn-sm btn-light"
+                   asp-action="Index"
+                   asp-route-ReaderQuery="@filter.ReaderQuery"
+                   asp-route-FromDate="@filter.FromDate?.ToString("yyyy-MM-dd")"
+                   asp-route-ToDate="@filter.ToDate?.ToString("yyyy-MM-dd")"
+                   asp-route-EventType="@filter.EventType"
+                   asp-route-Page="@filter.Page"
+                   asp-route-PageSize="@filter.PageSize">Đóng</a>
+            </div>
+            <div class="card-body">
+                <dl class="row mb-0">
+                    <dt class="col-sm-3">Mã bạn đọc / họ tên tại thời điểm ghi</dt><dd class="col-sm-9">@selected.ReaderCode — @selected.ReaderName (ID @selected.ReaderAccountId)</dd>
+                    <dt class="col-sm-3">Thời điểm</dt><dd class="col-sm-9">@DateTime.SpecifyKind(selected.OccurredAtUtc, DateTimeKind.Utc).ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss") (giờ địa phương)</dd>
+                    <dt class="col-sm-3">Sự kiện / kết quả</dt><dd class="col-sm-9">@LoanBlockHistoryEventTypes.Label(selected.EventType) · @LoanBlockHistoryEventTypes.OutcomeLabel(selected.Outcome)</dd>
+                    <dt class="col-sm-3">Người thực hiện / vai trò</dt><dd class="col-sm-9">@(!string.IsNullOrWhiteSpace(selected.Actor) ? selected.Actor : "—") · @(selected.ActorRole is not null ? AccountRoles.DisplayName(selected.ActorRole) : "—")</dd>
+                    <dt class="col-sm-3">Lý do chặn đã ghi nhận</dt>
+                    <dd class="col-sm-9">
+                        @if (detailReasons.Length == 0) { <span>—</span> }
+                        else { <ul class="mb-0">@foreach (var reason in detailReasons) { <li>@reason</li> }</ul> }
+                    </dd>
+                    <dt class="col-sm-3">Sách đang mượn / hạn mức</dt><dd class="col-sm-9">@selected.BorrowedCount / @selected.BorrowingLimit</dd>
+                    <dt class="col-sm-3">Tình trạng thẻ / hết hạn</dt><dd class="col-sm-9">@(selected.CardStatus ?? "—") · @(selected.CardExpiresOn?.ToString("dd/MM/yyyy") ?? "—")</dd>
+                    <dt class="col-sm-3">Sách quá hạn chưa trả</dt><dd class="col-sm-9">@selected.OverdueLoanCount</dd>
+                    <dt class="col-sm-3">Nợ tại thời điểm sự kiện</dt><dd class="col-sm-9">@ReaderBorrowingStatus.FormatVnd(selected.OutstandingBalance) VND</dd>
+                    <dt class="col-sm-3">Lý do bỏ qua</dt><dd class="col-sm-9">@(selected.OverrideReason ?? "—")</dd>
+                    <dt class="col-sm-3">Mã yêu cầu bỏ qua</dt><dd class="col-sm-9">@(selected.OverrideRequestId?.ToString() ?? "—")</dd>
+                    <dt class="col-sm-3">Lý do thất bại</dt><dd class="col-sm-9">@(selected.FailureReason ?? "—")</dd>
+                    <dt class="col-sm-3">Phiếu mượn liên quan</dt><dd class="col-sm-9">@(selected.BookLoanId?.ToString() ?? "—")</dd>
+                    <dt class="col-sm-3">IP</dt><dd class="col-sm-9">@(selected.IpAddress ?? "—")</dd>
+                    <dt class="col-sm-3">Mã nguyên nhân</dt><dd class="col-sm-9">@(selected.BlockingReasonCodes ?? "—")</dd>
+                </dl>
+            </div>
+        </section>
+    }
+
+    <section class="card shadow-sm border-0">
+        <div class="table-responsive">
+            <table class="table table-hover table-sm align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Thời điểm</th><th>Mã bạn đọc</th><th>Họ tên</th><th>Sự kiện</th>
+                        <th>Người thực hiện</th><th>Lý do chặn / vi phạm</th><th>Nợ</th>
+                        <th>Lý do bỏ qua</th><th>Phiếu mượn</th><th>Chi tiết</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (Model.Records.Count == 0 && Model.ErrorMessage is null)
+                    {
+                        <tr><td colspan="10" class="text-center text-muted py-4">Chưa có bản ghi phù hợp với bộ lọc.</td></tr>
+                    }
+                    @foreach (var record in Model.Records)
+                    {
+                        <tr>
+                            <td class="text-nowrap">@DateTime.SpecifyKind(record.OccurredAtUtc, DateTimeKind.Utc).ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss")</td>
+                            <td>@record.ReaderCode</td><td>@record.ReaderName</td>
+                            <td><span class="badge @(record.EventType.StartsWith("Override", StringComparison.Ordinal) ? "bg-warning-subtle text-warning-emphasis" : "bg-danger-subtle text-danger-emphasis")">@LoanBlockHistoryEventTypes.Label(record.EventType)</span></td>
+                            <td>@(record.Actor ?? "—")</td>
+                            <td class="history-reason-cell">@(!string.IsNullOrWhiteSpace(record.Reasons) ? record.Reasons : record.FailureReason ?? "—")</td>
+                            <td class="text-nowrap">@(record.OutstandingBalance > 0 ? $"{ReaderBorrowingStatus.FormatVnd(record.OutstandingBalance)} VND" : "—")</td>
+                            <td>@(record.OverrideReason ?? "—")</td>
+                            <td>@(record.BookLoanId?.ToString() ?? "—")</td>
+                            <td><a class="btn btn-sm btn-outline-primary"
+                                   asp-action="Index"
+                                   asp-route-ReaderQuery="@filter.ReaderQuery"
+                                   asp-route-FromDate="@filter.FromDate?.ToString("yyyy-MM-dd")"
+                                   asp-route-ToDate="@filter.ToDate?.ToString("yyyy-MM-dd")"
+                                   asp-route-EventType="@filter.EventType"
+                                   asp-route-Page="@filter.Page"
+                                   asp-route-PageSize="@filter.PageSize"
+                                   asp-route-selectedId="@record.Id">Xem</a></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        @if (Model.PageCount > 1)
+        {
+            <nav class="card-footer d-flex justify-content-between align-items-center" aria-label="Phân trang lịch sử">
+                <a class="btn btn-sm btn-outline-primary @(filter.Page <= 1 ? "disabled" : "")"
+                   asp-action="Index" asp-route-ReaderQuery="@filter.ReaderQuery"
+                   asp-route-FromDate="@filter.FromDate?.ToString("yyyy-MM-dd")" asp-route-ToDate="@filter.ToDate?.ToString("yyyy-MM-dd")"
+                   asp-route-EventType="@filter.EventType" asp-route-Page="@(filter.Page - 1)" asp-route-PageSize="@filter.PageSize">Trước</a>
+                <span>Trang @filter.Page / @Model.PageCount</span>
+                <a class="btn btn-sm btn-outline-primary @(filter.Page >= Model.PageCount ? "disabled" : "")"
+                   asp-action="Index" asp-route-ReaderQuery="@filter.ReaderQuery"
+                   asp-route-FromDate="@filter.FromDate?.ToString("yyyy-MM-dd")" asp-route-ToDate="@filter.ToDate?.ToString("yyyy-MM-dd")"
+                   asp-route-EventType="@filter.EventType" asp-route-Page="@(filter.Page + 1)" asp-route-PageSize="@filter.PageSize">Sau</a>
+            </nav>
+        }
+    </section>
+</div>

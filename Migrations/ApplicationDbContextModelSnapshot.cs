@@ -87,6 +87,111 @@ namespace Project.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Project.Models.AuditBlockLog", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("Actor")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("ActorRole")
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<long?>("BookLoanId")
+                        .HasColumnType("bigint");
+
+                    b.Property<int>("BorrowedCount")
+                        .HasColumnType("int");
+
+                    b.Property<int>("BorrowingLimit")
+                        .HasColumnType("int");
+
+                    b.Property<string>("BlockingReasonCodes")
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<DateOnly?>("CardExpiresOn")
+                        .HasColumnType("date");
+
+                    b.Property<string>("CardStatus")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("FailureReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("EventType")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasDefaultValue("BlockedOther")
+                        .HasColumnType("nvarchar(40)");
+
+                    b.Property<string>("IpAddress")
+                        .HasMaxLength(45)
+                        .HasColumnType("nvarchar(45)");
+
+                    b.Property<DateTime>("OccurredAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Outcome")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasDefaultValue("Blocked")
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<decimal>("OutstandingBalance")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<int>("OverdueLoanCount")
+                        .HasColumnType("int");
+
+                    b.Property<string>("OverrideReason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<Guid?>("OverrideRequestId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("ReaderAccountId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("ReaderCode")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("ReaderName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("Reasons")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OverrideRequestId")
+                        .IsUnique()
+                        .HasFilter("[OverrideRequestId] IS NOT NULL");
+
+                    b.HasIndex("EventType", "OccurredAtUtc");
+
+                    b.HasIndex("ReaderAccountId");
+
+                    b.HasIndex("ReaderAccountId", "OccurredAtUtc");
+
+                    b.ToTable("AuditBlockLogs");
+                });
+
             modelBuilder.Entity("Project.Models.AuditLog", b =>
                 {
                     b.Property<long>("Id")
@@ -228,9 +333,6 @@ namespace Project.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)");
 
-                    b.Property<DateOnly?>("ReceivedDate")
-                        .HasColumnType("date");
-
                     b.Property<string>("Note")
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar(500)");
@@ -241,6 +343,9 @@ namespace Project.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)")
                         .HasDefaultValue("Tốt");
+
+                    b.Property<DateOnly?>("ReceivedDate")
+                        .HasColumnType("date");
 
                     b.Property<int>("ShelfId")
                         .HasColumnType("int");
@@ -378,6 +483,9 @@ namespace Project.Migrations
                         .HasColumnType("int")
                         .HasDefaultValue(0);
 
+                    b.Property<DateTime?>("ReturnedAtUtc")
+                        .HasColumnType("datetime2");
+
                     b.HasKey("Id");
 
                     b.HasIndex("BookId");
@@ -508,6 +616,11 @@ namespace Project.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("bit")
                         .HasDefaultValue(true);
+
+                    b.Property<int>("MaxBorrowedBooks")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(100);
 
                     b.Property<int>("MaxRenewals")
                         .ValueGeneratedOnAdd()

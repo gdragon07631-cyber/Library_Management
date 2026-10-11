@@ -5,19 +5,47 @@
 <div class="container py-4">
     <div class="mb-4"><h1 class="h3 mb-1 text-primary fw-bold">Phiếu mượn</h1><p class="text-muted mb-0">Hạn trả được tự động chuyển sang ngày thư viện mở cửa kế tiếp.</p></div>
     @if (TempData["SuccessMessage"] is string success) { <div class="alert alert-success">@success</div> }
-    @if (TempData["ErrorMessage"] is string error) { <div class="alert alert-danger">@error</div> }
+    @if (TempData["ErrorMessage"] is string error) { <div class="alert alert-danger loan-feedback-message" role="alert">@error</div> }
     <div class="card shadow-sm border-0 mb-4"><div class="card-header bg-white"><h2 class="h5 mb-0">Tạo phiếu mượn</h2></div><div class="card-body">
-        <form asp-action="Create" method="post" class="row g-3 align-items-end">
+        <form asp-action="Create" method="post" class="row g-3 align-items-end" id="create-loan-form">
             @Html.AntiForgeryToken()
             <div class="col-md-4"><label class="form-label">Sách</label><select class="form-select" name="BookId" required><option value="">-- Chọn sách --</option>@foreach (var book in Model.Books) { <option value="@book.Id">@book.Title</option> }</select></div>
-            <div class="col-md-4"><label class="form-label">Bạn đọc</label><select class="form-select" name="ReaderAccountId" required><option value="">-- Chọn bạn đọc --</option>@foreach (var reader in Model.Readers) { <option value="@reader.Id">@reader.FullName (@reader.StudentOrStaffCode)</option> }</select></div>
+            <div class="col-md-4"><label class="form-label" for="reader-account-id">Bạn đọc</label><select class="form-select" id="reader-account-id" name="ReaderAccountId" required><option value="">-- Chọn bạn đọc --</option>@foreach (var reader in Model.Readers) { <option value="@reader.Id">@reader.FullName (@reader.StudentOrStaffCode)</option> }</select></div>
             <div class="col-md-2"><label class="form-label">Ngày mượn</label><input class="form-control" type="date" name="LoanDate" value="@Model.NewLoan.LoanDate?.ToString("yyyy-MM-dd")" required /></div>
-            <div class="col-md-2"><button class="btn btn-primary w-100" type="submit">Tạo phiếu</button></div>
+            <div class="col-md-2"><button class="btn btn-primary w-100" id="create-loan-button" type="submit" disabled>Tạo phiếu</button></div>
+            @if (Model.CanOverrideLoanBlock)
+            {
+                <div class="col-12 text-end">
+                    <button class="btn btn-outline-warning" id="override-loan-button" type="button" hidden>Bỏ qua chặn</button>
+                </div>
+            }
+            <input type="hidden" name="OverrideBlocked" id="loan-override-enabled" value="false" />
+            <input type="hidden" name="OverrideReason" id="loan-override-reason" />
+            <input type="hidden" name="OverrideRequestId" id="loan-override-request-id" value="@Model.NewLoan.OverrideRequestId" />
+            <div class="col-12" id="reader-borrowing-status" role="status" aria-live="polite" hidden></div>
         </form>
     </div></div>
+    <dialog class="loan-override-dialog" id="loan-override-dialog" aria-labelledby="loan-override-title">
+        <div class="p-4">
+            <h2 class="h5" id="loan-override-title">Xác nhận bỏ qua chặn</h2>
+            <p id="loan-override-reader" class="mb-2"></p>
+            <p class="mb-2">Bạn đang yêu cầu bỏ qua các điều kiện chặn cho mượn đối với bạn đọc này. Vui lòng nhập lý do để tiếp tục.</p>
+            <div class="alert alert-warning loan-feedback-message" id="loan-override-reasons" role="status"></div>
+            <label class="form-label" for="loan-override-reason-input">Lý do bỏ qua (bắt buộc)</label>
+            <textarea class="form-control" id="loan-override-reason-input" rows="3" maxlength="1000" required></textarea>
+            <div class="small text-danger mt-1" id="loan-override-error" role="alert"></div>
+            <div class="d-flex justify-content-end gap-2 mt-3">
+                <button class="btn btn-outline-secondary" type="button" id="loan-override-cancel">Hủy</button>
+                <button class="btn btn-warning" type="button" id="loan-override-confirm">Xác nhận bỏ qua</button>
+            </div>
+        </div>
+    </dialog>
     <div class="card shadow-sm border-0"><div class="card-header bg-white"><h2 class="h5 mb-0">Danh sách phiếu mượn</h2></div><div class="table-responsive"><table class="table table-hover align-middle mb-0">
         <thead class="table-light"><tr><th>Sách</th><th>Bạn đọc</th><th>Ngày mượn</th><th>Hạn trả</th><th>Thao tác</th></tr></thead><tbody>
         @if (Model.Loans.Count == 0) { <tr><td colspan="5" class="text-center text-muted py-4">Chưa có phiếu mượn.</td></tr> }
-        @foreach (var loan in Model.Loans) { var renewalLimit = loan.ReaderAccount?.LibraryCard?.LibraryCardType?.MaxRenewals ?? 0; <tr><td>@loan.Book?.Title</td><td>@loan.ReaderAccount?.FullName</td><td>@loan.LoanDate.ToString("dd/MM/yyyy")</td><td class="fw-semibold">@loan.DueDate.ToString("dd/MM/yyyy") @if (loan.DueDate != loan.OriginalDueDate) { <span class="badge bg-info text-dark">Đã điều chỉnh</span> }<div class="small text-muted">Số lần gia hạn: @loan.RenewalCount / @renewalLimit</div></td><td>@if (loan.DueDate >= DateOnly.FromDateTime(DateTime.Today)) { <form asp-action="Renew" method="post" class="d-inline">@Html.AntiForgeryToken()<input type="hidden" name="id" value="@loan.Id" /><button class="btn btn-sm btn-outline-primary" type="submit">Gia hạn</button></form> }</td></tr> }
+        @foreach (var loan in Model.Loans) { var renewalLimit = loan.ReaderAccount?.LibraryCard?.LibraryCardType?.MaxRenewals ?? 0; <tr><td>@loan.Book?.Title</td><td>@loan.ReaderAccount?.FullName</td><td>@loan.LoanDate.ToString("dd/MM/yyyy")</td><td class="fw-semibold">@loan.DueDate.ToString("dd/MM/yyyy") @if (loan.DueDate != loan.OriginalDueDate) { <span class="badge bg-info text-dark">Đã điều chỉnh</span> }<div class="small text-muted">Số lần gia hạn: @loan.RenewalCount / @renewalLimit</div>@if (loan.ReturnedAtUtc is not null) { <span class="badge bg-success">Đã trả</span><div class="small text-muted">Lúc @DateTime.SpecifyKind(loan.ReturnedAtUtc.Value, DateTimeKind.Utc).ToLocalTime().ToString("dd/MM/yyyy HH:mm")</div> }</td><td>@if (loan.ReturnedAtUtc is null) { <form asp-action="Return" method="post" class="d-inline" onsubmit="return confirm('Xác nhận ghi nhận bạn đọc đã trả sách?');">@Html.AntiForgeryToken()<input type="hidden" name="id" value="@loan.Id" /><button class="btn btn-sm btn-outline-success" type="submit">Ghi nhận trả</button></form> }@if (loan.ReturnedAtUtc is null && loan.DueDate >= DateOnly.FromDateTime(DateTime.Today)) { <form asp-action="Renew" method="post" class="d-inline ms-1">@Html.AntiForgeryToken()<input type="hidden" name="id" value="@loan.Id" /><button class="btn btn-sm btn-outline-primary" type="submit">Gia hạn</button></form> }</td></tr> }
     </tbody></table></div></div>
 </div>
+@section Scripts {
+    <script src="~/js/loan-borrowing-limit.js" asp-append-version="true"></script>
+}

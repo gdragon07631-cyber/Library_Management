@@ -107,7 +107,8 @@ public sealed class SecurityFixTests : IDisposable
     [InlineData(typeof(CategoryController), new[] { AccountRoles.SystemAdmin, AccountRoles.LibraryManager })]
     [InlineData(typeof(WarehouseController), new[] { AccountRoles.SystemAdmin, AccountRoles.LibraryManager })]
     [InlineData(typeof(ShelfController), new[] { AccountRoles.SystemAdmin, AccountRoles.LibraryManager })]
-    [InlineData(typeof(LoanController), new[] { AccountRoles.SystemAdmin, AccountRoles.LibraryManager })]
+    [InlineData(typeof(LoanController), new[] { AccountRoles.Librarian, AccountRoles.SystemAdmin, AccountRoles.LibraryManager })]
+    [InlineData(typeof(LoanBlockHistoryController), new[] { AccountRoles.LibraryManager })]
     [InlineData(typeof(WorkingScheduleController), new[] { AccountRoles.SystemAdmin, AccountRoles.LibraryManager })]
     [InlineData(typeof(BookController), new[] { AccountRoles.Librarian, AccountRoles.SystemAdmin, AccountRoles.LibraryManager })]
     public void LibraryControllersRequireTheSameRolesAsTheirPages(Type controller, string[] roles)
@@ -152,7 +153,33 @@ public sealed class SecurityFixTests : IDisposable
     {
         var librarian = await SignInStaffAsync(AccountRoles.Librarian);
 
-        var (result, ranAction) = await RunFilterAsync("/api/loans", "GET", librarian);
+        var (result, ranAction) = await RunFilterAsync("/api/authors", "GET", librarian);
+
+        Assert.False(ranAction);
+        Assert.Equal(StatusCodes.Status403Forbidden, Assert.IsType<ObjectResult>(result).StatusCode);
+    }
+
+    [Fact]
+    public async Task LibrarianCanAccessLoanActions()
+    {
+        var librarian = await SignInStaffAsync(AccountRoles.Librarian);
+
+        var loanRoles = typeof(LoanController).GetCustomAttribute<StaffOnlyAttribute>()!.Roles.ToArray();
+        var (result, ranAction) = await RunFilterAsync("/api/loans", "GET", librarian, roles: loanRoles);
+
+        Assert.True(ranAction);
+        Assert.Null(result);
+    }
+
+    [Theory]
+    [InlineData(AccountRoles.Librarian)]
+    [InlineData(AccountRoles.SystemAdmin)]
+    public async Task OnlyLibraryManagerCanAccessLoanBlockHistory(string role)
+    {
+        var account = await SignInStaffAsync(role);
+        var historyRoles = typeof(LoanBlockHistoryController).GetCustomAttribute<StaffOnlyAttribute>()!.Roles.ToArray();
+
+        var (result, ranAction) = await RunFilterAsync("/api/loan-block-history", "GET", account, roles: historyRoles);
 
         Assert.False(ranAction);
         Assert.Equal(StatusCodes.Status403Forbidden, Assert.IsType<ObjectResult>(result).StatusCode);
@@ -190,7 +217,7 @@ public sealed class SecurityFixTests : IDisposable
     }
 
     private async Task<(IActionResult? Result, bool RanAction)> RunFilterAsync(
-        string path, string method, string? cookie, bool isPublic = false)
+        string path, string method, string? cookie, bool isPublic = false, string[]? roles = null)
     {
         var services = new ServiceCollection().AddSingleton<IAuditLogService>(auditLogService).BuildServiceProvider();
         var httpContext = new DefaultHttpContext { RequestServices = services };
@@ -204,7 +231,7 @@ public sealed class SecurityFixTests : IDisposable
             [], new Dictionary<string, object?>(), controller: new object());
 
         var ranAction = false;
-        await new StaffOnlyAttribute(AccountRoles.SystemAdmin, AccountRoles.LibraryManager).OnActionExecutionAsync(context, () =>
+        await new StaffOnlyAttribute(roles ?? [AccountRoles.SystemAdmin, AccountRoles.LibraryManager]).OnActionExecutionAsync(context, () =>
         {
             ranAction = true;
             return Task.FromResult(new ActionExecutedContext(context, [], controller: new object()));

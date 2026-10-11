@@ -29,6 +29,7 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     public DbSet<WeeklyWorkingSchedule> WeeklyWorkingSchedules => Set<WeeklyWorkingSchedule>();
     public DbSet<HolidayClosure> HolidayClosures => Set<HolidayClosure>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
+    public DbSet<AuditBlockLog> AuditBlockLogs => Set<AuditBlockLog>();
     public DbSet<LoanPolicy> LoanPolicies => Set<LoanPolicy>();
     public DbSet<StaffPasswordSetupToken> StaffPasswordSetupTokens => Set<StaffPasswordSetupToken>();
 
@@ -64,6 +65,30 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
             entity.Property(author => author.Note).HasMaxLength(500);
             entity.Property(author => author.Status).HasMaxLength(50).HasDefaultValue("Hoạt động").IsRequired();
             entity.Property(author => author.CreatedAtUtc).HasColumnType("datetime2");
+        });
+
+        // AuditBlockLog: lưu bản ghi chặn mượn riêng để dễ tra cứu và thống kê
+        modelBuilder.Entity<AuditBlockLog>(entity =>
+        {
+            entity.Property(x => x.OccurredAtUtc).HasColumnType("datetime2").IsRequired();
+            entity.Property(x => x.ReaderCode).HasMaxLength(64).IsRequired();
+            entity.Property(x => x.ReaderName).HasMaxLength(200).IsRequired();
+            entity.Property(x => x.OutstandingBalance).HasColumnType("decimal(18,2)").IsRequired();
+            entity.Property(x => x.Reasons).HasMaxLength(1000).IsRequired();
+            entity.Property(x => x.BlockingReasonCodes).HasMaxLength(300);
+            entity.Property(x => x.EventType).HasMaxLength(40).HasDefaultValue("BlockedOther").IsRequired();
+            entity.Property(x => x.ActorRole).HasMaxLength(30);
+            entity.Property(x => x.OverrideReason).HasMaxLength(1000);
+            entity.Property(x => x.Outcome).HasMaxLength(20).HasDefaultValue("Blocked").IsRequired();
+            entity.Property(x => x.FailureReason).HasMaxLength(500);
+            entity.Property(x => x.IpAddress).HasMaxLength(45);
+            entity.Property(x => x.CardStatus).HasMaxLength(50);
+            entity.Property(x => x.CardExpiresOn).HasColumnType("date");
+            entity.HasIndex(x => x.ReaderAccountId);
+            entity.HasIndex(x => new { x.EventType, x.OccurredAtUtc });
+            entity.HasIndex(x => new { x.ReaderAccountId, x.OccurredAtUtc });
+            entity.HasIndex(x => x.OverrideRequestId).IsUnique()
+                .HasFilter("[OverrideRequestId] IS NOT NULL");
         });
 
         modelBuilder.Entity<Book>(entity =>
@@ -179,6 +204,7 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
             entity.Property(type => type.Name).HasMaxLength(100).IsRequired();
             entity.Property(type => type.IsActive).HasDefaultValue(true);
             entity.Property(type => type.MaxRenewals).HasDefaultValue(LibraryCardType.DefaultMaxRenewals);
+            entity.Property(type => type.MaxBorrowedBooks).HasDefaultValue(LibraryCardType.DefaultMaxBorrowedBooks);
         });
 
         modelBuilder.Entity<ReaderPasswordHistory>(entity =>
@@ -248,6 +274,7 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
             entity.Property(loan => loan.DueDate).HasColumnType("date");
             entity.Property(loan => loan.RenewalCount).HasDefaultValue(0);
             entity.Property(loan => loan.CreatedAtUtc).HasColumnType("datetime2");
+            entity.Property(loan => loan.ReturnedAtUtc).HasColumnType("datetime2");
             entity.HasOne(loan => loan.Book).WithMany()
                 .HasForeignKey(loan => loan.BookId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne(loan => loan.ReaderAccount).WithMany()

@@ -4,6 +4,7 @@
     ViewData["Title"] = "Tổng quan";
     var role = (await AuditLogAccess.GetSignedInStaffAsync(Context.Request))?.Role;
     string[] library = [AccountRoles.SystemAdmin, AccountRoles.LibraryManager];
+    string[] libraryManagerOnly = [AccountRoles.LibraryManager];
     string[] adminOnly = [AccountRoles.SystemAdmin];
     string[] librarianOnly = [AccountRoles.Librarian];
     string[] everyone = [AccountRoles.SystemAdmin, AccountRoles.LibraryManager, AccountRoles.Librarian];
@@ -15,6 +16,7 @@
         new { Group = "Vận hành", Name = "Kho sách", Description = "Theo dõi các kho trong thư viện.", Controller = "Warehouse", Action = "Index", Roles = library },
         new { Group = "Vận hành", Name = "Kệ sách", Description = "Quản lý vị trí và kệ lưu trữ.", Controller = "Shelf", Action = "Index", Roles = library },
         new { Group = "Vận hành", Name = "Mượn trả", Description = "Lập và theo dõi phiếu mượn.", Controller = "Loan", Action = "Index", Roles = library },
+        new { Group = "Vận hành", Name = "Lịch sử chặn mượn", Description = "Tra cứu lịch sử chặn và bỏ qua chặn theo bạn đọc.", Controller = "LoanBlockHistory", Action = "Index", Roles = libraryManagerOnly },
         new { Group = "Vận hành", Name = "Lịch làm việc", Description = "Cập nhật lịch tuần và ngày nghỉ.", Controller = "WorkingSchedule", Action = "Index", Roles = library },
         new { Group = "Bạn đọc", Name = "Hồ sơ chờ duyệt", Description = "Xem và duyệt đăng ký bạn đọc.", Controller = "ReaderApproval", Action = "Index", Roles = librarianOnly },
         new { Group = "Bạn đọc", Name = "Đăng ký bạn đọc", Description = "Tạo hồ sơ bạn đọc mới.", Controller = "ReaderRegistration", Action = "Register", Roles = everyone },
