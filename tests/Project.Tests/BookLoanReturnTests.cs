@@ -45,6 +45,78 @@ public sealed class BookLoanReturnTests
     }
 
     [Fact]
+    public async Task Return_WithPendingHold_ReservesReturnedCopyForThatReader()
+    {
+        await using var db = CreateInMemoryDb();
+        var (loan, copy, _) = await SeedLoanAsync(db, 3);
+        var waitingReader = CreateReader(2, "WAIT-1");
+        var hold = new BookHold
+        {
+            Id = 1, BookId = loan.BookId, Book = loan.Book, ReaderAccountId = waitingReader.Id,
+            ReaderAccount = waitingReader, HeldAtUtc = DateTime.UtcNow.AddHours(-1)
+        };
+        db.AddRange(waitingReader, hold);
+        await db.SaveChangesAsync();
+
+        var result = await CreateService(db).ReturnAsync(loan.Id, DateTime.UtcNow);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(BookCopyStatuses.Held, result.CopyStatus);
+        Assert.Equal(BookCopyStatuses.Held, (await db.BookCopies.FindAsync(copy.Id))!.Status);
+        var savedHold = await db.BookHolds.AsNoTracking().SingleAsync();
+        Assert.Equal(BookHoldStatuses.Assigned, savedHold.Status);
+        Assert.Equal(copy.Id, savedHold.BookCopyId);
+        Assert.Equal(waitingReader.Id, result.AssignedHold?.ReaderAccountId);
+    }
+
+    [Fact]
+    public async Task Return_SelectsOldestEligibleHold_AndLeavesOtherQueueEntriesUntouched()
+    {
+        await using var db = CreateInMemoryDb();
+        var (loan, copy, _) = await SeedLoanAsync(db, 3);
+        var now = DateTime.UtcNow;
+        var cancelledReader = CreateReader(2, "WAIT-CANCELLED");
+        var inactiveReader = CreateReader(3, "WAIT-INACTIVE", "Ngưng hoạt động");
+        var firstReader = CreateReader(4, "WAIT-FIRST");
+        var secondReader = CreateReader(5, "WAIT-SECOND");
+        var cancelled = new BookHold
+        {
+            Id = 1, BookId = loan.BookId, ReaderAccountId = cancelledReader.Id, ReaderAccount = cancelledReader,
+            HeldAtUtc = now.AddHours(-4), Status = BookHoldStatuses.Cancelled
+        };
+        var inactive = new BookHold
+        {
+            Id = 2, BookId = loan.BookId, ReaderAccountId = inactiveReader.Id, ReaderAccount = inactiveReader,
+            HeldAtUtc = now.AddHours(-3)
+        };
+        var first = new BookHold
+        {
+            Id = 3, BookId = loan.BookId, ReaderAccountId = firstReader.Id, ReaderAccount = firstReader,
+            HeldAtUtc = now.AddHours(-2)
+        };
+        var second = new BookHold
+        {
+            Id = 4, BookId = loan.BookId, ReaderAccountId = secondReader.Id, ReaderAccount = secondReader,
+            HeldAtUtc = now.AddHours(-1)
+        };
+        db.AddRange(cancelledReader, inactiveReader, firstReader, secondReader, cancelled, inactive, first, second);
+        await db.SaveChangesAsync();
+
+        var result = await CreateService(db).ReturnAsync(loan.Id, now);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(firstReader.Id, result.AssignedHold?.ReaderAccountId);
+        Assert.Equal(BookCopyStatuses.Held, (await db.BookCopies.FindAsync(copy.Id))!.Status);
+        Assert.Equal(BookHoldStatuses.Cancelled, (await db.BookHolds.FindAsync(cancelled.Id))!.Status);
+        Assert.Equal(BookHoldStatuses.Pending, (await db.BookHolds.FindAsync(inactive.Id))!.Status);
+        Assert.Null((await db.BookHolds.FindAsync(inactive.Id))!.BookCopyId);
+        Assert.Equal(BookHoldStatuses.Assigned, (await db.BookHolds.FindAsync(first.Id))!.Status);
+        Assert.Equal(copy.Id, (await db.BookHolds.FindAsync(first.Id))!.BookCopyId);
+        Assert.Equal(BookHoldStatuses.Pending, (await db.BookHolds.FindAsync(second.Id))!.Status);
+        Assert.Null((await db.BookHolds.FindAsync(second.Id))!.BookCopyId);
+    }
+
+    [Fact]
     public async Task Return_LegacyLoanWithoutCopy_IsRejectedWithoutGuessing()
     {
         await using var db = CreateInMemoryDb();
@@ -85,6 +157,13 @@ public sealed class BookLoanReturnTests
         await using var db = new ApplicationDbContext(options);
         await db.Database.EnsureCreatedAsync();
         var (loan, copy, _) = await SeedRelationalLoanAsync(db);
+        var waitingReader = CreateReader(2, "RETURN-WAITING");
+        var hold = new BookHold
+        {
+            BookId = loan.BookId, ReaderAccountId = waitingReader.Id, HeldAtUtc = DateTime.UtcNow
+        };
+        db.AddRange(waitingReader, hold);
+        await db.SaveChangesAsync();
         await db.Database.ExecuteSqlRawAsync(
             "CREATE TRIGGER FailBookCopyReturn BEFORE UPDATE OF Status ON BookCopies BEGIN SELECT RAISE(ABORT, 'copy update failed'); END;");
 
@@ -93,6 +172,37 @@ public sealed class BookLoanReturnTests
         Assert.Null((await db.BookLoans.AsNoTracking().SingleAsync(item => item.Id == loan.Id)).ReturnedAtUtc);
         Assert.Equal(BookCopyStatuses.Borrowed,
             (await db.BookCopies.AsNoTracking().SingleAsync(item => item.Id == copy.Id)).Status);
+        var savedHold = await db.BookHolds.AsNoTracking().SingleAsync();
+        Assert.Equal(BookHoldStatuses.Pending, savedHold.Status);
+        Assert.Null(savedHold.BookCopyId);
+    }
+
+    [Fact]
+    public async Task Return_RelationalDatabase_AssignsHoldAndUpdatesAllRecords()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>().UseSqlite(connection).Options;
+        await using var db = new ApplicationDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+        var (loan, copy, _) = await SeedRelationalLoanAsync(db);
+        var waitingReader = CreateReader(2, "RETURN-RELATIONAL-WAITING");
+        var hold = new BookHold
+        {
+            BookId = loan.BookId, ReaderAccountId = waitingReader.Id, HeldAtUtc = DateTime.UtcNow
+        };
+        db.AddRange(waitingReader, hold);
+        await db.SaveChangesAsync();
+
+        var result = await CreateService(db).ReturnAsync(loan.Id, DateTime.UtcNow);
+
+        Assert.True(result.IsSuccess);
+        Assert.NotNull((await db.BookLoans.AsNoTracking().SingleAsync(item => item.Id == loan.Id)).ReturnedAtUtc);
+        Assert.Equal(BookCopyStatuses.Held,
+            (await db.BookCopies.AsNoTracking().SingleAsync(item => item.Id == copy.Id)).Status);
+        var savedHold = await db.BookHolds.AsNoTracking().SingleAsync();
+        Assert.Equal(BookHoldStatuses.Assigned, savedHold.Status);
+        Assert.Equal(copy.Id, savedHold.BookCopyId);
     }
 
     private static ApplicationDbContext CreateInMemoryDb()
@@ -104,6 +214,13 @@ public sealed class BookLoanReturnTests
 
     private static BookLoanService CreateService(ApplicationDbContext db) =>
         new(db, new WorkingScheduleService(db));
+
+    private static ReaderAccount CreateReader(int id, string code, string status = "Đang hoạt động") => new()
+    {
+        Id = id, FullName = $"Reader {code}", DateOfBirth = new DateOnly(2000, 1, 1),
+        Email = $"{code.ToLowerInvariant()}@example.test", PhoneNumber = "0900000000",
+        StudentOrStaffCode = code, PasswordHash = "hash", Status = status
+    };
 
     private static async Task<(BookLoan Loan, BookCopy Copy, BookCopy OtherCopy)> SeedLoanAsync(
         ApplicationDbContext db, int dueDateOffset)

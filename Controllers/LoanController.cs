@@ -127,12 +127,20 @@ public sealed class LoanController(IBookLoanService loans, ApplicationDbContext 
             return Ok(new
             {
                 success = true,
-                message = "Nhận trả sách thành công.",
+                message = result.AssignedHold is null
+                    ? "Nhận trả sách thành công. Bản sao đã được chuyển sang trạng thái Sẵn sàng."
+                    : "Nhận trả sách thành công. Bản sao đã được chuyển sang trạng thái Đang giữ cho người đặt giữ đầu hàng đợi.",
                 copyCode = result.Loan!.BookCopy?.CopyCode,
                 readerName = result.Loan.ReaderAccount?.FullName,
                 returnedAtUtc = result.Loan.ReturnedAtUtc,
                 loanStatus = "Đã trả",
-                copyStatus = BookCopyStatuses.Available
+                copyStatus = result.CopyStatus,
+                hasWaitingHold = result.AssignedHold is not null,
+                reservedFor = result.AssignedHold is null ? null : new
+                {
+                    readerName = result.AssignedHold.ReaderAccount?.FullName,
+                    readerCode = result.AssignedHold.ReaderAccount?.StudentOrStaffCode
+                }
             });
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }

@@ -6,6 +6,7 @@ public static class BookCopyStatuses
 {
     public const string Available = "Sẵn sàng";
     public const string Borrowed = "Đang mượn";
+    public const string Held = "Đang giữ";
 }
 
 public sealed class BookCopy

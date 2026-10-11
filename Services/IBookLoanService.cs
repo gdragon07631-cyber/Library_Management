@@ -12,7 +12,8 @@ public sealed record BookCopyLoanLookupOutcome(
     string? ReaderName = null, DateOnly? DueDate = null, int OverdueDays = 0);
 public sealed record ReturnBookLoanOutcome(
     bool IsSuccess, string? ErrorMessage = null, BookLoan? Loan = null,
-    bool IsNotFound = false, bool IsConflict = false);
+    bool IsNotFound = false, bool IsConflict = false,
+    BookHold? AssignedHold = null, string? CopyStatus = null);
 
 public interface IBookLoanService
 {

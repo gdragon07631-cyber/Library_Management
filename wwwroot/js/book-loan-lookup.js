@@ -85,7 +85,12 @@
             detail(returned, "Bạn đọc", payload.readerName || loan.readerName || "Không có dữ liệu");
             detail(returned, "Ngày trả", payload.returnedAtUtc ? new Date(payload.returnedAtUtc).toLocaleString("vi-VN") : "Đã ghi nhận");
             detail(returned, "Trạng thái phiếu mượn", payload.loanStatus || "Đã trả");
-            detail(returned, "Trạng thái bản sao", payload.copyStatus || "Sẵn sàng");
+            detail(returned, "Trạng thái bản sao", payload.copyStatus || "Không có dữ liệu");
+            if (payload.hasWaitingHold && payload.reservedFor) {
+                const identity = [payload.reservedFor.readerName, payload.reservedFor.readerCode]
+                    .filter(Boolean).join(" — ");
+                if (identity) detail(returned, "Dành cho bạn đọc", identity);
+            }
             result.replaceChildren(returned);
         } catch {
             button.disabled = false;
