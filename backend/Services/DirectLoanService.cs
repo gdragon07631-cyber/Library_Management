@@ -47,13 +47,20 @@ public sealed class DirectLoanService(ApplicationDbContext db, IBookLoanService 
         if (model.CopyCode.Length > 0)
         {
             var copy = await db.BookCopies.AsNoTracking().Include(c => c.Book).SingleOrDefaultAsync(c => c.CopyCode == model.CopyCode, ct);
-            if (copy?.Book == null) model.CopyError = "Không tìm thấy mã vạch bản sao.";
+            if (copy?.Book == null) model.CopyError = "Mã vạch không tồn tại trong hệ thống.";
             else
             {
                 model.BookTitle = copy.Book.Title;
                 model.CopyStatus = copy.Status;
                 if (copy.Status != BookCopyStatus.Available)
-                    model.CopyError = $"Bản sao ở trạng thái {copy.Status}, không thể cho mượn trực tiếp.";
+                    model.CopyError = copy.Status switch
+                    {
+                        BookCopyStatus.OnLoan => "Bản sao này đang được mượn, không thể tiếp tục cho mượn.",
+                        BookCopyStatus.UnderRepair => "Bản sao đang sửa chữa, chưa thể cho mượn.",
+                        BookCopyStatus.Removed => "Bản sao đã bị loại khỏi kho, không thể cho mượn.",
+                        BookCopyStatus.OnHold => "Bản sao đang được giữ cho đặt trước, chưa đủ điều kiện cho mượn.",
+                        _ => $"Bản sao ở trạng thái {copy.Status}, không thể cho mượn trực tiếp."
+                    };
                 else if (await db.BookLoans.AnyAsync(l => l.BookCopyId == copy.Id, ct))
                     model.CopyError = "Bản sao đã có phiếu mượn. Vui lòng kiểm tra lại dữ liệu bản sao.";
             }
@@ -65,6 +72,35 @@ public sealed class DirectLoanService(ApplicationDbContext db, IBookLoanService 
         db.BookLoans.AsNoTracking().Include(l => l.BookCopy).Include(l => l.ReaderAccount)
             .FirstOrDefaultAsync(l => l.Id == id && l.BookCopyId != null && l.SourceBookHoldId == null, ct);
 
+    public async Task<List<DirectLoanSelection>> ValidateRowsAsync(IReadOnlyList<string> codes,
+        IReadOnlyList<string>? rowIds = null, CancellationToken ct = default)
+    {
+        var rows = new List<DirectLoanSelection>();
+        var seenCodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var seenCopies = new HashSet<long>();
+        var seenIds = new HashSet<string>(StringComparer.Ordinal);
+        for (var i = 0; i < codes.Count; i++)
+        {
+            var code = codes[i]?.Trim() ?? "";
+            var id = rowIds != null && i < rowIds.Count ? rowIds[i] : Guid.NewGuid().ToString("N");
+            var badId = string.IsNullOrWhiteSpace(id) || id.Length > 64 || !seenIds.Add(id);
+            var lookup = code.Length is > 0 and <= 50 ? await LookupAsync(null, code, ct) : new DirectLoanViewModel();
+            var error = code.Length == 0 ? "Vui lòng nhập mã vạch bản sao."
+                : code.Length > 50 ? "Mã vạch không được vượt quá 50 ký tự." : lookup.CopyError;
+            if (!seenCodes.Add(code)) error = "Mã vạch này đã có trong danh sách mượn.";
+            // Resolve database collation aliases as well as textual duplicates.
+            if (lookup.BookTitle != null)
+            {
+                var copyId = await db.BookCopies.Where(c => c.CopyCode == code).Select(c => c.Id).SingleAsync(ct);
+                if (!seenCopies.Add(copyId)) error = "Mã vạch này đã có trong danh sách mượn.";
+            }
+            if (badId) error = "Định danh dòng không hợp lệ. Vui lòng xóa dòng và nhập lại.";
+            rows.Add(new(code, lookup.BookTitle ?? "Không tìm thấy", lookup.CopyStatus ?? "Không xác định")
+            { RowId = id ?? "", Error = error });
+        }
+        return rows;
+    }
+
     public async Task<BookLoanOutcome> ConfirmAsync(string cardCode, string copyCode, AdminAccount staff, CancellationToken ct = default, string? ipAddress = null)
     {
         var result = await ConfirmManyAsync(cardCode, [copyCode], staff, ct, ipAddress);
@@ -72,15 +108,13 @@ public sealed class DirectLoanService(ApplicationDbContext db, IBookLoanService 
     }
 
     public async Task<DirectLoanBatchOutcome> ConfirmManyAsync(string cardCode, IReadOnlyList<string> copyCodes,
-        AdminAccount staff, CancellationToken ct = default, string? ipAddress = null)
+        AdminAccount staff, CancellationToken ct = default, string? ipAddress = null, IReadOnlyList<string>? rowIds = null)
     {
         if (string.IsNullOrWhiteSpace(cardCode) || copyCodes.Count == 0)
             return new(false, "Vui lòng nhập mã thẻ và chọn ít nhất một bản sao.");
         var codes = copyCodes.Select(c => c?.Trim() ?? "").ToArray();
-        if (codes.Any(c => c.Length == 0 || c.Length > 50) || cardCode.Trim().Length > 32)
+        if (cardCode.Trim().Length > 32 || (rowIds != null && rowIds.Count != codes.Length))
             return new(false, "Mã thẻ hoặc mã vạch không hợp lệ.");
-        if (codes.Distinct(StringComparer.OrdinalIgnoreCase).Count() != codes.Length)
-            return new(false, "Mã vạch này đã có trong danh sách mượn.");
         // A serializable transaction includes the existing loan service's SaveChanges.
         // SQL Server update locks serialize requests for the same reader before checking their limit.
         try
@@ -93,15 +127,16 @@ public sealed class DirectLoanService(ApplicationDbContext db, IBookLoanService 
                     .AsNoTracking().ToListAsync(ct);
             }
             var page = await LookupAsync(normalizedCard, null, ct);
+            var rows = await ValidateRowsAsync(codes, rowIds, ct);
             if (page.ReaderName == null || page.ReaderError != null)
-                return new(false, page.ReaderError ?? "Thông tin bạn đọc không hợp lệ.");
+                return new(false, page.ReaderError ?? "Thông tin bạn đọc không hợp lệ.", Rows: rows);
+            if (rows.Any(r => !r.IsValid))
+                return new(false, rows.First(r => !r.IsValid).Error, Rows: rows);
             if (codes.Length > page.RemainingLoans)
-                return new(false, $"Đã chọn {codes.Length} bản sao, nhưng bạn đọc chỉ còn được mượn thêm {page.RemainingLoans} sách.");
+                return new(false, $"Đã chọn {codes.Length} bản sao, nhưng bạn đọc chỉ còn được mượn thêm {page.RemainingLoans} sách.", Rows: rows);
             var copies = new List<BookCopy>();
             foreach (var code in codes)
             {
-                var lookup = await LookupAsync(normalizedCard, code, ct);
-                if (!lookup.CanConfirm) return new(false, lookup.ReaderError ?? lookup.CopyError ?? "Thông tin mượn không hợp lệ.");
                 copies.Add(await db.BookCopies.AsNoTracking().SingleAsync(c => c.CopyCode == code, ct));
             }
             if (copies.Select(c => c.Id).Distinct().Count() != copies.Count)
@@ -120,7 +155,12 @@ public sealed class DirectLoanService(ApplicationDbContext db, IBookLoanService 
                 var changed = await db.BookCopies.Where(c => c.Id == copy.Id && c.Status == BookCopyStatus.Available)
                     .ExecuteUpdateAsync(setters => setters.SetProperty(c => c.Status, BookCopyStatus.OnLoan)
                         .SetProperty(c => c.StatusReason, "Cho mượn trực tiếp tại quầy"), ct);
-                if (changed != 1) return new(false, "Bản sao không còn sẵn sàng. Vui lòng tra cứu lại.");
+                if (changed != 1)
+                {
+                    var index = copies.FindIndex(c => c.Id == copy.Id);
+                    rows[index] = rows[index] with { Error = "Bản sao không còn sẵn sàng. Vui lòng kiểm tra lại." };
+                    return new(false, "Vui lòng xử lý dòng lỗi trước khi xác nhận.", Rows: rows);
+                }
                 // Reuse existing eligibility rules and due dates inside the same transaction.
                 var result = await loans.CreateForHoldAsync(copy.BookId, card.ReaderAccountId, loanDate,
                     originalDueDate, dueDate, staff.Email, ct);
@@ -136,7 +176,7 @@ public sealed class DirectLoanService(ApplicationDbContext db, IBookLoanService 
                     $"Cho mượn trực tiếp – phiếu #{result.Loan.Id}, bạn đọc #{card.ReaderAccountId}, bản sao {copy.CopyCode}", ipAddress));
                 await db.SaveChangesAsync(ct);
                 created.Add(result.Loan);
-                }
+            }
             await transaction.CommitAsync(ct);
             return new(true, Loans: copies.Select(c => created.Single(l => l.BookCopyId == c.Id)).ToList());
         }

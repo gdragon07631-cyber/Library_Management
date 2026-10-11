@@ -179,6 +179,88 @@ public sealed class DirectLoanTests : IDisposable
         Assert.Empty(await db.BookLoans.ToListAsync());
     }
 
+    [Theory]
+    [InlineData("missing", "Mã vạch không tồn tại trong hệ thống.")]
+    [InlineData(BookCopyStatus.OnLoan, "Bản sao này đang được mượn, không thể tiếp tục cho mượn.")]
+    [InlineData(BookCopyStatus.UnderRepair, "Bản sao đang sửa chữa, chưa thể cho mượn.")]
+    [InlineData(BookCopyStatus.Removed, "Bản sao đã bị loại khỏi kho, không thể cho mượn.")]
+    [InlineData(BookCopyStatus.OnHold, "Bản sao đang được giữ cho đặt trước, chưa đủ điều kiện cho mượn.")]
+    public async Task RowValidationReturnsExactErrorAndPreservesOtherRows(string status, string message)
+    {
+        await AddCopies(2);
+        if (status != "missing")
+        {
+            (await db.BookCopies.SingleAsync(c => c.CopyCode == "COPY02")).Status = status;
+            await db.SaveChangesAsync();
+        }
+        var codes = new[] { "COPY01", status == "missing" ? "MISSING" : "COPY02" };
+        var rows = await service.ValidateRowsAsync(codes, ["good-row", "bad-row"]);
+        Assert.Equal("good-row", rows[0].RowId);
+        Assert.True(rows[0].IsValid);
+        Assert.Equal("bad-row", rows[1].RowId);
+        Assert.Equal(message, rows[1].Error);
+        Assert.Empty(await db.BookLoans.ToListAsync());
+        var result = await service.ConfirmManyAsync("CARD01", codes, staff, rowIds: ["good-row", "bad-row"]);
+        Assert.False(result.IsSuccess);
+        Assert.Equal(message, result.Rows![1].Error);
+        Assert.True(result.Rows[0].IsValid);
+        Assert.Empty(await db.BookLoans.ToListAsync());
+        Assert.Equal(BookCopyStatus.Available, (await db.BookCopies.SingleAsync(c => c.CopyCode == "COPY01")).Status);
+    }
+
+    [Fact]
+    public async Task FiveMixedRowsCanBeCorrectedWithoutLosingIdsOrSavingPartialLoans()
+    {
+        await AddCopies(5);
+        (await db.BookCopies.SingleAsync(c => c.CopyCode == "COPY04")).Status = BookCopyStatus.OnLoan;
+        await db.SaveChangesAsync();
+        string[] codes = ["COPY01", "UNKNOWN", "COPY02", "COPY04", "COPY03"];
+        string[] ids = ["row1", "row2", "row3", "row4", "row5"];
+        var failed = await service.ConfirmManyAsync("CARD01", codes, staff, rowIds: ids);
+        Assert.False(failed.IsSuccess);
+        var failedRows = Assert.IsAssignableFrom<IReadOnlyList<DirectLoanSelection>>(failed.Rows);
+        Assert.Equal(3, failedRows.Count(r => r.IsValid));
+        Assert.Equal(2, failedRows.Count(r => !r.IsValid));
+        Assert.Equal(ids, failedRows.Select(r => r.RowId));
+        codes[1] = "COPY01";
+        var duplicate = await service.ValidateRowsAsync(codes, ids);
+        Assert.Contains("đã có trong danh sách", duplicate[1].Error!);
+        codes[1] = "COPY05";
+        var corrected = await service.ValidateRowsAsync(codes, ids);
+        Assert.True(corrected[1].IsValid);
+        Assert.Equal("row2", corrected[1].RowId);
+        var success = await service.ConfirmManyAsync("CARD01", [codes[0], codes[1], codes[2], codes[4]], staff,
+            rowIds: [ids[0], ids[1], ids[2], ids[4]]);
+        Assert.True(success.IsSuccess, success.ErrorMessage);
+        Assert.Equal(4, await db.BookLoans.CountAsync());
+    }
+
+    [Fact]
+    public async Task ChangedCopyIsReturnedWithOriginalRowId()
+    {
+        var codes = await AddCopies(3);
+        string[] ids = ["first", "second", "third"];
+        Assert.All(await service.ValidateRowsAsync(codes, ids), r => Assert.True(r.IsValid));
+        (await db.BookCopies.SingleAsync(c => c.CopyCode == "COPY02")).Status = BookCopyStatus.UnderRepair;
+        await db.SaveChangesAsync();
+        var result = await service.ConfirmManyAsync("CARD01", codes, staff, rowIds: ids);
+        Assert.False(result.IsSuccess);
+        Assert.Equal("second", Assert.Single(result.Rows!, r => !r.IsValid).RowId);
+        Assert.Empty(await db.BookLoans.ToListAsync());
+        Assert.Empty(await db.BookCopyStatusHistories.ToListAsync());
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData(" ")]
+    [InlineData("same")]
+    public async Task InvalidRowIdsCannotBeConfirmed(string secondId)
+    {
+        var codes = await AddCopies(2);
+        Assert.False((await service.ConfirmManyAsync("CARD01", codes, staff, rowIds: ["same", secondId])).IsSuccess);
+        Assert.Empty(await db.BookLoans.ToListAsync());
+    }
+
     private async Task<string[]> AddCopies(int count)
     {
         var first = await db.BookCopies.FirstAsync();
@@ -379,10 +461,17 @@ public sealed class DirectLoanTests : IDisposable
             {
                 fields.Remove("CopyCode");
                 for (var i = 0; i < 3; i++) fields[$"CopyCodes[{i}]"] = $"COPY{i + 1:00}";
+                for (var i = 0; i < 3; i++) fields[$"RowIds[{i}]"] = $"http-row-{i}";
                 using var lookup = await client.GetAsync("/DirectLoan/LookupCopy?cardCode=CARD01&copyCode=COPY02");
                 lookup.EnsureSuccessStatusCode();
                 Assert.Contains("COPY02", await lookup.Content.ReadAsStringAsync());
                 Assert.Empty(await db.BookLoans.ToListAsync());
+                using var invalidLookup = await client.GetAsync("/DirectLoan/LookupCopy?cardCode=CARD01&copyCode=MISSING&rowId=missing-row");
+                invalidLookup.EnsureSuccessStatusCode();
+                var invalidRow = System.Text.Json.JsonDocument.Parse(await invalidLookup.Content.ReadAsStringAsync()).RootElement;
+                Assert.Equal("missing-row", invalidRow.GetProperty("rowId").GetString());
+                Assert.False(invalidRow.GetProperty("isValid").GetBoolean());
+                Assert.Equal("Mã vạch không tồn tại trong hệ thống.", invalidRow.GetProperty("error").GetString());
                 var duplicateFields = new Dictionary<string, string>(fields)
                 {
                     ["CopyCodes[1]"] = "COPY01", ["__RequestVerificationToken"] = antiforgery
@@ -392,6 +481,19 @@ public sealed class DirectLoanTests : IDisposable
                 Assert.Contains("Mã vạch này đã có trong danh sách mượn.", duplicateHtml);
                 Assert.Contains("data-code=\"COPY03\"", duplicateHtml);
                 Assert.Empty(await db.BookLoans.ToListAsync());
+                await db.BookCopies.Where(c => c.CopyCode == "COPY02")
+                    .ExecuteUpdateAsync(s => s.SetProperty(c => c.Status, BookCopyStatus.UnderRepair));
+                var changedFields = new Dictionary<string, string>(fields) { ["__RequestVerificationToken"] = antiforgery };
+                using var changedResponse = await client.PostAsync(endpoint, new FormUrlEncodedContent(changedFields));
+                var changedHtml = WebUtility.HtmlDecode(await changedResponse.Content.ReadAsStringAsync());
+                var secondRow = Regex.Match(changedHtml, "<tr[^>]*data-row-id=\"http-row-1\"[^>]*>[\\s\\S]*?</tr>").Value;
+                Assert.Contains("Bản sao đang sửa chữa, chưa thể cho mượn.", secondRow);
+                Assert.Contains("data-row-id=\"http-row-0\"", changedHtml);
+                Assert.Contains("data-row-id=\"http-row-2\"", changedHtml);
+                Assert.Empty(await db.BookLoans.ToListAsync());
+                Assert.Equal(2, await db.BookCopies.CountAsync(c => c.Status == BookCopyStatus.Available));
+                await db.BookCopies.Where(c => c.CopyCode == "COPY02")
+                    .ExecuteUpdateAsync(s => s.SetProperty(c => c.Status, BookCopyStatus.Available));
             }
             using var invalidCsrf = await client.PostAsync(endpoint, new FormUrlEncodedContent(fields));
             Assert.Equal(HttpStatusCode.BadRequest, invalidCsrf.StatusCode);
@@ -414,7 +516,7 @@ public sealed class DirectLoanTests : IDisposable
             }
             using var repeat = await client.PostAsync(endpoint, new FormUrlEncodedContent(fields));
             var repeatHtml = WebUtility.HtmlDecode(await repeat.Content.ReadAsStringAsync());
-            Assert.Contains(batch ? "chỉ còn được mượn thêm" : "không thể cho mượn trực tiếp", repeatHtml);
+            Assert.Contains("Bản sao này đang được mượn, không thể tiếp tục cho mượn.", repeatHtml);
             Assert.Equal(batch ? 3 : 1, await db.BookLoans.CountAsync());
         }
         finally { await app.StopAsync(); }

@@ -29,13 +29,20 @@ public sealed class DirectLoanViewModel
     public bool CanConfirm => ReaderName != null && BookTitle != null && ReaderError == null && CopyError == null;
 }
 
-public sealed record DirectLoanSelection(string CopyCode, string BookTitle, string Status);
+public sealed record DirectLoanSelection(string CopyCode, string BookTitle, string Status)
+{
+    public string RowId { get; init; } = Guid.NewGuid().ToString("N");
+    public string? Error { get; init; }
+    public bool IsValid => Error == null;
+}
 
 public sealed class DirectLoanBatchRequest
 {
     [Required, MaxLength(32)]
     public string CardCode { get; set; } = string.Empty;
     public List<string> CopyCodes { get; set; } = [];
+    public List<string> RowIds { get; set; } = [];
 }
 
-public sealed record DirectLoanBatchOutcome(bool IsSuccess, string? ErrorMessage = null, IReadOnlyList<BookLoan>? Loans = null);
+public sealed record DirectLoanBatchOutcome(bool IsSuccess, string? ErrorMessage = null, IReadOnlyList<BookLoan>? Loans = null,
+    IReadOnlyList<DirectLoanSelection>? Rows = null);

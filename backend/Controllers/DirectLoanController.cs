@@ -13,7 +13,8 @@ public sealed class DirectLoanController(DirectLoanService service, IAuditLogSer
     {
         var model = await service.LookupAsync(cardCode, copyCode, ct);
         if (loanId.HasValue) model.Receipt = await service.ReceiptAsync(loanId.Value, ct);
-        if (model.CanConfirm) model.SelectedCopies.Add(new(model.CopyCode, model.BookTitle!, model.CopyStatus!));
+        if (!string.IsNullOrWhiteSpace(copyCode) && !loanId.HasValue)
+            model.SelectedCopies = await service.ValidateRowsAsync([copyCode], ct: ct);
         foreach (var id in (loanIds ?? []).Distinct())
         {
             var receipt = await service.ReceiptAsync(id, ct);
@@ -23,11 +24,13 @@ public sealed class DirectLoanController(DirectLoanService service, IAuditLogSer
     }
 
     [HttpGet]
-    public async Task<IActionResult> LookupCopy(string? cardCode, string? copyCode, CancellationToken ct)
+    public async Task<IActionResult> LookupCopy(string? cardCode, string? copyCode, CancellationToken ct, string? rowId = null)
     {
         var model = await service.LookupAsync(cardCode, copyCode, ct);
-        if (!model.CanConfirm) return BadRequest(new { error = model.ReaderError ?? model.CopyError ?? "Vui lòng nhập mã thẻ và mã vạch." });
-        return Json(new DirectLoanSelection(model.CopyCode, model.BookTitle!, model.CopyStatus!));
+        if (model.ReaderName == null || model.ReaderError != null)
+            return BadRequest(new { error = model.ReaderError ?? "Vui lòng nhập mã thẻ bạn đọc." });
+        var rows = await service.ValidateRowsAsync([copyCode ?? ""], rowId == null ? null : [rowId], ct);
+        return Json(rows[0]);
     }
 
     [HttpPost, ValidateAntiForgeryToken]
@@ -36,7 +39,8 @@ public sealed class DirectLoanController(DirectLoanService service, IAuditLogSer
         var staff = await audit.GetSignedInStaffAsync(Request, ct);
         if (staff == null) return Unauthorized();
         var result = ModelState.IsValid
-            ? await service.ConfirmManyAsync(request.CardCode, request.CopyCodes, staff, ct, AuditLogService.ClientIp(HttpContext))
+            ? await service.ConfirmManyAsync(request.CardCode, request.CopyCodes, staff, ct, AuditLogService.ClientIp(HttpContext),
+                request.RowIds.Count == 0 ? null : request.RowIds)
             : new DirectLoanBatchOutcome(false, "Thông tin mượn không hợp lệ.");
         if (result.IsSuccess)
         {
@@ -45,11 +49,8 @@ public sealed class DirectLoanController(DirectLoanService service, IAuditLogSer
         }
         ModelState.AddModelError(string.Empty, result.ErrorMessage ?? "Không thể tạo phiếu mượn.");
         var model = await service.LookupAsync(request.CardCode, null, ct);
-        foreach (var code in request.CopyCodes)
-        {
-            var copy = await service.LookupAsync(null, code, ct);
-            model.SelectedCopies.Add(new(copy.CopyCode, copy.BookTitle ?? "Không tìm thấy bản sao", copy.CopyStatus ?? "Không xác định"));
-        }
+        model.SelectedCopies = result.Rows?.ToList() ?? await service.ValidateRowsAsync(request.CopyCodes,
+            request.RowIds.Count == 0 ? null : request.RowIds, ct);
         return View("Index", model);
     }
 
