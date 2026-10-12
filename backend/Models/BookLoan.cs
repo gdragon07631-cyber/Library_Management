@@ -53,6 +53,7 @@ public sealed class BookLoan
 public sealed class CreateBookLoanViewModel : IValidatableObject
 {
     public int BookId { get; set; }
+    public long? BookCopyId { get; set; }
     public List<int>? BookIds { get; set; }
 
     [Range(1, int.MaxValue, ErrorMessage = "Vui lòng chọn bạn đọc.")]
@@ -136,6 +137,7 @@ public sealed class LoanIndexViewModel
 {
     public IReadOnlyList<BookLoan> Loans { get; set; } = [];
     public IReadOnlyList<Book> Books { get; set; } = [];
+    public IReadOnlyList<BookCopy> AvailableCopies { get; set; } = [];
     public IReadOnlyList<ReaderAccount> Readers { get; set; } = [];
     public IReadOnlyDictionary<int, int> ReaderLoanCounts { get; set; } = new Dictionary<int, int>();
     public IReadOnlySet<int> ReaderHasOverdue { get; set; } = new HashSet<int>();

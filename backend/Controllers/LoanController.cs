@@ -168,6 +168,55 @@ public sealed class LoanController(IBookLoanService loans, ApplicationDbContext 
         return RedirectToAction(nameof(Index));
     }
 
+    [HttpGet("api/loans/lookup")]
+    public async Task<IActionResult> LookupByBarcodeApi([FromQuery] string? barcode, CancellationToken ct = default)
+    {
+        if (!await IsLibrarianSignedInAsync(ct)) return Unauthorized(new { message = "Vui lòng đăng nhập để tra cứu." });
+        var normalizedBarcode = barcode?.Trim();
+        if (string.IsNullOrWhiteSpace(normalizedBarcode))
+            return BadRequest(new { status = "invalidBarcode", message = "Vui lòng nhập mã vạch bản sao." });
+        if (normalizedBarcode.Length > 50)
+            return BadRequest(new { status = "invalidBarcode", message = "Mã vạch không được vượt quá 50 ký tự." });
+
+        BookCopyLoanLookupOutcome result;
+        try
+        {
+            result = await loans.LookupByCopyCodeAsync(normalizedBarcode, DateOnly.FromDateTime(DateTime.Today), ct);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+        catch (Exception)
+        {
+            return StatusCode(StatusCodes.Status500InternalServerError,
+                new { status = "error", message = "Không thể tra cứu lúc này. Vui lòng thử lại." });
+        }
+
+        return result.Status switch
+        {
+            BookCopyLoanLookupStatus.CopyNotFound => NotFound(new
+            {
+                status = "notFound", message = "Không tìm thấy bản sao có mã vạch này."
+            }),
+            BookCopyLoanLookupStatus.NotBorrowed => Ok(new
+            {
+                status = "notBorrowed", message = "Bản sao này hiện không có ai mượn.", result.CopyCode
+            }),
+            BookCopyLoanLookupStatus.Borrowed => Ok(new
+            {
+                status = "borrowed", result.LoanId, result.CopyCode, result.ReaderName, result.BookTitle,
+                result.DueDate, result.OverdueDays
+            }),
+            BookCopyLoanLookupStatus.UnassignedOpenLoan => Conflict(new
+            {
+                status = "unassignedOpenLoan",
+                message = "Còn phiếu mượn cũ chưa gán bản sao cho sách này nên chưa thể xác định người mượn theo mã vạch."
+            }),
+            _ => Conflict(new
+            {
+                status = "inconsistent", message = "Dữ liệu phiếu mượn của bản sao này chưa nhất quán."
+            })
+        };
+    }
+
     [HttpGet("api/loans")]
     public async Task<IActionResult> GetAllApi(CancellationToken ct = default) =>
         Ok((await loans.GetAllAsync(ct)).Select(ToApiModel));
@@ -329,6 +378,45 @@ public sealed class LoanController(IBookLoanService loans, ApplicationDbContext 
         return Validator.TryValidateObject(model, context, results, true);
     }
 
+    [HttpPost("api/loans/{id:long}/return")]
+    public async Task<IActionResult> ReturnApi(long id, CancellationToken ct = default)
+    {
+        if (!await IsLibrarianSignedInAsync(ct)) return Unauthorized(new { message = "Vui lòng đăng nhập để xác nhận trả sách." });
+        try
+        {
+            var result = await loans.ReturnAsync(id, DateTime.UtcNow, ct);
+            if (!result.IsSuccess)
+            {
+                var statusCode = result.IsNotFound ? StatusCodes.Status404NotFound : StatusCodes.Status409Conflict;
+                return StatusCode(statusCode, new { success = false, message = result.ErrorMessage });
+            }
+            return Ok(new
+            {
+                success = true,
+                message = result.AssignedHold is null
+                    ? "Nhận trả sách thành công. Bản sao đã được chuyển sang trạng thái Sẵn sàng."
+                    : "Nhận trả sách thành công. Bản sao đã được chuyển sang trạng thái Đang giữ cho người đặt giữ đầu hàng đợi.",
+                copyCode = result.Loan!.BookCopy?.CopyCode,
+                readerName = result.Loan.ReaderAccount?.FullName,
+                returnedAtUtc = result.Loan.ReturnedAtUtc,
+                loanStatus = "Đã trả",
+                copyStatus = result.CopyStatus,
+                hasWaitingHold = result.AssignedHold is not null,
+                reservedFor = result.AssignedHold is null ? null : new
+                {
+                    readerName = result.AssignedHold.ReaderAccount?.FullName,
+                    readerCode = result.AssignedHold.ReaderAccount?.StudentOrStaffCode
+                }
+            });
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+        catch (Exception)
+        {
+            return StatusCode(StatusCodes.Status500InternalServerError,
+                new { success = false, message = "Không thể xác nhận trả lúc này. Vui lòng thử lại." });
+        }
+    }
+
     [HttpPost("api/loans/{id:long}/renew")]
     public async Task<IActionResult> RenewApi(long id, CancellationToken ct = default)
     {
@@ -396,6 +484,10 @@ public sealed class LoanController(IBookLoanService loans, ApplicationDbContext 
         {
             Loans = await loans.GetAllAsync(ct),
             Books = await db.Books.AsNoTracking().OrderBy(book => book.Title).ToListAsync(ct),
+            AvailableCopies = await db.BookCopies.AsNoTracking().Include(copy => copy.Book)
+                .Where(copy => copy.Status == BookCopyStatus.Available &&
+                    !db.BookLoans.Any(loan => loan.BookCopyId == copy.Id && loan.ReturnedAtUtc == null))
+                .OrderBy(copy => copy.CopyCode).ToListAsync(ct),
             Readers = readers,
             ReaderLoanCounts = loanCounts,
             ReaderHasOverdue = overdueReaderIds,
