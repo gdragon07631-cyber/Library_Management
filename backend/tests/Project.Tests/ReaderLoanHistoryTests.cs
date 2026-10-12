@@ -146,9 +146,13 @@ public sealed class ReaderLoanHistoryTests : IDisposable
     public async Task ServerFilterOnlyExecutesHistoryForAllowedStaff(string role, bool expectedAllowed)
     {
         var context = await CreateAuthorizationContextAsync(role);
-        var actionDescriptor = new ActionDescriptor();
-        actionDescriptor.EndpointMetadata.Add(Attribute.GetCustomAttribute(
-            typeof(ReaderLoanHistoryController), typeof(StaffOnlyAttribute))!);
+        var actionDescriptor = new ActionDescriptor
+        {
+            EndpointMetadata = new List<object>
+            {
+                Attribute.GetCustomAttribute(typeof(ReaderLoanHistoryController), typeof(StaffOnlyAttribute))!
+            }
+        };
         context.ActionDescriptor = actionDescriptor;
         var executingContext = new ActionExecutingContext(
             context, [], new Dictionary<string, object?>(), new ReaderLoanHistoryController(db));
@@ -171,9 +175,13 @@ public sealed class ReaderLoanHistoryTests : IDisposable
     public async Task ServerFilterRedirectsUnauthenticatedHistoryRequest()
     {
         var context = await CreateAuthorizationContextAsync(null);
-        var actionDescriptor = new ActionDescriptor();
-        actionDescriptor.EndpointMetadata.Add(Attribute.GetCustomAttribute(
-            typeof(ReaderLoanHistoryController), typeof(StaffOnlyAttribute))!);
+        var actionDescriptor = new ActionDescriptor
+        {
+            EndpointMetadata = new List<object>
+            {
+                Attribute.GetCustomAttribute(typeof(ReaderLoanHistoryController), typeof(StaffOnlyAttribute))!
+            }
+        };
         context.ActionDescriptor = actionDescriptor;
         var executingContext = new ActionExecutingContext(
             context, [], new Dictionary<string, object?>(), new ReaderLoanHistoryController(db));

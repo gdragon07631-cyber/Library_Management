@@ -63,20 +63,20 @@ public sealed class ReaderLoanHistoryCsvTests : IDisposable
         foreach (var date in dates) loans.Add(await AddLoanAsync(reader, book, date));
 
         var fromOnly = ReadCsv(Assert.IsType<FileContentResult>(await ExportAsync(reader.Id, dates[1], null)));
-        Assert.DoesNotContain($"\"{loans[0].Id}\"", fromOnly);
-        Assert.Contains($"\"{loans[1].Id}\"", fromOnly);
-        Assert.Contains($"\"{loans[3].Id}\"", fromOnly);
+        Assert.DoesNotContain($"\"{loans[0].Id}\",\"R-FILTER\"", fromOnly);
+        Assert.Contains($"\"{loans[1].Id}\",\"R-FILTER\"", fromOnly);
+        Assert.Contains($"\"{loans[3].Id}\",\"R-FILTER\"", fromOnly);
 
         var throughOnly = ReadCsv(Assert.IsType<FileContentResult>(await ExportAsync(reader.Id, null, dates[2])));
-        Assert.Contains($"\"{loans[0].Id}\"", throughOnly);
-        Assert.Contains($"\"{loans[2].Id}\"", throughOnly);
-        Assert.DoesNotContain($"\"{loans[3].Id}\"", throughOnly);
+        Assert.Contains($"\"{loans[0].Id}\",\"R-FILTER\"", throughOnly);
+        Assert.Contains($"\"{loans[2].Id}\",\"R-FILTER\"", throughOnly);
+        Assert.DoesNotContain($"\"{loans[3].Id}\",\"R-FILTER\"", throughOnly);
 
         var range = ReadCsv(Assert.IsType<FileContentResult>(await ExportAsync(reader.Id, dates[1], dates[2])));
-        Assert.DoesNotContain($"\"{loans[0].Id}\"", range);
-        Assert.Contains($"\"{loans[1].Id}\"", range);
-        Assert.Contains($"\"{loans[2].Id}\"", range);
-        Assert.DoesNotContain($"\"{loans[3].Id}\"", range);
+        Assert.DoesNotContain($"\"{loans[0].Id}\",\"R-FILTER\"", range);
+        Assert.Contains($"\"{loans[1].Id}\",\"R-FILTER\"", range);
+        Assert.Contains($"\"{loans[2].Id}\",\"R-FILTER\"", range);
+        Assert.DoesNotContain($"\"{loans[3].Id}\",\"R-FILTER\"", range);
 
         var empty = ReadCsv(Assert.IsType<FileContentResult>(await ExportAsync(reader.Id, new DateOnly(2026, 6, 1), new DateOnly(2026, 6, 30))));
         Assert.Equal(1, empty.Split("\r\n", StringSplitOptions.RemoveEmptyEntries).Length);
