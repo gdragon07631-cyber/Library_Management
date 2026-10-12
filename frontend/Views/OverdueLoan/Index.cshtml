@@ -57,7 +57,7 @@
                             <td>
                                 @if (item.LatestContact is not null)
                                 {
-                                    <div class="small fw-semibold">@DateTime.SpecifyKind(item.LatestContact.CreatedAtUtc, DateTimeKind.Utc).ToLocalTime().ToString("dd/MM/yyyy HH:mm")</div>
+                                    <div class="small fw-semibold">@Project.Services.HoldPickupExpirySchedule.GetVietnamLocalTime(item.LatestContact.CreatedAtUtc).ToString("dd/MM/yyyy HH:mm")</div>
                                     <div class="small text-muted text-truncate" style="max-width: 180px" title="@item.LatestContact.Note">@item.LatestContact.Note</div>
                                 }
                                 else { <span class="text-muted small">Chưa liên hệ</span> }

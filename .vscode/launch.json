@@ -6,7 +6,7 @@
             "name": "Chạy app và mở Chrome",
             "type": "coreclr",
             "request": "launch",
-            "preLaunchTask": "build",
+            "preLaunchTask": "prepare app",
             "program": "${workspaceFolder}/backend/bin/Debug/net10.0/Project.dll",
             "args": [],
             "cwd": "${workspaceFolder}/backend",

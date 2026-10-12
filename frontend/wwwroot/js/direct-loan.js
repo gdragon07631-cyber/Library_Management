@@ -13,6 +13,7 @@
     })));
     const originalCard = form.elements.CardCode.value;
     const remaining = Number(form.dataset.remaining);
+    const bypassReason = form.elements.BypassReason || null;
     let submitted = false;
     let uncertain = form.dataset.verifyOnly === 'true';
     let attempted = form.dataset.retrying === 'true';
@@ -21,12 +22,15 @@
     const storageKey = 'directLoanPending';
     const locked = () => submitted || uncertain;
     function remember(phase) {
-        sessionStorage.setItem(storageKey, JSON.stringify({ requestId: requestKey.value, cardCode: card.value.trim(), rows: state.rows, phase }));
+        sessionStorage.setItem(storageKey, JSON.stringify({ requestId: requestKey.value, cardCode: card.value.trim(), rows: state.rows,
+            bypassReason: bypassReason?.value || '', phase }));
     }
     function changed() {
         if (attempted) { requestKey.value = crypto.randomUUID(); attempted = false; sessionStorage.removeItem(storageKey); }
     }
     const readerValid = () => form.dataset.readerValid === 'true' && card.value.trim() === originalCard;
+    const readerKnown = () => form.dataset.readerKnown === 'true' && card.value.trim() === originalCard;
+    const canLookupCopies = () => readerKnown();
     const show = text => { message.textContent = text; message.hidden = !text; };
     function hidden(cell, name, value) {
         const element = document.createElement('input');
@@ -88,13 +92,13 @@
         warning.hidden = counts.valid <= remaining;
         warning.textContent = `Có ${counts.valid} bản sao hợp lệ, nhưng chỉ còn được mượn thêm ${remaining} sách. Vui lòng xóa bớt bản sao.`;
         document.getElementById('rowWarning').hidden = counts.errors === 0 && counts.pending === 0;
-        confirm.disabled = locked() || !state.canConfirm(remaining, readerValid());
+        confirm.disabled = locked() || !state.canConfirm(Number.MAX_SAFE_INTEGER, readerKnown());
         confirm.textContent = attempted ? 'Thử lại' : 'Xác nhận mượn';
         verify.hidden = !uncertain;
         verify.disabled = submitted;
         card.disabled = locked();
         card.form.querySelector('button').disabled = locked();
-        input.disabled = locked() || !readerValid();
+        input.disabled = locked() || !canLookupCopies();
         addForm.querySelector('button').disabled = input.disabled;
     }
     async function lookup(row) {
@@ -118,9 +122,10 @@
         if (row?.checking) void lookup(row);
     }
     card.addEventListener('input', () => { changed(); show(readerValid() ? '' : 'Vui lòng tra cứu lại mã thẻ trước khi tiếp tục.'); render(); });
+    bypassReason?.addEventListener('input', () => { changed(); render(); });
     addForm.addEventListener('submit', event => {
         event.preventDefault();
-        if (locked() || !readerValid()) return;
+        if (locked() || !canLookupCopies()) return;
         const code = input.value.trim();
         if (!code) { show('Vui lòng nhập mã vạch bản sao.'); input.focus(); return; }
         if (state.duplicate(code)) { show('Mã vạch này đã có trong danh sách mượn.'); input.select(); return; }
@@ -131,7 +136,7 @@
     });
     form.addEventListener('submit', async event => {
         event.preventDefault();
-        if (locked() || !state.canConfirm(remaining, readerValid())) return;
+        if (locked() || !state.canConfirm(Number.MAX_SAFE_INTEGER, readerKnown())) return;
         try { remember('pending'); } catch { show('Không thể lưu thông tin khôi phục trong trình duyệt. Vui lòng cho phép lưu trữ phiên trước khi xác nhận.'); return; }
         attempted = true; submitted = true; render();
         try {
@@ -177,6 +182,7 @@
                     window.location.assign(url); return;
                 }
                 requestKey.value = saved.requestId; card.value = saved.cardCode;
+                if (bypassReason) bypassReason.value = saved.bypassReason || '';
                 state.rows = saved.rows; attempted = true; uncertain = saved.phase === 'pending';
                 if (uncertain) void verifyResult();
             }

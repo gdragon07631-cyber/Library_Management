@@ -23,7 +23,15 @@
                     <dt class="col-sm-4">Loại thẻ</dt><dd class="col-sm-8">@Model.CardTypeName</dd>
                     <dt class="col-sm-4">Số sách đang mượn</dt><dd class="col-sm-8" id="currentLoans">@Model.CurrentLoans / @Model.MaxBooks</dd>
                     <dt class="col-sm-4">Còn được mượn thêm</dt><dd class="col-sm-8" id="remainingLoans">@Model.RemainingLoans</dd>
+                    @if (Model.OutstandingDebt > 0)
+                    {
+                        <dt class="col-sm-4">Nợ chưa thanh toán</dt><dd class="col-sm-8 text-danger fw-semibold">@Project.Services.BookLoanService.FormatVnd(Model.OutstandingDebt)</dd>
+                    }
                 </dl>
+                @if (Model.ReaderAccountId is int readerId)
+                {
+                    <a class="btn btn-sm btn-outline-secondary" asp-controller="ReaderLoanHistory" asp-action="Details" asp-route-id="@readerId">Xem hồ sơ và lịch sử mượn trả</a>
+                }
             }
             @if (Model.ReaderError != null) { <div class="alert alert-warning">@Model.ReaderError</div> }
         </form>
@@ -40,7 +48,8 @@
               data-status-url="@Url.Action("Status")" data-index-url="@Url.Action("Index")"
               data-verify-only="@Model.VerifyOnly.ToString().ToLowerInvariant()" data-retrying="@Model.Retrying.ToString().ToLowerInvariant()"
               data-completed="@((Model.Receipts.Count > 0 || Model.Receipt != null).ToString().ToLowerInvariant())"
-              data-remaining="@Model.RemainingLoans" data-reader-valid="@((Model.ReaderName != null && Model.ReaderError == null).ToString().ToLowerInvariant())">
+              data-remaining="@Model.RemainingLoans" data-reader-valid="@((Model.ReaderName != null && Model.ReaderError == null).ToString().ToLowerInvariant())"
+              data-reader-known="@((Model.ReaderName != null).ToString().ToLowerInvariant())">
             <input type="hidden" name="CardCode" value="@Model.CardCode" />
             <input type="hidden" name="RequestId" value="@Model.RequestId" />
             <div class="table-responsive">
@@ -63,6 +72,18 @@
             <p aria-live="polite">Hợp lệ: <strong id="validCount">0</strong>. Có lỗi: <strong id="errorCount">0</strong>. Đang kiểm tra: <strong id="pendingCount">0</strong>.</p>
             <div id="rowWarning" class="alert alert-warning" role="status" hidden>Vui lòng sửa hoặc xóa hết dòng lỗi và chờ kiểm tra xong trước khi xác nhận.</div>
             <div id="limitWarning" class="alert alert-warning" role="alert" hidden></div>
+            @if (Model.CanOverride)
+            {
+                <div class="alert alert-warning py-2" role="note">Quyền bỏ qua chặn chỉ áp dụng cho lượt này. Lý do bắt buộc nhập khi bạn đọc vi phạm chính sách.</div>
+                <div class="mb-3">
+                    <label for="BypassReason" class="form-label fw-semibold">Lý do bỏ qua chặn (thủ thư/quản lý)</label>
+                    <textarea id="BypassReason" name="BypassReason" class="form-control" maxlength="160" rows="2" placeholder="Nhập lý do nếu cần bỏ qua chính sách"></textarea>
+                </div>
+                <div class="form-check mb-3">
+                    <input class="form-check-input" type="checkbox" id="ConfirmBypass" name="ConfirmBypass" value="true" />
+                    <label class="form-check-label" for="ConfirmBypass">Tôi xác nhận bỏ qua chính sách cho lượt mượn này</label>
+                </div>
+            }
             <button type="submit" class="btn btn-primary" disabled>Xác nhận mượn</button>
             <button type="button" id="verifyDirectLoan" class="btn btn-outline-primary" hidden>Kiểm tra kết quả</button>
             <p class="text-muted small mt-2 mb-0">Nhập mã vạch rồi nhấn Enter để thêm sách. Xác nhận một lần cho toàn bộ danh sách.</p>

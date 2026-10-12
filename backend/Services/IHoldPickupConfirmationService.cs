@@ -4,5 +4,5 @@ public sealed record HoldPickupConfirmationResult(bool IsSuccess, string Message
 
 public interface IHoldPickupConfirmationService
 {
-    Task<HoldPickupConfirmationResult> ConfirmAsync(long holdId, string libraryCardCode, string actor, int createdByAdminAccountId, CancellationToken cancellationToken = default);
+    Task<HoldPickupConfirmationResult> ConfirmAsync(long holdId, string libraryCardCode, string actor, int? createdByAdminAccountId, CancellationToken cancellationToken = default);
 }

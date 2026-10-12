@@ -9,9 +9,10 @@ namespace Project.Models;
 public static class LoanLookupStatus
 {
     public const string Open = "Đang mượn";
+    public const string Returned = "Đã trả";
 
     /// <summary>Các trạng thái thực tế có thể lọc; không tạo trạng thái mới.</summary>
-    public static readonly IReadOnlyList<string> All = [Open];
+    public static readonly IReadOnlyList<string> All = [Open, Returned];
 }
 
 /// <summary>Bộ lọc tùy chọn của tra nhanh phiếu mượn. Null nghĩa là không lọc theo tiêu chí đó.</summary>
@@ -84,7 +85,7 @@ public static class LoanLookupEmptyReasonCodes
 }
 
 public sealed record LoanLookupItem(
-    long LoanId, string? CardCode, string ReaderName, DateOnly LoanDate, DateOnly DueDate, string Status);
+    long LoanId, string? CardCode, string? CopyCode, string ReaderName, DateOnly LoanDate, DateOnly DueDate, string Status);
 
 public sealed record LoanLookupPage(
     string Code, IReadOnlyList<LoanLookupItem> Items, int Page, int PageSize, int TotalItems)

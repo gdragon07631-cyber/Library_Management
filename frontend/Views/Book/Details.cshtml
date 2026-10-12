@@ -126,7 +126,7 @@
                             </p>
                             @if (Model.IsLibrarian)
                             {
-                                <a asp-controller="BookCopy" asp-action="Add" asp-route-bookId="@Model.Id" class="btn btn-sm btn-primary mt-2">Thêm bản sao</a>
+                                <a asp-controller="BookCopy" asp-action="Index" asp-route-bookId="@Model.Id" class="btn btn-sm btn-primary mt-2">Nhập lô bản sao</a>
                                 <a asp-controller="BookCopy" asp-action="Index" asp-route-bookId="@Model.Id" class="btn btn-sm btn-outline-primary mt-2">Quản lý bản sao</a>
                             }
                         </div>
@@ -285,6 +285,16 @@
                                     <input type="hidden" name="holdId" value="@existingHold.Id" />
                                     <button type="submit" class="btn btn-outline-danger" id="cancelMyHoldButton"><i class="bi bi-x-circle"></i> Hủy đơn đặt giữ</button>
                                 </form>
+                            }
+                            @if (Model.CanHold)
+                            {
+                                <form asp-action="Hold" asp-route-id="@Model.Id" method="post" class="align-self-center">
+                                    <button type="submit" class="btn btn-success">Đặt giữ thêm</button>
+                                </form>
+                            }
+                            else if (!string.IsNullOrWhiteSpace(Model.HoldBlockedReason))
+                            {
+                                <span class="small text-danger align-self-center" role="status">@Model.HoldBlockedReason</span>
                             }
                         }
                         else if (Model.CanHold)

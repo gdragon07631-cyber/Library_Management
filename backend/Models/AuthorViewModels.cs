@@ -34,6 +34,7 @@ public sealed class AuthorIndexViewModel
     public CreateAuthorViewModel NewAuthor { get; set; } = new();
     public EditAuthorViewModel? EditingAuthor { get; set; }
     public IReadOnlyList<Author> Authors { get; set; } = [];
+    public bool CanManage { get; set; }
 }
 
 public sealed class CreateAuthorDto

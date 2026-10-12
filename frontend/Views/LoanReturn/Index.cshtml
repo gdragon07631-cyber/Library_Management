@@ -1,0 +1,59 @@
+@{
+    ViewData["Title"] = "Nhận trả sách";
+}
+<div class="container-fluid py-4 px-4">
+    <div class="mb-4">
+        <h1 class="h3 mb-1 text-primary fw-bold">Nhận trả sách theo mã vạch</h1>
+        <p class="text-muted mb-0">Quét hoặc nhập mã vạch bản sao, xác nhận từng cuốn rồi kết thúc lượt để xem bảng tổng kết.</p>
+    </div>
+
+    <div id="copyLoanLookupResult" class="mb-3" aria-live="polite"></div>
+
+    <section id="returnSessionScanner" class="card border-0 shadow-sm mb-4">
+        <div class="card-body">
+            <form id="copyLoanLookupForm" data-lookup-url="@Url.Action("Lookup", "LoanReturn")" data-return-url="/api/loan-returns">
+                @Html.AntiForgeryToken()
+                <label for="copyLoanBarcode" class="form-label fw-semibold">Mã vạch bản sao</label>
+                <div class="input-group">
+                    <input id="copyLoanBarcode" class="form-control" maxlength="50" autocomplete="off" autofocus placeholder="Quét hoặc nhập mã vạch" />
+                    <button id="copyLoanLookupButton" class="btn btn-primary" type="submit">
+                        <span class="lookup-button-label">Tra cứu</span>
+                        <span class="lookup-loading d-none" role="status">Đang tra cứu…</span>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </section>
+
+    <section id="returnSessionActive" class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white d-flex flex-wrap justify-content-between align-items-center gap-2">
+            <h2 class="h5 mb-0">Lượt nhận trả</h2>
+            <span id="returnSessionCount" class="text-muted">0 cuốn đã nhận trả</span>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light"><tr><th>STT</th><th>Mã vạch</th><th>Sách</th><th>Bạn đọc</th><th>Thời điểm trả</th><th>Kết quả</th><th>Trạng thái bản sao</th><th>Đơn đặt giữ</th></tr></thead>
+                <tbody id="returnSessionRows"><tr><td colspan="8" class="text-center text-muted">Chưa nhận trả cuốn nào trong lượt này.</td></tr></tbody>
+            </table>
+        </div>
+        <div class="card-footer bg-white text-end">
+            <button id="finishReturnSession" type="button" class="btn btn-success" disabled>Kết thúc lượt</button>
+        </div>
+    </section>
+
+    <section id="returnSessionSummary" class="card border-0 shadow-sm d-none">
+        <div class="card-header bg-white d-flex flex-wrap justify-content-between align-items-center gap-2">
+            <div><h2 class="h5 mb-1">Tổng kết lượt nhận trả</h2><span id="returnSessionSummaryCount" class="text-muted"></span></div>
+            <button id="startNewReturnSession" type="button" class="btn btn-outline-primary">Bắt đầu lượt mới</button>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light"><tr><th>STT</th><th>Mã vạch</th><th>Sách</th><th>Bạn đọc</th><th>Thời điểm trả</th><th>Kết quả</th><th>Trạng thái bản sao</th><th>Đơn đặt giữ</th></tr></thead>
+                <tbody id="returnSessionSummaryRows"></tbody>
+            </table>
+        </div>
+    </section>
+</div>
+@section Scripts {
+    <script src="~/js/book-loan-lookup.js" asp-append-version="true"></script>
+}

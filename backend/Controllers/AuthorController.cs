@@ -7,7 +7,7 @@ using Project.Services;
 
 namespace Project.Controllers;
 
-[StaffOnly(AccountRoles.SystemAdmin, AccountRoles.LibraryManager)]
+[StaffOnly(AccountRoles.Librarian, AccountRoles.SystemAdmin, AccountRoles.LibraryManager)]
 public sealed class AuthorController(
     IAuthorService authorService,
     ApplicationDbContext dbContext) : Controller
@@ -22,11 +22,13 @@ public sealed class AuthorController(
         if (!await IsLibrarianSignedInAsync(cancellationToken))
             return RedirectToAction("Login", "Account", new { returnUrl = Url.Action(nameof(Index)) });
 
+        var staff = await GetSignedInStaffAsync(cancellationToken);
         var authors = await authorService.GetAllAuthorsAsync(cancellationToken);
         var viewModel = new AuthorIndexViewModel
         {
             Authors = authors,
-            NewAuthor = new CreateAuthorViewModel()
+            NewAuthor = new CreateAuthorViewModel(),
+            CanManage = IsManagerOrAdmin(staff)
         };
         return View(viewModel);
     }
@@ -35,8 +37,17 @@ public sealed class AuthorController(
     {
         if (!Request.Cookies.TryGetValue("admin_refresh", out var token) || string.IsNullOrWhiteSpace(token)) return false;
         var hash = TokenService.HashRefreshToken(token);
-        return await dbContext.RefreshTokens.AnyAsync(item => item.TokenHash == hash && item.RevokedAtUtc == null && item.ExpiresAtUtc > DateTime.UtcNow && item.AdminAccount.IsActive && (item.AdminAccount.Role == AccountRoles.SystemAdmin || item.AdminAccount.Role == AccountRoles.LibraryManager), ct);
+        return await dbContext.RefreshTokens.AnyAsync(item => item.TokenHash == hash && item.RevokedAtUtc == null && item.ExpiresAtUtc > DateTime.UtcNow && item.AdminAccount.IsActive && (item.AdminAccount.Role == AccountRoles.SystemAdmin || item.AdminAccount.Role == AccountRoles.LibraryManager || item.AdminAccount.Role == AccountRoles.Librarian), ct);
     }
+
+    private async Task<AdminAccount?> GetSignedInStaffAsync(CancellationToken ct)
+    {
+        var audit = HttpContext.RequestServices.GetRequiredService<IAuditLogService>();
+        return await audit.GetSignedInStaffAsync(Request, ct);
+    }
+
+    private static bool IsManagerOrAdmin(AdminAccount? staff) =>
+        staff?.Role is AccountRoles.LibraryManager or AccountRoles.SystemAdmin;
 
     [HttpPost]
     [ValidateAntiForgeryToken]
@@ -76,6 +87,13 @@ public sealed class AuthorController(
         EditAuthorViewModel model,
         CancellationToken cancellationToken = default)
     {
+        var staff = await GetSignedInStaffAsync(cancellationToken);
+        if (!IsManagerOrAdmin(staff))
+        {
+            TempData["ErrorMessage"] = "Bạn không có quyền chỉnh sửa tác giả.";
+            return RedirectToAction(nameof(Index));
+        }
+
         if (!ModelState.IsValid)
         {
             TempData["ErrorMessage"] = "Thông tin chỉnh sửa tác giả không hợp lệ.";

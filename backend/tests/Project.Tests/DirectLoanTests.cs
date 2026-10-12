@@ -107,6 +107,49 @@ public sealed partial class DirectLoanTests : IDisposable
         Assert.Equal(BookCopyStatus.Available, (await db.BookCopies.SingleAsync()).Status);
     }
 
+    [Fact]
+    public async Task DirectLoanPolicyBlockIsLoggedWithDebtAmount()
+    {
+        var reader = await db.ReaderAccounts.SingleAsync();
+        reader.OutstandingBalance = 12500m;
+        await db.SaveChangesAsync();
+
+        var result = await service.ConfirmManyAsync("CARD01", ["COPY01"], staff);
+
+        Assert.False(result.IsSuccess);
+        var log = await db.AuditLogs.SingleAsync(item => item.Action == AuditActions.BlockLoan);
+        Assert.Contains(BookLoanService.FormatVnd(12500m), log.Target);
+        Assert.Contains("Bạn đọc #", log.Target);
+        Assert.Equal(BookCopyStatus.Available, (await db.BookCopies.SingleAsync()).Status);
+    }
+
+    [Theory]
+    [InlineData(AccountRoles.Librarian)]
+    [InlineData(AccountRoles.LibraryManager)]
+    [InlineData(AccountRoles.SystemAdmin)]
+    public async Task AuthorizedStaffCanOverrideDirectLoanPolicyOnceWithRequiredReasonAndAudit(string role)
+    {
+        var card = await db.LibraryCards.Include(item => item.ReaderAccount).SingleAsync();
+        card.ExpiresOn = today.AddDays(-1);
+        await db.SaveChangesAsync();
+        var manager = new AdminAccount { Email = $"{role.ToLowerInvariant()}@test.local", PasswordHash = "test", Role = role };
+        db.AdminAccounts.Add(manager);
+        await db.SaveChangesAsync();
+
+        var missingReason = await service.ConfirmManyAsync("CARD01", ["COPY01"], manager);
+        Assert.False(missingReason.IsSuccess);
+        Assert.Equal(0, await db.BookLoans.CountAsync());
+        Assert.Contains(await db.AuditLogs.ToListAsync(), item => item.Action == AuditActions.BlockLoan);
+
+        var result = await service.ConfirmManyAsync("CARD01", ["COPY01"], manager, bypassReason: "Xác nhận theo phê duyệt của quản lý");
+
+        Assert.True(result.IsSuccess, result.ErrorMessage);
+        var overrideLog = await db.AuditLogs.SingleAsync(item => item.Action == AuditActions.OverrideBlockLoan);
+        Assert.Contains("Thẻ bạn đọc chưa có hiệu lực hoặc đã hết hạn", overrideLog.Target);
+        Assert.Contains("Xác nhận theo phê duyệt của quản lý", overrideLog.Target);
+        Assert.Single(await db.BookLoans.ToListAsync());
+    }
+
     [Theory]
     [InlineData("missing")]
     [InlineData(BookCopyStatus.OnLoan)]

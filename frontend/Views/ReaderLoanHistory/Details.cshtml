@@ -41,29 +41,33 @@
     <div class="row g-3 mb-4">
         <div class="col-sm-4"><div class="card h-100"><div class="card-body"><div class="text-muted small">Phiếu đang mở</div><div class="fs-3 fw-bold">@Model.OpenLoanCount</div></div></div></div>
         <div class="col-sm-4"><div class="card h-100"><div class="card-body"><div class="text-muted small">Tổng lượt mượn</div><div class="fs-3 fw-bold">@Model.TotalLoanCount</div></div></div></div>
-        <div class="col-sm-4"><div class="card h-100"><div class="card-body"><div class="text-muted small">Lượt trả trễ</div><div class="fs-3 fw-bold">@(Model.LateReturnCount?.ToString() ?? "Chưa có dữ liệu")</div><div class="small text-muted">Hệ thống chưa lưu ngày trả thực tế.</div></div></div></div>
+        <div class="col-sm-4"><div class="card h-100"><div class="card-body"><div class="text-muted small">Lượt trả trễ</div><div class="fs-3 fw-bold">@Model.LateReturnCount</div><div class="small text-muted">Tính theo ngày trả thực tế tại Việt Nam muộn hơn hạn trả.</div></div></div></div>
     </div>
 
     <div class="card shadow-sm border-0">
         <div class="card-header bg-white"><h2 class="h5 mb-0">Phiếu mượn</h2></div>
         <div class="table-responsive">
             <table class="table table-hover align-middle mb-0">
-                <thead class="table-light"><tr><th>Mã phiếu</th><th>Sách</th><th>Ngày mượn</th><th>Hạn trả</th><th>Ngày trả thực tế</th><th>Trạng thái</th></tr></thead>
+                <thead class="table-light"><tr><th>Mã phiếu</th><th>Sách</th><th>Mã vạch bản sao</th><th>Ngày mượn</th><th>Hạn trả</th><th>Ngày trả thực tế</th><th>Trạng thái</th></tr></thead>
                 <tbody>
                 @if (Model.Loans.Count == 0)
                 {
-                    <tr><td colspan="6" class="text-center text-muted py-4">@(Model.IsFiltered ? "Không có phiếu mượn trong khoảng ngày đã chọn." : "Bạn đọc chưa có phiếu mượn nào.")</td></tr>
+                    <tr><td colspan="7" class="text-center text-muted py-4">@(Model.IsFiltered ? "Không có phiếu mượn trong khoảng ngày đã chọn." : "Bạn đọc chưa có phiếu mượn nào.")</td></tr>
                 }
                 @foreach (var loan in Model.Loans)
                 {
-                    var isOpen = !loan.IsReturned;
-                    var isOverdue = isOpen && loan.DueDate < DateOnly.FromDateTime(DateTime.Today);
+                    var isOpen = loan.ReturnedAtUtc is null;
+                    var returnedDate = loan.ReturnedAtUtc is DateTime returnedAt
+                        ? DateOnly.FromDateTime(Project.Services.HoldPickupExpirySchedule.GetVietnamLocalTime(returnedAt))
+                        : (DateOnly?)null;
+                    var isOverdue = isOpen && loan.DueDate < Project.Services.HoldPickupExpirySchedule.GetBusinessDate(DateTime.UtcNow);
                     <tr>
                         <td>#@loan.Id</td>
                         <td>@loan.Book?.Title</td>
+                        <td>@(loan.BookCopy?.CopyCode ?? "—")</td>
                         <td>@loan.LoanDate.ToString("dd/MM/yyyy")</td>
                         <td>@loan.DueDate.ToString("dd/MM/yyyy")</td>
-                        <td>@(loan.ReturnDate?.ToString("dd/MM/yyyy") ?? "—")</td>
+                        <td>@(returnedDate?.ToString("dd/MM/yyyy") ?? "—")</td>
                         <td>@(isOverdue ? "Quá hạn, chưa trả" : isOpen ? "Đang mở" : "Đã trả")</td>
                     </tr>
                 }

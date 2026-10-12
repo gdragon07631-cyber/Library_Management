@@ -51,24 +51,14 @@ public sealed class BookHoldFulfillmentService(ApplicationDbContext db, IBookLoa
             }
 
             var reservedAtUtc = DateTime.UtcNow;
-            DateOnly deadlineDate;
-            try
-            {
-                deadlineDate = DateOnly.FromDateTime(DateTime.SpecifyKind(reservedAtUtc, DateTimeKind.Utc).ToLocalTime());
-                for (var openDays = 0; openDays < 3; openDays++)
-                {
-                    deadlineDate = await loanService.AdjustDueDateAsync(deadlineDate, cancellationToken);
-                    if (openDays < 2) deadlineDate = deadlineDate.AddDays(1);
-                }
-            }
+            DateTime deadlineUtc;
+            try { deadlineUtc = await HoldPickupDeadlineCalculator.ThreeOpenDaysAfterAsync(reservedAtUtc, loanService, cancellationToken); }
             catch (InvalidOperationException exception)
             {
                 if (transaction != null) await transaction.CommitAsync(cancellationToken);
                 return new(false, ErrorMessage: exception.Message);
             }
 
-            var deadlineUtc = deadlineDate.ToDateTime(ReaderRegistrationService.PickupDeadlineTime, DateTimeKind.Local)
-                .ToUniversalTime();
             copy.Status = BookCopyStatus.OnHold;
             copy.StatusReason = $"Held for book hold #{head.Id}";
             head.BookCopyId = copy.Id;

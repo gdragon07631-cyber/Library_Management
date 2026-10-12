@@ -17,7 +17,7 @@
                                 <option value="false">Nhập thủ công</option>
                                 <option value="true">Sinh tự động</option>
                             </select>
-                            <div id="automaticBarcodeHelp" class="form-text" hidden="@(!Model.GenerateBarcode)">Mã LIB + 6 chữ số được cấp khi tạo bản sao.</div>
+                            <div id="automaticBarcodeHelp" class="form-text" hidden="@(!Model.GenerateBarcode)">Mã CPY + 6 chữ số được cấp khi tạo bản sao, tách biệt với mã thẻ bạn đọc.</div>
                         </div>
                         <div class="col-md-6" id="manualBarcodeField" hidden="@Model.GenerateBarcode">
                             <label asp-for="CopyCode" class="form-label"></label>
@@ -25,7 +25,7 @@
                             <span asp-validation-for="CopyCode" class="text-danger small"></span>
                         </div>
                         <div class="col-md-6">
-                            <label asp-for="PhysicalCondition" class="form-label"></label>
+                            <label asp-for="PhysicalCondition" class="form-label">Tình trạng sách</label>
                             <select asp-for="PhysicalCondition" class="form-select" required>
                                 <option value="">-- Chọn tình trạng --</option>
                                 @foreach (var condition in BookCopyCondition.All) { <option value="@condition">@condition</option> }

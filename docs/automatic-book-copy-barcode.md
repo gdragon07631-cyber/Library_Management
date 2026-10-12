@@ -4,9 +4,9 @@ Form **Thêm bản sao** có hai lựa chọn: **Nhập thủ công** (mặc đ�
 **Sinh tự động**. Chế độ tự động ẩn và vô hiệu hóa ô mã vạch; chuyển lại
 thủ công giữ nội dung đã nhập. Máy chủ chỉ yêu cầu mã khi nhập thủ công.
 
-Mã tự động có dạng `LIB000001`: lấy phần số lớn nhất của các mã LIB gồm
+Mã tự động có dạng `CPY000001`: lấy phần số lớn nhất của các mã CPY gồm
 đúng 6 chữ số trong toàn hệ thống rồi cộng 1, bao gồm mã nhập thủ công.
-Mã thuộc dãy khác không ảnh hưởng đến dãy LIB. Khi đã có `LIB999999`,
+Tiền tố CPY tách mã vạch bản sao khỏi mã thẻ bạn đọc (LIB). Khi đã có `CPY999999`,
 hệ thống báo hết dãy và không tạo bản sao; nhập thủ công vẫn hoạt động.
 
 Unique index hiện có tiếp tục bảo vệ mã vạch toàn hệ thống. Nếu một yêu cầu
@@ -16,9 +16,11 @@ và đầu sách đang giữ mã. Không cấp mã xem trước hay đặt chỗ
 
 Sau khi lưu, thông báo ghi rõ mã vừa sinh và chuyển về chi tiết đầu sách,
 nơi bảng cùng tổng số và số Sẵn sàng được nạp lại. Đầu sách luôn lấy từ
-route, trạng thái mặc định Sẵn sàng. Không thay đổi luồng tạo lô cũ.
+route, trạng thái mặc định Sẵn sàng. Tạo lô và tạo riêng dùng chung dãy CPY.
 
-Không cần migration mới cho Lát 3. Cần schema Lát 1 đã được áp dụng.
+Migration `20261012010000_DistinguishCopyBarcodesFromCards` đổi mã những bản sao
+đang trùng với mã thẻ; giữ nguyên mã thẻ bạn đọc. Cần in lại nhãn cho các bản
+sao được đổi mã sau khi áp dụng migration.
 
 Kiểm tra:
 

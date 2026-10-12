@@ -12,6 +12,8 @@ public sealed class DirectLoanController(DirectLoanService service, IAuditLogSer
     public async Task<IActionResult> Index(string? cardCode, string? copyCode, long? loanId, CancellationToken ct, long[]? loanIds = null)
     {
         var model = await service.LookupAsync(cardCode, copyCode, ct);
+        var signedInStaff = await audit.GetSignedInStaffAsync(Request, ct);
+        model.CanOverride = signedInStaff != null && CanOverrideDirectLoan(signedInStaff.Role);
         if (loanId.HasValue) model.Receipt = await service.ReceiptAsync(loanId.Value, ct);
         if (!string.IsNullOrWhiteSpace(copyCode) && !loanId.HasValue)
             model.SelectedCopies = await service.ValidateRowsAsync([copyCode], ct: ct, cardCode: cardCode);
@@ -27,7 +29,7 @@ public sealed class DirectLoanController(DirectLoanService service, IAuditLogSer
     public async Task<IActionResult> LookupCopy(string? cardCode, string? copyCode, CancellationToken ct, string? rowId = null)
     {
         var model = await service.LookupAsync(cardCode, copyCode, ct);
-        if (model.ReaderName == null || model.ReaderError != null)
+        if (model.ReaderName == null)
             return BadRequest(new { error = model.ReaderError ?? "Vui lòng nhập mã thẻ bạn đọc." });
         var rows = await service.ValidateRowsAsync([copyCode ?? ""], rowId == null ? null : [rowId], ct, cardCode);
         return Json(rows[0]);
@@ -41,7 +43,7 @@ public sealed class DirectLoanController(DirectLoanService service, IAuditLogSer
         if (request.RequestId == Guid.Empty) ModelState.AddModelError(nameof(request.RequestId), "Thiếu định danh lượt mượn. Vui lòng tải lại trang.");
         var result = ModelState.IsValid
             ? await service.ConfirmManyAsync(request.CardCode, request.CopyCodes, staff, ct, AuditLogService.ClientIp(HttpContext),
-                request.RowIds.Count == 0 ? null : request.RowIds, request.RequestId)
+                request.RowIds.Count == 0 ? null : request.RowIds, request.RequestId, request.BypassReason, request.ConfirmBypass)
             : new DirectLoanBatchOutcome(false, "Thông tin mượn không hợp lệ.");
         if (result.IsSuccess)
         {
@@ -55,9 +57,12 @@ public sealed class DirectLoanController(DirectLoanService service, IAuditLogSer
             return Json(new { result.IsSuccess, result.IsUncertain, result.RequestConflict, result.ErrorMessage, result.Rows });
         if (result.IsUncertain || result.RequestConflict)
             return View("Index", new DirectLoanViewModel { CardCode = request.CardCode, RequestId = request.RequestId, VerifyOnly = true,
+                CanOverride = CanOverrideDirectLoan(staff.Role),
                 SelectedCopies = request.CopyCodes.Select((c, i) => new DirectLoanSelection(c, "", "")
                 { RowId = i < request.RowIds.Count ? request.RowIds[i] : Guid.NewGuid().ToString("N"), Error = "Đang xác minh kết quả" }).ToList() });
         var model = await service.LookupAsync(request.CardCode, null, ct);
+        var currentStaff = await audit.GetSignedInStaffAsync(Request, ct);
+        model.CanOverride = currentStaff != null && CanOverrideDirectLoan(currentStaff.Role);
         model.RequestId = request.RequestId;
         model.Retrying = true;
         model.SelectedCopies = result.Rows?.ToList() ?? await service.ValidateRowsAsync(request.CopyCodes,
@@ -76,9 +81,12 @@ public sealed class DirectLoanController(DirectLoanService service, IAuditLogSer
                 url = result.IsSuccess ? Url.Action(nameof(Status), new { requestId }) : null });
         if (result.RequestConflict) return Forbid();
         var model = new DirectLoanViewModel { RequestId = requestId, VerifyOnly = result.IsUncertain, Retrying = true };
+        var currentStaff = await audit.GetSignedInStaffAsync(Request, ct);
+        model.CanOverride = currentStaff != null && CanOverrideDirectLoan(currentStaff.Role);
         if (result.Operation is { } operation)
         {
             model = await service.LookupAsync(operation.CardCode, null, ct);
+            model.CanOverride = currentStaff != null && CanOverrideDirectLoan(currentStaff.Role);
             model.RequestId = requestId;
             model.Retrying = true;
             if (result.IsSuccess)
@@ -98,6 +106,9 @@ public sealed class DirectLoanController(DirectLoanService service, IAuditLogSer
     public async Task<IActionResult> Confirm(DirectLoanRequest request, CancellationToken ct)
     {
         return await ConfirmMany(new DirectLoanBatchRequest { RequestId = request.RequestId, CardCode = request.CardCode,
-            CopyCodes = [request.CopyCode] }, ct);
+            CopyCodes = [request.CopyCode], BypassReason = request.BypassReason, ConfirmBypass = request.ConfirmBypass }, ct);
     }
+
+    private static bool CanOverrideDirectLoan(string role) =>
+        role is AccountRoles.Librarian or AccountRoles.LibraryManager or AccountRoles.SystemAdmin;
 }

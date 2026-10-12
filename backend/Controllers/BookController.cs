@@ -200,6 +200,7 @@ public sealed class BookController(
         }
         if (readerId > 0)
         {
+            var businessDate = HoldPickupExpirySchedule.GetBusinessDate(DateTime.UtcNow);
             var reader = await registrationService.GetReaderByIdAsync(readerId, cancellationToken);
             bookDetails.IsReaderSignedIn = reader != null;
             IReadOnlyList<ReaderBookHoldItem> readerHolds = reader == null
@@ -209,23 +210,23 @@ public sealed class BookController(
                 hold.BookId == id && BookHoldStatus.ActiveStatuses.Contains(hold.Status));
             if (reader == null)
                 bookDetails.HoldBlockedReason = "Không tìm thấy tài khoản bạn đọc.";
-            else if (bookDetails.ExistingReaderHold != null)
-            {
-                bookDetails.CanHold = false;
-            }
             else if (!string.Equals(reader.Status, "Đang hoạt động", StringComparison.OrdinalIgnoreCase))
                 bookDetails.HoldBlockedReason = reader.Status.Contains("khóa", StringComparison.OrdinalIgnoreCase)
                     ? "Tài khoản của bạn đang bị khóa nên không thể đặt giữ."
                     : "Tài khoản bạn đọc chưa ở trạng thái hoạt động.";
             else if (reader.LibraryCard == null || !string.Equals(reader.LibraryCard.Status, "Đang hoạt động", StringComparison.OrdinalIgnoreCase))
                 bookDetails.HoldBlockedReason = "Thẻ bạn đọc chưa được cấp hoặc không còn hiệu lực.";
-            else if (reader.LibraryCard.ExpiresOn < DateOnly.FromDateTime(DateTime.Today))
+            else if (reader.LibraryCard.ExpiresOn < businessDate)
                 bookDetails.HoldBlockedReason = "Thẻ bạn đọc đã hết hạn.";
-            else if (readerHolds.Count(hold => BookHoldStatus.ActiveStatuses.Contains(hold.Status)) >= ReaderRegistrationService.MaximumActiveBookHolds)
-                bookDetails.HoldBlockedReason = "Bạn đã đạt giới hạn tối đa 3 đơn đặt giữ đang hiệu lực.";
             else if (await dbContext.BookLoans.AnyAsync(loan =>
-                         loan.ReaderAccountId == readerId && loan.BookId == id, cancellationToken))
+                         loan.ReaderAccountId == readerId && loan.ReturnedAtUtc == null &&
+                         loan.DueDate < businessDate, cancellationToken))
+                bookDetails.HoldBlockedReason = "Bạn đọc đang có phiếu mượn quá hạn chưa trả nên không thể đặt giữ sách.";
+            else if (await dbContext.BookLoans.AnyAsync(loan =>
+                         loan.ReaderAccountId == readerId && loan.BookId == id && loan.ReturnedAtUtc == null, cancellationToken))
                 bookDetails.HoldBlockedReason = "B\u1ea1n \u0111ang m\u01b0\u1ee3n \u0111\u1ea7u s\u00e1ch n\u00e0y. Vui l\u00f2ng tr\u1ea3 b\u1ea3n \u0111ang m\u01b0\u1ee3n tr\u01b0\u1edbc khi \u0111\u1eb7t gi\u1eef.";
+            else if (bookDetails.AvailableCopies <= 0)
+                bookDetails.HoldBlockedReason = "Tạm dừng đặt sách: hiện kho đã hết bản sao sẵn sàng. Vui lòng thử lại sau.";
             else
                 bookDetails.CanHold = true;
         }

@@ -31,37 +31,36 @@ public sealed class LoanLookupService(ApplicationDbContext db) : ILoanLookupServ
         long? loanId = long.TryParse(loanIdText, NumberStyles.None, CultureInfo.InvariantCulture, out var parsed)
             ? parsed : null;
 
-        // Mã vạch bản sao (BookCopy.CopyCode) không thể khớp phiếu nào: BookLoan chỉ lưu đầu sách (BookId), chưa lưu
-        // bản sao được mượn. Không suy phiếu từ đầu sách của bản sao vì sẽ trả về phiếu không chứa bản sao đó.
         var query = db.BookLoans.AsNoTracking().Where(loan =>
             (loanId != null && loan.Id == loanId) ||
-            db.LibraryCards.Any(card => card.ReaderAccountId == loan.ReaderAccountId && card.CardCode == term));
+            db.LibraryCards.Any(card => card.ReaderAccountId == loan.ReaderAccountId && card.CardCode == term) ||
+            db.BookCopies.Any(copy => copy.Id == loan.BookCopyId && copy.CopyCode == term));
         var codeOnlyQuery = query;
 
         // Bộ lọc nối bằng AND sau điều kiện mã nên áp dụng cho mọi nhánh khớp mã. LoanDate là cột date (không có
         // giờ, không lưu UTC) nên "≥ đầu ngày Từ" và "< đầu ngày sau Đến" chính là From ≤ LoanDate ≤ To.
         if (filter.From is DateOnly from) query = query.Where(loan => loan.LoanDate >= from);
         if (filter.To is DateOnly to) query = query.Where(loan => loan.LoanDate <= to);
-        // Trạng thái đã được kiểm tra thuộc LoanLookupStatus.All; mọi phiếu còn bản ghi đều "Đang mượn" nên lọc theo
-        // trạng thái này giữ nguyên tập kết quả.
+        if (filter.Status == LoanLookupStatus.Open) query = query.Where(loan => loan.ReturnedAtUtc == null);
+        if (filter.Status == LoanLookupStatus.Returned) query = query.Where(loan => loan.ReturnedAtUtc != null);
 
         var total = await query.CountAsync(cancellationToken);
         var totalPages = total == 0 ? 0 : (int)Math.Ceiling(total / (double)PageSize);
         page = totalPages == 0 ? 1 : Math.Clamp(page, 1, totalPages);
 
-        // Mọi phiếu còn bản ghi đều đang mở, nên nhóm "đang mở" là toàn bộ kết quả; trong nhóm sắp theo ngày mượn
-        // giảm dần rồi khóa chính giảm dần để phân trang ổn định.
         var items = await query
-            .OrderByDescending(loan => loan.LoanDate).ThenByDescending(loan => loan.Id)
+            .OrderBy(loan => loan.ReturnedAtUtc != null)
+            .ThenByDescending(loan => loan.LoanDate).ThenByDescending(loan => loan.Id)
             .Skip((page - 1) * PageSize).Take(PageSize)
             .Select(loan => new LoanLookupItem(
                 loan.Id,
                 db.LibraryCards.Where(card => card.ReaderAccountId == loan.ReaderAccountId)
                     .Select(card => card.CardCode).FirstOrDefault(),
+                loan.BookCopy == null ? null : loan.BookCopy.CopyCode,
                 loan.ReaderAccount!.FullName,
                 loan.LoanDate,
                 loan.DueDate,
-                LoanLookupStatus.Open))
+                loan.ReturnedAtUtc == null ? LoanLookupStatus.Open : LoanLookupStatus.Returned))
             .ToListAsync(cancellationToken);
 
         return new LoanLookupPage(term, items, page, PageSize, total)

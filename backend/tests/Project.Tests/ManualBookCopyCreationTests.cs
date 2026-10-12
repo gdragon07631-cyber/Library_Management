@@ -238,13 +238,13 @@ public sealed class ManualBookCopyCreationTests : IDisposable
     }
 
     [Fact]
-    public async Task AutomaticSequenceUsesGlobalLargestManualLibCodeAndIgnoresOtherFormats()
+    public async Task AutomaticSequenceUsesLargestManualCpyCodeAndIgnoresOtherFormats()
     {
-        foreach (var code in new[] { "LIB000010", "LIB000004", "999999", "ABC999999", "LIB99999", "LIB9999999", "LIBABCDEF" })
+        foreach (var code in new[] { "CPY000010", "CPY000004", "LIB999999", "999999", "ABC999999", "CPY99999", "CPY9999999", "CPYABCDEF" })
             Assert.True((await service.AddManualAsync(otherBook.Id, Valid(code))).IsSuccess);
         var model = Valid("IGNORED");
         model.GenerateBarcode = true;
-        Assert.Equal("LIB000011", (await service.AddManualAsync(book.Id, model)).Copy!.CopyCode);
+        Assert.Equal("CPY000011", (await service.AddManualAsync(book.Id, model)).Copy!.CopyCode);
     }
 
     [Fact]
@@ -253,7 +253,7 @@ public sealed class ManualBookCopyCreationTests : IDisposable
         var model = Valid("");
         Assert.False((await service.AddManualAsync(book.Id, model)).IsSuccess);
         model.GenerateBarcode = true;
-        Assert.Equal("LIB000001", (await service.AddManualAsync(book.Id, model)).Copy!.CopyCode);
+        Assert.Equal("CPY000001", (await service.AddManualAsync(book.Id, model)).Copy!.CopyCode);
         model.GenerateBarcode = false;
         Assert.False((await service.AddManualAsync(book.Id, model)).IsSuccess);
         model.CopyCode = "HAND-123";
@@ -262,9 +262,9 @@ public sealed class ManualBookCopyCreationTests : IDisposable
         Assert.Equal(BookCopyUpdateStatus.DuplicateCode, duplicate.Status);
         Assert.Contains(book.Title, duplicate.ErrorMessage);
         model.GenerateBarcode = true;
-        Assert.Equal("LIB000002", (await service.AddManualAsync(book.Id, model)).Copy!.CopyCode);
+        Assert.Equal("CPY000002", (await service.AddManualAsync(book.Id, model)).Copy!.CopyCode);
         model.GenerateBarcode = false;
-        model.CopyCode = "LIB000002";
+        model.CopyCode = "CPY000002";
         Assert.Equal(BookCopyUpdateStatus.DuplicateCode, (await service.AddManualAsync(book.Id, model)).Status);
         Assert.Equal(3, await db.BookCopies.CountAsync());
     }
@@ -272,12 +272,12 @@ public sealed class ManualBookCopyCreationTests : IDisposable
     [Fact]
     public async Task ExhaustedSequenceCreatesNoCopyAndManualEntryStillWorks()
     {
-        await service.AddManualAsync(otherBook.Id, Valid("LIB999999"));
+        await service.AddManualAsync(otherBook.Id, Valid("CPY999999"));
         var model = Valid("");
         model.GenerateBarcode = true;
         var result = await service.AddManualAsync(book.Id, model);
         Assert.False(result.IsSuccess);
-        Assert.Contains("LIB999999", result.ErrorMessage);
+        Assert.Contains("CPY999999", result.ErrorMessage);
         Assert.Equal(1, await db.BookCopies.CountAsync());
         Assert.True((await service.AddManualAsync(book.Id, Valid("MANUAL-AFTER-LIMIT"))).IsSuccess);
     }
@@ -291,7 +291,7 @@ public sealed class ManualBookCopyCreationTests : IDisposable
         var result = Assert.IsType<RedirectToActionResult>(await controller.Add(book.Id, model));
         Assert.Equal("Details", result.ActionName);
         Assert.Equal(book.Id, result.RouteValues!["id"]);
-        Assert.Contains("Mã vạch vừa sinh: LIB000001", controller.TempData["SuccessMessage"]!.ToString());
+        Assert.Contains("Mã vạch vừa sinh: CPY000001", controller.TempData["SuccessMessage"]!.ToString());
     }
 
     [Fact]
@@ -311,7 +311,7 @@ public sealed class ManualBookCopyCreationTests : IDisposable
         {
             await using var winner = new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>()
                 .UseSqlite(connection).Options);
-            winner.BookCopies.Add(new() { BookId = otherBook.Id, ShelfId = shelf.Id, CopyCode = "LIB000001" });
+            winner.BookCopies.Add(new() { BookId = otherBook.Id, ShelfId = shelf.Id, CopyCode = "CPY000001" });
             await winner.SaveChangesAsync();
         });
         await using var racingDb = new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>()
@@ -320,7 +320,7 @@ public sealed class ManualBookCopyCreationTests : IDisposable
         model.GenerateBarcode = true;
         var result = await new BookCopyService(racingDb).AddManualAsync(book.Id, model);
         Assert.True(result.IsSuccess);
-        Assert.Equal("LIB000002", result.Copy!.CopyCode);
+        Assert.Equal("CPY000002", result.Copy!.CopyCode);
         Assert.Equal(book.Id, result.Copy.BookId);
         Assert.Equal(2, await db.BookCopies.CountAsync());
         Assert.Equal(2, await db.BookCopies.Select(copy => copy.CopyCode).Distinct().CountAsync());

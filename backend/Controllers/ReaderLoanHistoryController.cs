@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Project.Data;
 using Project.Filters;
 using Project.Models;
+using Project.Services;
 
 namespace Project.Controllers;
 
@@ -26,6 +27,7 @@ public sealed class ReaderLoanHistoryController(ApplicationDbContext db) : Contr
             dateFilterError = "Ngày bắt đầu không được sau ngày kết thúc.";
 
         var loans = new List<BookLoan>();
+        var allLoans = await GetLoansQuery(id, null, null).ToListAsync(cancellationToken);
         if (dateFilterError is null)
         {
             loans = await GetLoansQuery(id, startDate, endDate).ToListAsync(cancellationToken);
@@ -35,9 +37,9 @@ public sealed class ReaderLoanHistoryController(ApplicationDbContext db) : Contr
         {
             Reader = reader,
             Loans = loans,
-            OpenLoanCount = loans.Count(loan => !loan.IsReturned),
-            TotalLoanCount = loans.Count,
-            LateReturnCount = null,
+            OpenLoanCount = allLoans.Count(loan => loan.ReturnedAtUtc is null),
+            TotalLoanCount = allLoans.Count,
+            LateReturnCount = allLoans.Count(IsLateReturn),
             StartDate = startDate,
             EndDate = endDate,
             DateFilterError = dateFilterError
@@ -58,22 +60,23 @@ public sealed class ReaderLoanHistoryController(ApplicationDbContext db) : Contr
 
         var loans = await GetLoansQuery(id, startDate, endDate).ToListAsync(cancellationToken);
         var csv = new StringBuilder();
-        AppendCsvRow(csv, "Mã phiếu", "Mã bạn đọc", "Mã sách", "Tên sách", "Ngày mượn", "Hạn trả", "Ngày trả thực tế", "Trạng thái");
+        AppendCsvRow(csv, "Mã phiếu", "Mã bạn đọc", "Mã vạch bản sao", "Tên sách", "Ngày mượn", "Hạn trả", "Ngày trả thực tế", "Trạng thái");
 
-        var today = DateOnly.FromDateTime(DateTime.Today);
+        var today = HoldPickupExpirySchedule.GetBusinessDate(DateTime.UtcNow);
         foreach (var loan in loans)
         {
-            var status = loan.IsReturned
+            var returnDate = GetLocalReturnDate(loan.ReturnedAtUtc);
+            var status = returnDate.HasValue
                 ? "Đã trả"
                 : loan.DueDate < today ? "Quá hạn, chưa trả" : "Đang mở";
             AppendCsvRow(csv,
                 loan.Id.ToString(System.Globalization.CultureInfo.InvariantCulture),
                 reader.StudentOrStaffCode,
-                loan.BookId.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                loan.BookCopy?.CopyCode ?? string.Empty,
                 loan.Book?.Title ?? string.Empty,
                 loan.LoanDate.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
                 loan.DueDate.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
-                loan.ReturnDate?.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty,
+                returnDate?.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty,
                 status);
         }
 
@@ -84,16 +87,58 @@ public sealed class ReaderLoanHistoryController(ApplicationDbContext db) : Contr
         return File(bytes, "text/csv; charset=utf-8", fileName);
     }
 
+    [HttpGet("/api/readers/{id:int}/loan-history")]
+    public async Task<IActionResult> GetHistoryApi(
+        int id, DateOnly? startDate = null, DateOnly? endDate = null, CancellationToken cancellationToken = default)
+    {
+        var reader = await db.ReaderAccounts.AsNoTracking()
+            .SingleOrDefaultAsync(item => item.Id == id, cancellationToken);
+        if (reader is null) return NotFound(new { message = "Không tìm thấy bạn đọc." });
+        if (!ModelState.IsValid || (startDate.HasValue && endDate.HasValue && startDate.Value > endDate.Value))
+            return BadRequest(new { message = "Khoảng ngày lọc không hợp lệ." });
+
+        var allLoans = await GetLoansQuery(id, null, null).ToListAsync(cancellationToken);
+        var loans = await GetLoansQuery(id, startDate, endDate).ToListAsync(cancellationToken);
+        return Ok(new
+        {
+            readerId = reader.Id,
+            readerName = reader.FullName,
+            openLoanCount = allLoans.Count(loan => loan.ReturnedAtUtc is null),
+            totalLoanCount = allLoans.Count,
+            lateReturnCount = allLoans.Count(IsLateReturn),
+            items = loans.Select(loan => new
+            {
+                loanId = loan.Id,
+                bookTitle = loan.Book?.Title,
+                copyBarcode = loan.BookCopy?.CopyCode,
+                loanDate = loan.LoanDate,
+                dueDate = loan.DueDate,
+                returnedAtUtc = loan.ReturnedAtUtc,
+                isReturned = loan.ReturnedAtUtc.HasValue
+            })
+        });
+    }
+
     private IQueryable<BookLoan> GetLoansQuery(int readerId, DateOnly? startDate, DateOnly? endDate)
     {
         var query = db.BookLoans.AsNoTracking().Where(loan => loan.ReaderAccountId == readerId);
         if (startDate.HasValue) query = query.Where(loan => loan.LoanDate >= startDate.Value);
         if (endDate.HasValue) query = query.Where(loan => loan.LoanDate <= endDate.Value);
 
-        return query.Include(loan => loan.Book)
+        return query.Include(loan => loan.Book).Include(loan => loan.BookCopy)
             .OrderByDescending(loan => loan.LoanDate)
             .ThenByDescending(loan => loan.Id);
     }
+
+    private static bool IsLateReturn(BookLoan loan)
+    {
+        var returnedDate = GetLocalReturnDate(loan.ReturnedAtUtc);
+        return returnedDate.HasValue && returnedDate.Value > loan.DueDate;
+    }
+
+    private static DateOnly? GetLocalReturnDate(DateTime? returnedAtUtc) => returnedAtUtc.HasValue
+        ? DateOnly.FromDateTime(HoldPickupExpirySchedule.GetVietnamLocalTime(returnedAtUtc.Value))
+        : null;
 
     private static void AppendCsvRow(StringBuilder csv, params string[] fields)
     {

@@ -19,7 +19,7 @@ public sealed class OverdueLoanController(
         return View(new OverdueLoanViewModel
         {
             Range = range,
-            Items = await loans.GetOverdueAsync(DateOnly.FromDateTime(DateTime.Today), range, ct)
+            Items = await loans.GetOverdueAsync(HoldPickupExpirySchedule.GetBusinessDate(DateTime.UtcNow), range, ct)
         });
     }
 
@@ -27,7 +27,7 @@ public sealed class OverdueLoanController(
     public async Task<IActionResult> GetOverdueApi(string? overdueRange, CancellationToken ct = default)
     {
         var range = OverdueLoanRanges.Parse(overdueRange);
-        var items = await loans.GetOverdueAsync(DateOnly.FromDateTime(DateTime.Today), range, ct);
+        var items = await loans.GetOverdueAsync(HoldPickupExpirySchedule.GetBusinessDate(DateTime.UtcNow), range, ct);
         return Ok(items.Select(item => new
         {
             loanId = item.LoanId,
@@ -38,7 +38,14 @@ public sealed class OverdueLoanController(
             bookTitle = item.BookTitle,
             loanDate = item.LoanDate,
             dueDate = item.DueDate,
-            copyBarcode = item.CopyBarcode
+            copyBarcode = item.CopyBarcode,
+            latestContact = item.LatestContact is null ? null : new
+            {
+                item.LatestContact.Id,
+                item.LatestContact.CreatedAtUtc,
+                item.LatestContact.Note,
+                item.LatestContact.ContactedBy
+            }
         }));
     }
 

@@ -88,17 +88,18 @@
                     }
                 </div>
                 <div class="table-responsive"><table class="table table-hover align-middle mb-0">
-                    <thead class="table-light"><tr><th>Mã phiếu</th><th>Mã thẻ</th><th>Tên bạn đọc</th><th>Ngày mượn</th><th>Hạn trả</th><th>Trạng thái</th></tr></thead>
+                    <thead class="table-light"><tr><th>Mã phiếu</th><th>Mã thẻ</th><th>Mã vạch bản sao</th><th>Tên bạn đọc</th><th>Ngày mượn</th><th>Hạn trả</th><th>Trạng thái</th></tr></thead>
                     <tbody>
                     @foreach (var item in result.Items)
                     {
                         <tr>
                             <td class="fw-semibold">#@item.LoanId</td>
                             <td>@(item.CardCode ?? "—")</td>
+                            <td>@(item.CopyCode ?? "—")</td>
                             <td>@item.ReaderName</td>
                             <td>@item.LoanDate.ToString("dd/MM/yyyy")</td>
                             <td>@item.DueDate.ToString("dd/MM/yyyy")</td>
-                            <td><span class="badge bg-primary-subtle text-primary-emphasis">@item.Status</span></td>
+                            <td><span class="badge @(item.Status == Project.Models.LoanLookupStatus.Open ? "bg-primary-subtle text-primary-emphasis" : "bg-secondary-subtle text-secondary-emphasis")">@item.Status</span></td>
                         </tr>
                     }
                     </tbody>

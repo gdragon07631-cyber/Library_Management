@@ -52,9 +52,13 @@ public sealed class BookHoldQueueItemViewModel
         (Status == BookHoldStatus.Cancelled && CancellationReason == BookHoldStatus.ExpiredCancellationReason);
     public string DisplayStatus => IsPickupExpired ? "Quá hạn nhận" : Status;
 
-    public string HeldAtText => HeldAtUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm");
-    public string? PickupDeadlineText => PickupDeadlineUtc?.ToLocalTime().ToString("dd/MM/yyyy HH:mm");
-    public string? CancelledAtText => CancelledAtUtc?.ToLocalTime().ToString("dd/MM/yyyy HH:mm");
+    public string HeldAtText => Project.Services.HoldPickupExpirySchedule.GetVietnamLocalTime(HeldAtUtc).ToString("dd/MM/yyyy HH:mm");
+    public string? PickupDeadlineText => PickupDeadlineUtc is { } deadline
+        ? Project.Services.HoldPickupExpirySchedule.GetVietnamLocalTime(deadline).ToString("dd/MM/yyyy HH:mm")
+        : null;
+    public string? CancelledAtText => CancelledAtUtc is { } cancelledAt
+        ? Project.Services.HoldPickupExpirySchedule.GetVietnamLocalTime(cancelledAt).ToString("dd/MM/yyyy HH:mm")
+        : null;
 }
 
 public sealed class CancelHoldRequest

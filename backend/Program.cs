@@ -114,6 +114,18 @@ if (args.Contains("--migrate-database", StringComparer.OrdinalIgnoreCase))
     return;
 }
 
+if (args.Contains("--seed-library-demo", StringComparer.OrdinalIgnoreCase))
+{
+    await using var scope = app.Services.CreateAsyncScope();
+    var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+    var seeder = new LibraryDemoDataSeeder(dbContext);
+    var result = await seeder.SeedAsync();
+    Console.WriteLine(
+        $"Library demo seed complete. Added: authors={result.AuthorsAdded}, categories={result.CategoriesAdded}, " +
+        $"warehouses={result.WarehousesAdded}, shelves={result.ShelvesAdded}, books={result.BooksAdded}, copies={result.CopiesAdded}.");
+    return;
+}
+
 if (args.Contains("--seed-hold-pickup", StringComparer.OrdinalIgnoreCase))
 {
     await using var scope = app.Services.CreateAsyncScope();

@@ -26,7 +26,7 @@ public sealed class HoldPickupItemViewModel
     public bool CanConfirm => BookHoldStatus.WaitingPickupStatuses.Contains(Status) && !IsPickupExpired;
 
     public string PickupDeadlineText => PickupDeadlineUtc is { } deadline
-        ? deadline.ToString("dd/MM/yyyy HH:mm")
+        ? Project.Services.HoldPickupExpirySchedule.GetVietnamLocalTime(deadline).ToString("dd/MM/yyyy HH:mm")
         : "—";
 }
 

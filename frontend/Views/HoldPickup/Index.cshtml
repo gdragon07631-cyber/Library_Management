@@ -174,7 +174,10 @@
                             <td class="text-center">
                                 <span class="badge bg-secondary font-monospace">#@item.HoldId</span>
                             </td>
-                            <td><a asp-action="Details" asp-route-id="@item.HoldId" class="btn btn-sm btn-primary">Chi tiết / Xác nhận</a></td>
+                            <td class="text-nowrap">
+                                <a asp-action="Details" asp-route-id="@item.HoldId" class="btn btn-sm btn-primary">Chi tiết / Xác nhận</a>
+                                <button type="button" class="btn btn-sm btn-outline-danger" data-bs-toggle="modal" data-bs-target="#cancelPickupHold-@item.HoldId">Hủy cho bạn đọc</button>
+                            </td>
                         </tr>
                     }
                 }
@@ -182,5 +185,24 @@
             </table>
         </div>
     </div>
+    @foreach (var item in Model.Items)
+    {
+        <div class="modal fade" id="cancelPickupHold-@item.HoldId" tabindex="-1" aria-labelledby="cancelPickupHoldLabel-@item.HoldId" aria-hidden="true">
+            <div class="modal-dialog"><div class="modal-content">
+                <form asp-controller="Book" asp-action="CancelHold" method="post">
+                    <input type="hidden" name="holdId" value="@item.HoldId" />
+                    <input type="hidden" name="bookId" value="@item.BookId" />
+                    <input type="hidden" name="status" value="@Project.Models.BookHoldQueueFilter.WaitingPickup" />
+                    <div class="modal-header"><h2 class="h5 modal-title" id="cancelPickupHoldLabel-@item.HoldId">Hủy đơn đặt giữ cho bạn đọc</h2><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Đóng"></button></div>
+                    <div class="modal-body">
+                        <p>Bạn đọc: <strong>@item.ReaderName</strong><br />Đầu sách: <strong>@item.BookTitle</strong></p>
+                        <label for="cancelPickupReason-@item.HoldId" class="form-label">Lý do hủy <span class="text-danger">*</span></label>
+                        <textarea id="cancelPickupReason-@item.HoldId" name="reason" class="form-control" rows="3" maxlength="1000" required></textarea>
+                    </div>
+                    <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Đóng</button><button type="submit" class="btn btn-danger">Xác nhận hủy</button></div>
+                </form>
+            </div></div>
+        </div>
+    }
 </div>
 

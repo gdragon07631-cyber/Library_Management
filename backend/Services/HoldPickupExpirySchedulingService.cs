@@ -25,6 +25,9 @@ public static class HoldPickupExpirySchedule
     public static DateTime GetVietnamLocalTime(DateTime utcNow) =>
         TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(utcNow, DateTimeKind.Utc), VietnamTimeZone);
 
+    public static DateTime ToUtc(DateOnly localDate, TimeOnly localTime) =>
+        TimeZoneInfo.ConvertTimeToUtc(DateTime.SpecifyKind(localDate.ToDateTime(localTime), DateTimeKind.Unspecified), VietnamTimeZone);
+
     public static DateOnly GetBusinessDate(DateTime utcNow) => DateOnly.FromDateTime(GetVietnamLocalTime(utcNow));
 
     public static bool IsDue(DateTime utcNow) => TimeOnly.FromDateTime(GetVietnamLocalTime(utcNow)) >= DailyRunTime;

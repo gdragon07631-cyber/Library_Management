@@ -8,11 +8,15 @@ namespace Project.Services;
 public sealed class HoldPickupConfirmationService(
     ApplicationDbContext db,
     IBookLoanService loanService,
-    IWorkingScheduleService workingScheduleService)
+    IWorkingScheduleService workingScheduleService,
+    IBookHoldFulfillmentService? holdFulfillmentService = null)
     : IHoldPickupConfirmationService
 {
+    private readonly IBookHoldFulfillmentService holdFulfillment =
+        holdFulfillmentService ?? new BookHoldFulfillmentService(db, loanService);
+
     public async Task<HoldPickupConfirmationResult> ConfirmAsync(
-        long holdId, string libraryCardCode, string actor, int createdByAdminAccountId, CancellationToken cancellationToken = default)
+        long holdId, string libraryCardCode, string actor, int? createdByAdminAccountId, CancellationToken cancellationToken = default)
     {
         await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
         try
@@ -91,6 +95,8 @@ public sealed class HoldPickupConfirmationService(
                 ChangedAtUtc = now
             });
 
+            await db.SaveChangesAsync(cancellationToken);
+            await holdFulfillment.FulfillNextAsync(hold.BookId, cancellationToken);
             await db.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
             return new(true, $"Đã xác nhận đơn đặt giữ và tạo phiếu mượn #{loanResult.Loan.Id}.", loanResult.Loan.Id);

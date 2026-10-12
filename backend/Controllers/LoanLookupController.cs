@@ -109,7 +109,7 @@ public sealed class LoanLookupController(ILoanLookupService lookup, ILogger<Loan
             code = result.Code,
             items = result.Items.Select(item => new
             {
-                loanId = item.LoanId, cardCode = item.CardCode, readerName = item.ReaderName,
+                loanId = item.LoanId, cardCode = item.CardCode, copyCode = item.CopyCode, readerName = item.ReaderName,
                 loanDate = item.LoanDate, dueDate = item.DueDate, status = item.Status
             }),
             totalItems = result.TotalItems,

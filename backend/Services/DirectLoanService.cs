@@ -24,26 +24,49 @@ public sealed partial class DirectLoanService(ApplicationDbContext db, IBookLoan
             {
                 var reader = card.ReaderAccount;
                 readerId = reader.Id;
+                model.ReaderAccountId = reader.Id;
                 var existing = await db.BookLoans.AsNoTracking().Where(l => l.ReaderAccountId == reader.Id).ToListAsync(ct);
                 model.ReaderName = reader.FullName;
                 model.CardTypeName = card.LibraryCardType.Name;
                 model.MaxBooks = card.LibraryCardType.MaxBooks;
                 model.CurrentLoans = existing.Count(l => !l.IsReturned);
                 model.RemainingLoans = Math.Max(0, model.MaxBooks - model.CurrentLoans);
-                if (reader.IsLocked || card.IsLocked || reader.Status != "Đang hoạt động" || card.Status != "Đang hoạt động")
+                model.OutstandingDebt = reader.TotalDebt;
+                if (reader.IsLocked || card.IsLocked || card.Status.Contains("khóa", StringComparison.OrdinalIgnoreCase)
+                    || card.Status.Contains("khoá", StringComparison.OrdinalIgnoreCase))
+                {
+                    model.ReaderError = card.IsLocked || card.Status.Contains("khóa", StringComparison.OrdinalIgnoreCase)
+                        || card.Status.Contains("khoá", StringComparison.OrdinalIgnoreCase)
+                        ? "Thẻ bạn đọc đang bị khóa."
+                        : "Tài khoản bạn đọc đang bị khóa.";
+                    model.CanOverrideBlock = true;
+                }
+                else if (reader.Status != "Đang hoạt động" || card.Status != "Đang hoạt động")
                     model.ReaderError = "Thẻ hoặc tài khoản bạn đọc không ở trạng thái hoạt động.";
                 else if (card.IssuedOn > today || card.ExpiresOn < today)
+                {
                     model.ReaderError = "Thẻ bạn đọc chưa có hiệu lực hoặc đã hết hạn.";
+                    model.CanOverrideBlock = true;
+                }
                 else if (!card.LibraryCardType.IsActive)
                     model.ReaderError = "Loại thẻ đã ngừng sử dụng.";
                 else if (card.LibraryCardType.LoanDays is not > 0)
                     model.ReaderError = "Loại thẻ chưa được cấu hình số ngày mượn. Vui lòng cập nhật tại Chính sách mượn.";
                 else if (existing.Any(l => !l.IsReturned && l.DueDate < today))
+                {
                     model.ReaderError = "Bạn đọc đang có phiếu mượn quá hạn chưa trả.";
-                else if (reader.TotalDebt > 0)
-                    model.ReaderError = "Bạn đọc còn phí/phạt chưa thanh toán, không thể mượn sách.";
+                    model.CanOverrideBlock = true;
+                }
+                else if (model.OutstandingDebt > 0)
+                {
+                    model.ReaderError = $"Bạn đọc còn nợ {BookLoanService.FormatVnd(model.OutstandingDebt)} phí chưa thanh toán, không thể mượn sách.";
+                    model.CanOverrideBlock = true;
+                }
                 else if (model.RemainingLoans == 0)
+                {
                     model.ReaderError = $"Bạn đọc đã đạt giới hạn mượn {model.CurrentLoans}/{model.MaxBooks} sách.";
+                    model.CanOverrideBlock = true;
+                }
             }
         }
         if (model.CopyCode.Length > 0)
@@ -129,10 +152,13 @@ public sealed partial class DirectLoanService(ApplicationDbContext db, IBookLoan
     }
 
     public async Task<DirectLoanBatchOutcome> ConfirmManyAsync(string cardCode, IReadOnlyList<string> copyCodes,
-        AdminAccount staff, CancellationToken ct = default, string? ipAddress = null, IReadOnlyList<string>? rowIds = null, Guid? requestId = null)
+        AdminAccount staff, CancellationToken ct = default, string? ipAddress = null, IReadOnlyList<string>? rowIds = null,
+        Guid? requestId = null, string? bypassReason = null, bool confirmBypass = false)
     {
         if (string.IsNullOrWhiteSpace(cardCode) || copyCodes.Count == 0)
             return new(false, "Vui lòng nhập mã thẻ và chọn ít nhất một bản sao.");
+        if (bypassReason?.Trim().Length > 160)
+            return new(false, "Lý do bỏ qua không được vượt quá 160 ký tự.");
         var codes = copyCodes.Select(c => c?.Trim() ?? "").ToArray();
         if (cardCode.Trim().Length > 32 || (rowIds != null && rowIds.Count != codes.Length))
             return new(false, "Mã thẻ hoặc mã vạch không hợp lệ.");
@@ -165,12 +191,46 @@ public sealed partial class DirectLoanService(ApplicationDbContext db, IBookLoan
             }
             var page = await LookupAsync(normalizedCard, null, ct);
             var rows = await ValidateRowsAsync(codes, rowIds, ct, normalizedCard);
-            if (page.ReaderName == null || page.ReaderError != null)
-                return new(false, page.ReaderError ?? "Thông tin bạn đọc không hợp lệ.", Rows: rows);
+            var policyReason = page.ReaderError;
+            if (page.ReaderName != null && page.ReaderError == null && codes.Length > page.RemainingLoans)
+            {
+                var batchReason = $"Đang mượn {page.CurrentLoans}/{page.MaxBooks} sách, lượt này cần thêm {codes.Length} nhưng chỉ còn hạn mức {page.RemainingLoans} sách.";
+                policyReason = batchReason;
+            }
+            var overrideAllowed = staff.Role is AccountRoles.Librarian or AccountRoles.LibraryManager or AccountRoles.SystemAdmin;
+            var batchLimitBlock = page.ReaderName != null && page.ReaderError == null && codes.Length > page.RemainingLoans;
+            var hasPolicyBlock = page.ReaderName == null || !string.IsNullOrWhiteSpace(page.ReaderError) || batchLimitBlock;
+            var hasBypassReason = !string.IsNullOrWhiteSpace(bypassReason);
+            var useOverride = page.ReaderName != null && (page.CanOverrideBlock || batchLimitBlock)
+                && overrideAllowed && confirmBypass && hasBypassReason;
+            if (hasPolicyBlock && !useOverride)
+            {
+                var blockedReason = policyReason ?? "Không tìm thấy bạn đọc hoặc thẻ hợp lệ.";
+                var reader = await db.LibraryCards.AsNoTracking().Where(c => c.CardCode == normalizedCard)
+                    .Select(c => c.ReaderAccount).FirstOrDefaultAsync(ct);
+                var target = reader == null
+                    ? $"Mã thẻ {normalizedCard} – Lý do: {blockedReason}"
+                    : $"Bạn đọc #{reader.Id} {reader.FullName} – Lý do: {blockedReason}";
+                db.AuditLogs.Add(AuditLogService.Create(staff.Email, AuditActions.BlockLoan, target, ipAddress));
+                await db.SaveChangesAsync(ct);
+                await transaction.CommitAsync(ct);
+                var denial = page.ReaderName == null
+                    ? policyReason ?? "Thông tin bạn đọc không hợp lệ."
+                    : overrideAllowed && (page.CanOverrideBlock || batchLimitBlock) && (!hasBypassReason || !confirmBypass)
+                        ? $"{blockedReason} Muốn bỏ qua chặn, thủ thư hoặc quản lý cần xác nhận và nhập lý do."
+                        : blockedReason;
+                return new(false, denial, Rows: rows);
+            }
             if (rows.Any(r => !r.IsValid))
                 return new(false, rows.First(r => !r.IsValid).Error, Rows: rows);
-            if (codes.Length > page.RemainingLoans)
-                return new(false, $"Đã chọn {codes.Length} bản sao, nhưng bạn đọc chỉ còn được mượn thêm {page.RemainingLoans} sách.", Rows: rows);
+            if (hasPolicyBlock && useOverride)
+            {
+                var reader = await db.LibraryCards.AsNoTracking().Where(c => c.CardCode == normalizedCard)
+                    .Select(c => c.ReaderAccount!).FirstAsync(ct);
+                var blockedReason = policyReason!;
+                var target = $"Bạn đọc #{reader.Id} {reader.FullName} – Lý do chặn: {blockedReason} – Lý do bỏ qua: {bypassReason!.Trim()}";
+                db.AuditLogs.Add(AuditLogService.Create(staff.Email, AuditActions.OverrideBlockLoan, target, ipAddress));
+            }
             var copies = new List<BookCopy>();
             foreach (var code in codes)
             {
@@ -215,8 +275,11 @@ public sealed partial class DirectLoanService(ApplicationDbContext db, IBookLoan
                     return new(false, "Vui lòng xử lý dòng lỗi trước khi xác nhận.", Rows: rows);
                 }
                 // Reuse existing eligibility rules and due dates inside the same transaction.
-                var result = await loans.CreateForHoldAsync(copy.BookId, card.ReaderAccountId, loanDate,
-                    originalDueDate, dueDate, staff.Email, ct);
+                var result = useOverride
+                    ? await loans.OverrideCreateForHoldAsync(copy.BookId, card.ReaderAccountId, loanDate,
+                        originalDueDate, dueDate, staff.Email, ct)
+                    : await loans.CreateForHoldAsync(copy.BookId, card.ReaderAccountId, loanDate,
+                        originalDueDate, dueDate, staff.Email, ct);
                 if (!result.IsSuccess || result.Loan == null) return new(false, result.ErrorMessage);
                 result.Loan.BookCopyId = copy.Id;
                 result.Loan.SourceBookHoldId = holdId;

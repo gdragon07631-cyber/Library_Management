@@ -67,8 +67,8 @@ public sealed class DocumentHoldOutcome
     {
         if (fulfillment.IsAssigned)
         {
-            var deadline = DateTime.SpecifyKind(fulfillment.PickupDeadlineUtc!.Value, DateTimeKind.Utc)
-                .ToLocalTime().ToString("dd/MM/yyyy HH:mm");
+            var deadline = HoldPickupExpirySchedule.GetVietnamLocalTime(fulfillment.PickupDeadlineUtc!.Value)
+                .ToString("dd/MM/yyyy HH:mm");
             var message = $"Đặt giữ thành công. Trạng thái yêu cầu: {BookHoldStatus.Available}; trạng thái bản sao: {BookCopyStatus.OnHold}. Mã bản sao: {fulfillment.CopyCode}. Hạn đến nhận: {deadline}.";
             return new(true, message, queuePosition, true, fulfillment.CopyCode, fulfillment.PickupDeadlineUtc);
         }
@@ -84,11 +84,11 @@ public sealed record ReaderBookHoldItem(
     long Id, int BookId, string BookTitle, DateTime HeldAtUtc, string Status,
     int? QueuePosition = null, DateTime? PickupDeadlineUtc = null, string? CopyBarcode = null)
 {
-    public bool CanCancel => Status == BookHoldStatus.Waiting;
+    public bool CanCancel => Status == BookHoldStatus.Waiting || BookHoldStatus.WaitingPickupStatuses.Contains(Status);
 
     /// <summary>Hạn nhận sách theo giờ địa phương, dạng "17:00 28/09/2026"; null khi không có hạn.</summary>
     public string? PickupDeadlineText => PickupDeadlineUtc is { } deadline
-        ? DateTime.SpecifyKind(deadline, DateTimeKind.Utc).ToLocalTime().ToString("HH:mm dd/MM/yyyy")
+        ? HoldPickupExpirySchedule.GetVietnamLocalTime(deadline).ToString("HH:mm dd/MM/yyyy")
         : null;
 }
 

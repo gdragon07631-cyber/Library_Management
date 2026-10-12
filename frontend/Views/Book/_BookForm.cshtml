@@ -35,6 +35,7 @@
             }
         </select>
         <button type="button" class="btn btn-outline-primary" id="addAuthorButton">Thêm tác giả</button>
+        <button type="button" class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#createAuthorModal">Tạo tác giả mới</button>
     </div>
     <span asp-validation-for="AuthorIds" class="text-danger small"></span>
     <div class="form-text small text-muted" id="authorPickerHelp">
@@ -59,6 +60,30 @@
         }
     </ul>
     <div class="form-text text-muted" id="noAuthorsMessage" hidden="@(Model.SelectedAuthors.Count > 0)">Chưa chọn tác giả nào.</div>
+</div>
+
+<div class="modal fade" id="createAuthorModal" tabindex="-1" aria-labelledby="createAuthorModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title fs-5" id="createAuthorModalLabel">Tạo tác giả mới</h2>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Đóng"></button>
+            </div>
+            <form id="createAuthorForm">
+                <div class="modal-body">
+                    <div class="alert alert-danger d-none" id="createAuthorError" role="alert"></div>
+                    <label for="newAuthorName" class="form-label">Họ tên tác giả <span class="text-danger">*</span></label>
+                    <input id="newAuthorName" class="form-control" maxlength="150" required />
+                    <label for="newAuthorNote" class="form-label mt-3">Ghi chú</label>
+                    <textarea id="newAuthorNote" class="form-control" rows="3"></textarea>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Hủy</button>
+                    <button type="submit" class="btn btn-primary" id="saveNewAuthor">Tạo và chọn tác giả</button>
+                </div>
+            </form>
+        </div>
+    </div>
 </div>
 
 <div class="mb-3">
@@ -108,6 +133,9 @@
         const addButton = document.getElementById('addAuthorButton');
         const list = document.getElementById('selectedAuthors');
         const emptyMessage = document.getElementById('noAuthorsMessage');
+        const createForm = document.getElementById('createAuthorForm');
+        const createError = document.getElementById('createAuthorError');
+        const saveAuthorButton = document.getElementById('saveNewAuthor');
 
         const refresh = () => { emptyMessage.hidden = list.children.length > 0; };
 
@@ -140,6 +168,38 @@
             option.hidden = true;
             select.value = '';
             refresh();
+        });
+
+        createForm.addEventListener('submit', async event => {
+            event.preventDefault();
+            createError.classList.add('d-none');
+            saveAuthorButton.disabled = true;
+            try {
+                const response = await fetch('/api/authors', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                    body: JSON.stringify({
+                        name: document.getElementById('newAuthorName').value.trim(),
+                        note: document.getElementById('newAuthorNote').value.trim()
+                    })
+                });
+                const author = await response.json();
+                if (!response.ok) throw new Error(author.message || 'Không thể tạo tác giả.');
+
+                const option = document.createElement('option');
+                option.value = author.id;
+                option.textContent = author.name;
+                select.append(option);
+                select.value = String(author.id);
+                addButton.click();
+                createForm.reset();
+                bootstrap.Modal.getOrCreateInstance(document.getElementById('createAuthorModal')).hide();
+            } catch (error) {
+                createError.textContent = error.message || 'Không thể kết nối để tạo tác giả.';
+                createError.classList.remove('d-none');
+            } finally {
+                saveAuthorButton.disabled = false;
+            }
         });
 
         list.addEventListener('click', event => {

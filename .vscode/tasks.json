@@ -8,6 +8,19 @@
             "args": ["build", "${workspaceFolder}/backend/Project.csproj", "/property:GenerateFullPaths=true", "/consoleloggerparameters:NoSummary"],
             "group": { "kind": "build", "isDefault": true },
             "problemMatcher": "$msCompile"
+        },
+        {
+            "label": "migrate database (Development)",
+            "type": "process",
+            "command": "dotnet",
+            "args": ["run", "--project", "${workspaceFolder}/backend/Project.csproj", "--launch-profile", "http", "--", "--migrate-database"],
+            "problemMatcher": []
+        },
+        {
+            "label": "prepare app",
+            "dependsOn": ["build", "migrate database (Development)"],
+            "dependsOrder": "sequence",
+            "problemMatcher": []
         }
     ]
 }

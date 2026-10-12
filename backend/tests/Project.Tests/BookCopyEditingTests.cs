@@ -471,7 +471,7 @@ public sealed class BookCopyEditingTests : IDisposable
         Assert.True(result.IsSuccess);
         Assert.Equal(quantity, result.Copies!.Count);
         Assert.Empty(result.SkippedBarcodes!);
-        Assert.Equal(Enumerable.Range(1, quantity).Select(number => number.ToString("D6")), result.Copies.Select(copy => copy.CopyCode));
+        Assert.Equal(Enumerable.Range(1, quantity).Select(number => $"CPY{number:D6}"), result.Copies.Select(copy => copy.CopyCode));
         Assert.All(result.Copies, copy =>
         {
             Assert.Equal(receivedDate, copy.ReceivedDate);
@@ -499,10 +499,10 @@ public sealed class BookCopyEditingTests : IDisposable
     }
 
     [Theory]
-    [InlineData(1, "000001", "000001")]
-    [InlineData(5, "000001", "000005")]
-    [InlineData(10, "000001", "000010")]
-    [InlineData(50, "000001", "000050")]
+    [InlineData(1, "CPY000001", "CPY000001")]
+    [InlineData(5, "CPY000001", "CPY000005")]
+    [InlineData(10, "CPY000001", "CPY000010")]
+    [InlineData(50, "CPY000001", "CPY000050")]
     public async Task PreviewReturnsTheAc1BarcodeRangeWithoutSaving(int quantity, string expectedStart, string expectedEnd)
     {
         var result = await service.PreviewBatchAsync(quantity);
@@ -540,8 +540,8 @@ public sealed class BookCopyEditingTests : IDisposable
 
         var preview = await service.PreviewBatchAsync(3);
 
-        Assert.Equal("000006", preview.StartBarcode);
-        Assert.Equal("000008", preview.EndBarcode);
+        Assert.Equal("CPY000006", preview.StartBarcode);
+        Assert.Equal("CPY000008", preview.EndBarcode);
         Assert.Equal(5, await db.BookCopies.CountAsync());
     }
 
@@ -560,7 +560,7 @@ public sealed class BookCopyEditingTests : IDisposable
         var labels = await service.GetLabelsForCopiesAsync(book.Id, [ids[2], ids[0]]);
 
         Assert.NotNull(labels);
-        Assert.Equal(new[] { "000003", "000001" }, labels.Labels.Select(label => label.CopyCode));
+        Assert.Equal(new[] { "CPY000003", "CPY000001" }, labels.Labels.Select(label => label.CopyCode));
         Assert.Equal(new[] { book.Title, book.Title }, labels.Labels.Select(label => label.BookTitle));
         Assert.Equal(new[] { warehouseA.Code, warehouseA.Code }, labels.Labels.Select(label => label.WarehouseCode));
         Assert.All(labels.Labels, label =>

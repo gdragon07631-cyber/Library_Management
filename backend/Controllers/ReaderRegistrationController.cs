@@ -11,7 +11,8 @@ public sealed class ReaderRegistrationController(
     IReaderPasswordResetService passwordResetService,
     IDataProtectionProvider dataProtectionProvider,
     IAuditLogService auditLogService,
-    IReaderEmailVerificationService emailVerificationService) : Controller
+    IReaderEmailVerificationService emailVerificationService,
+    IHoldPickupConfirmationService holdPickupConfirmationService) : Controller
 {
     [HttpGet]
     public async Task<IActionResult> Register(CancellationToken cancellationToken = default) =>
@@ -591,7 +592,7 @@ public sealed class ReaderRegistrationController(
             bookId = hold.BookId,
             bookTitle = hold.BookTitle,
             heldAtUtc = hold.HeldAtUtc,
-            heldAt = DateTime.SpecifyKind(hold.HeldAtUtc, DateTimeKind.Utc).ToLocalTime().ToString("dd/MM/yyyy HH:mm"),
+            heldAt = HoldPickupExpirySchedule.GetVietnamLocalTime(hold.HeldAtUtc).ToString("dd/MM/yyyy HH:mm"),
             status = hold.Status,
             queuePosition = hold.QueuePosition,
             pickupDeadlineUtc = hold.PickupDeadlineUtc,
@@ -599,6 +600,48 @@ public sealed class ReaderRegistrationController(
             copyBarcode = hold.CopyBarcode,
             canCancel = hold.CanCancel
         }));
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> ConfirmPickup(long holdId, CancellationToken cancellationToken = default)
+    {
+        var readerId = await GetCurrentLoggedInReaderIdAsync(cancellationToken);
+        if (readerId <= 0)
+            return RedirectToAction(nameof(Login), new { returnUrl = Url.Action(nameof(MyHolds)) });
+
+        var ownedHold = (await registrationService.GetReaderHoldsAsync(readerId, cancellationToken))
+            .FirstOrDefault(hold => hold.Id == holdId);
+        if (ownedHold == null)
+        {
+            TempData["ErrorMessage"] = "Không tìm thấy đơn đặt giữ của tài khoản này.";
+            return RedirectToAction(nameof(MyHolds));
+        }
+
+        if (!BookHoldStatus.WaitingPickupStatuses.Contains(ownedHold.Status))
+        {
+            TempData["ErrorMessage"] = $"Đơn đặt giữ hiện ở trạng thái ‘{ownedHold.Status}’, không thể xác nhận nhận sách.";
+            return RedirectToAction(nameof(MyHolds));
+        }
+
+        var reader = await registrationService.GetReaderByIdAsync(readerId, cancellationToken);
+        var cardCode = reader?.LibraryCard?.CardCode;
+        if (string.IsNullOrWhiteSpace(cardCode))
+        {
+            TempData["ErrorMessage"] = "Tài khoản chưa có mã thẻ thư viện hợp lệ.";
+            return RedirectToAction(nameof(MyHolds));
+        }
+
+        var actor = $"Bạn đọc #{readerId}";
+        var outcome = await holdPickupConfirmationService.ConfirmAsync(
+            holdId, cardCode, actor, null, cancellationToken);
+        TempData[outcome.IsSuccess ? "SuccessMessage" : "ErrorMessage"] = outcome.Message;
+        await LogReaderActivityAsync(readerId, "ConfirmHoldPickup",
+            outcome.IsSuccess
+                ? $"xác nhận đã nhận sách tại quầy cho đơn #{holdId}; phiếu mượn #{outcome.LoanId}"
+                : $"xác nhận nhận sách thất bại cho đơn #{holdId}: {outcome.Message}",
+            cancellationToken);
+        return RedirectToAction(nameof(MyHolds));
     }
 
     [HttpPost("api/reader/holds/{holdId:long}/cancel")]

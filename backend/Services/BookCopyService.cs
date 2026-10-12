@@ -15,6 +15,7 @@ public sealed class BookCopyService(ApplicationDbContext dbContext, IOptions<Boo
     IBookHoldFulfillmentService? holdFulfillmentService = null) : IBookCopyService
 {
     private const int BarcodeLength = 6;
+    private const string BarcodePrefix = "CPY";
     private const int MaximumBarcodeNumber = 999999;
     private readonly BookCopyLabelPrintOptions labelLayout = labelOptions?.Value ?? new();
     private readonly IBookHoldFulfillmentService holdFulfillmentService = holdFulfillmentService ??
@@ -96,6 +97,8 @@ public sealed class BookCopyService(ApplicationDbContext dbContext, IOptions<Boo
         var code = model.CopyCode.Trim();
         if (await dbContext.BookCopies.AnyAsync(copy => copy.CopyCode == code, cancellationToken))
             return new(BookCopyUpdateStatus.DuplicateCode, $"Mã vạch {code} đã được dùng cho một bản sao khác.");
+        if (await dbContext.LibraryCards.AnyAsync(card => card.CardCode == code, cancellationToken))
+            return new(BookCopyUpdateStatus.DuplicateCode, $"Mã vạch {code} trùng với mã thẻ bạn đọc. Vui lòng nhập mã khác.");
 
         var copy = new BookCopy
         {
@@ -136,7 +139,8 @@ public sealed class BookCopyService(ApplicationDbContext dbContext, IOptions<Boo
                 return new(BookCopyBatchCreateStatus.BarcodeSequenceExhausted, "Đã hết dải mã vạch gồm 6 chữ số.");
 
             var code = FormatBarcode(nextNumber++);
-            if (await dbContext.BookCopies.AsNoTracking().AnyAsync(copy => copy.CopyCode == code, cancellationToken))
+            if (await dbContext.BookCopies.AsNoTracking().AnyAsync(copy => copy.CopyCode == code, cancellationToken) ||
+                await dbContext.LibraryCards.AsNoTracking().AnyAsync(card => card.CardCode == code, cancellationToken))
             {
                 skippedBarcodes.Add(code);
                 continue;
@@ -305,16 +309,22 @@ public sealed class BookCopyService(ApplicationDbContext dbContext, IOptions<Boo
     private async Task<int> GetLastBarcodeNumberAsync(CancellationToken cancellationToken)
     {
         var existingCodes = await dbContext.BookCopies.AsNoTracking()
-            .Where(copy => copy.CopyCode.Length == BarcodeLength)
+            .Where(copy => copy.CopyCode.Length == BarcodeLength + BarcodePrefix.Length)
             .Select(copy => copy.CopyCode)
             .ToListAsync(cancellationToken);
+        var cardCodes = await dbContext.LibraryCards.AsNoTracking()
+            .Where(card => card.CardCode.Length == BarcodeLength + BarcodePrefix.Length)
+            .Select(card => card.CardCode)
+            .ToListAsync(cancellationToken);
         return existingCodes
-            .Select(code => int.TryParse(code, NumberStyles.None, CultureInfo.InvariantCulture, out var number) ? number : 0)
+            .Concat(cardCodes)
+            .Where(code => code.StartsWith(BarcodePrefix, StringComparison.OrdinalIgnoreCase))
+            .Select(code => int.TryParse(code.AsSpan(BarcodePrefix.Length), NumberStyles.None, CultureInfo.InvariantCulture, out var number) ? number : 0)
             .DefaultIfEmpty(0)
             .Max();
     }
 
-    private static string FormatBarcode(int number) => number.ToString($"D{BarcodeLength}", CultureInfo.InvariantCulture);
+    private static string FormatBarcode(int number) => BarcodePrefix + number.ToString($"D{BarcodeLength}", CultureInfo.InvariantCulture);
 
     public async Task<BookCopyUpdateResult> AddManualAsync(int bookId, ManualBookCopyViewModel model, CancellationToken cancellationToken = default)
     {
@@ -332,14 +342,21 @@ public sealed class BookCopyService(ApplicationDbContext dbContext, IOptions<Boo
 
         for (var attempt = 0; attempt < 20; attempt++)
         {
-            var code = model.GenerateBarcode ? await NextLibBarcodeAsync(cancellationToken) : model.CopyCode.Trim();
+            var code = model.GenerateBarcode ? await NextCopyBarcodeAsync(cancellationToken) : model.CopyCode.Trim();
             if (code is null)
-                return new(BookCopyUpdateStatus.InvalidInput, "Đã hết dãy mã vạch LIB gồm 6 chữ số (LIB999999).");
+                return new(BookCopyUpdateStatus.InvalidInput, $"Đã hết dãy mã vạch {BarcodePrefix} gồm 6 chữ số ({BarcodePrefix}999999).");
             var duplicate = await FindDuplicateAsync(code, cancellationToken);
+            var duplicateCardCode = await dbContext.LibraryCards.AsNoTracking()
+                .AnyAsync(card => card.CardCode == code, cancellationToken);
             if (duplicate is not null)
             {
                 if (model.GenerateBarcode) continue;
                 return duplicate;
+            }
+            if (duplicateCardCode)
+            {
+                if (model.GenerateBarcode) continue;
+                return new(BookCopyUpdateStatus.DuplicateCode, $"Mã vạch {code} trùng với mã thẻ bạn đọc. Vui lòng nhập mã khác.");
             }
             var copy = new BookCopy
             {
@@ -365,17 +382,20 @@ public sealed class BookCopyService(ApplicationDbContext dbContext, IOptions<Boo
         return new(BookCopyUpdateStatus.InvalidInput, "Chưa thể cấp mã vạch do có nhiều yêu cầu đồng thời. Vui lòng thử lại.");
     }
 
-    private async Task<string?> NextLibBarcodeAsync(CancellationToken cancellationToken)
+    private async Task<string?> NextCopyBarcodeAsync(CancellationToken cancellationToken)
     {
         var codes = await dbContext.BookCopies.AsNoTracking()
-            .Where(copy => copy.CopyCode.Length == 9)
+            .Where(copy => copy.CopyCode.Length == BarcodePrefix.Length + BarcodeLength)
             .Select(copy => copy.CopyCode).ToListAsync(cancellationToken);
-        var largest = codes.Where(code =>
-                code.StartsWith("LIB", StringComparison.OrdinalIgnoreCase) &&
-                code.AsSpan(3).ToArray().All(character => character is >= '0' and <= '9'))
-            .Select(code => int.Parse(code.AsSpan(3), CultureInfo.InvariantCulture))
+        var cardCodes = await dbContext.LibraryCards.AsNoTracking()
+            .Where(card => card.CardCode.Length == BarcodePrefix.Length + BarcodeLength)
+            .Select(card => card.CardCode).ToListAsync(cancellationToken);
+        var largest = codes.Concat(cardCodes).Where(code =>
+                code.StartsWith(BarcodePrefix, StringComparison.OrdinalIgnoreCase) &&
+                code.AsSpan(BarcodePrefix.Length).ToArray().All(character => character is >= '0' and <= '9'))
+            .Select(code => int.Parse(code.AsSpan(BarcodePrefix.Length), CultureInfo.InvariantCulture))
             .DefaultIfEmpty(0).Max();
-        return largest >= MaximumBarcodeNumber ? null : "LIB" + FormatBarcode(largest + 1);
+        return largest >= MaximumBarcodeNumber ? null : BarcodePrefix + (largest + 1).ToString($"D{BarcodeLength}", CultureInfo.InvariantCulture);
     }
 
     private async Task<BookCopyUpdateResult?> FindDuplicateAsync(string code, CancellationToken cancellationToken)

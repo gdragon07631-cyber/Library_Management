@@ -97,9 +97,20 @@ public sealed class BookLoanService(ApplicationDbContext db, IWorkingScheduleSer
             : new(false, result.ErrorMessage);
     }
 
+    public async Task<BookLoanOutcome> OverrideCreateForHoldAsync(
+        int bookId, int readerAccountId, DateOnly loanDate, DateOnly originalDueDate, DateOnly dueDate,
+        string actor, CancellationToken cancellationToken = default)
+    {
+        var result = await CreateManyCoreAsync([bookId], readerAccountId, loanDate, actor,
+            originalDueDate, dueDate, cancellationToken, bypassEligibility: true);
+        return result.IsSuccess
+            ? new(true, Loan: result.Loans.FirstOrDefault())
+            : new(false, result.ErrorMessage);
+    }
+
     private async Task<BatchBookLoanOutcome> CreateManyCoreAsync(
         IReadOnlyList<int> bookIds, int readerAccountId, DateOnly loanDate, string? actor,
-        DateOnly? explicitOriginalDueDate, DateOnly? explicitDueDate, CancellationToken cancellationToken)
+        DateOnly? explicitOriginalDueDate, DateOnly? explicitDueDate, CancellationToken cancellationToken, bool bypassEligibility = false)
     {
         if (bookIds == null || bookIds.Count == 0)
             return new(false, "Vui lòng chọn ít nhất một cuốn sách.", []);
@@ -169,7 +180,7 @@ public sealed class BookLoanService(ApplicationDbContext db, IWorkingScheduleSer
             errors.Add($"Bạn đang mượn {currentLoans}/{maxBooks} sách, không thể mượn thêm {bookIds.Count} sách vì vượt quá hạn mức ({maxBooks} sách).");
         }
 
-        if (errors.Count > 0)
+        if (errors.Count > 0 && !bypassEligibility)
         {
             var errorMessage = string.Join(" ", errors);
             var operatorName = !string.IsNullOrWhiteSpace(actor) ? actor : "Thủ thư";
@@ -187,7 +198,7 @@ public sealed class BookLoanService(ApplicationDbContext db, IWorkingScheduleSer
             return new(false, errorMessage, []);
         }
 
-        if (!string.Equals(reader.Status, "Đang hoạt động", StringComparison.OrdinalIgnoreCase))
+        if (!bypassEligibility && !string.Equals(reader.Status, "Đang hoạt động", StringComparison.OrdinalIgnoreCase))
         {
             var operatorName = !string.IsNullOrWhiteSpace(actor) ? actor : "Thủ thư";
             var blockLog = new AuditLog
@@ -269,12 +280,19 @@ public sealed class BookLoanService(ApplicationDbContext db, IWorkingScheduleSer
                 return new(false, "Trạng thái bản sao không hợp lệ để nhận trả.", loan, IsConflict: true);
 
             var assignedHold = await FindNextPendingHoldAsync(loan.BookCopy.BookId, cancellationToken);
+            DateTime? pickupDeadlineUtc = null;
+            if (assignedHold != null)
+            {
+                try { pickupDeadlineUtc = await HoldPickupDeadlineCalculator.ThreeOpenDaysAfterAsync(returnedAt, this, cancellationToken); }
+                catch (InvalidOperationException exception) { return new(false, exception.Message); }
+            }
             loan.ReturnedAtUtc = returnedAt;
             loan.BookCopy.Status = assignedHold is null ? copyStatuses.Available : copyStatuses.Held;
             if (assignedHold is not null)
             {
                 assignedHold.Status = holdStatuses.Assigned;
                 assignedHold.BookCopyId = loan.BookCopy.Id;
+                assignedHold.PickupDeadlineUtc = pickupDeadlineUtc;
             }
             await db.SaveChangesAsync(cancellationToken);
             return new(true, Loan: loan, AssignedHold: assignedHold, CopyStatus: loan.BookCopy.Status);
@@ -292,6 +310,12 @@ public sealed class BookLoanService(ApplicationDbContext db, IWorkingScheduleSer
             return new(false, "Trạng thái bản sao không hợp lệ để nhận trả.", currentLoan, IsConflict: true);
 
         var nextHold = await FindNextPendingHoldAsync(currentLoan.BookCopy.BookId, cancellationToken);
+        DateTime? nextPickupDeadlineUtc = null;
+        if (nextHold != null)
+        {
+            try { nextPickupDeadlineUtc = await HoldPickupDeadlineCalculator.ThreeOpenDaysAfterAsync(returnedAt, this, cancellationToken); }
+            catch (InvalidOperationException exception) { return new(false, exception.Message); }
+        }
         var claimed = await db.BookLoans
             .Where(item => item.Id == loanId && item.BookCopyId == currentLoan.BookCopyId && item.ReturnedAtUtc == null)
             .ExecuteUpdateAsync(update => update.SetProperty(item => item.ReturnedAtUtc, returnedAt), cancellationToken);
@@ -304,7 +328,8 @@ public sealed class BookLoanService(ApplicationDbContext db, IWorkingScheduleSer
                 .Where(hold => hold.Id == nextHold.Id && hold.Status == BookHoldStatus.Waiting && hold.BookCopyId == null)
                 .ExecuteUpdateAsync(update => update
                     .SetProperty(hold => hold.Status, BookHoldStatus.Available)
-                    .SetProperty(hold => hold.BookCopyId, currentLoan.BookCopyId), cancellationToken);
+                    .SetProperty(hold => hold.BookCopyId, currentLoan.BookCopyId)
+                    .SetProperty(hold => hold.PickupDeadlineUtc, nextPickupDeadlineUtc), cancellationToken);
             if (holdClaimed != 1)
                 throw new InvalidOperationException("Yêu cầu đặt giữ đầu hàng đợi vừa được xử lý bởi thao tác khác.");
         }
@@ -322,6 +347,7 @@ public sealed class BookLoanService(ApplicationDbContext db, IWorkingScheduleSer
         {
             nextHold.Status = BookHoldStatus.Available;
             nextHold.BookCopyId = currentLoan.BookCopyId;
+            nextHold.PickupDeadlineUtc = nextPickupDeadlineUtc;
         }
         return new(true, Loan: currentLoan, AssignedHold: nextHold, CopyStatus: copyStatus);
     }
@@ -384,7 +410,8 @@ public sealed class BookLoanService(ApplicationDbContext db, IWorkingScheduleSer
                 ReasonCode: "OTHER_READER_HOLD");
 
         var hasOtherOverdueLoan = await db.BookLoans.AnyAsync(other =>
-            other.ReaderAccountId == loan.ReaderAccountId && other.Id != loan.Id && other.DueDate < today,
+            other.ReaderAccountId == loan.ReaderAccountId && other.Id != loan.Id
+            && other.ReturnedAtUtc == null && other.DueDate < today,
             cancellationToken);
         var hasOutstandingBalance = loan.ReaderAccount!.OutstandingBalance > 0;
         if (hasOtherOverdueLoan && hasOutstandingBalance)

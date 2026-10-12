@@ -1,32 +1,51 @@
 @model IReadOnlyList<Project.Models.BookLoan>
-@{ Layout = "_ReaderLayout"; }
 @{
-    ViewData["Title"] = "Phiếu mượn của tôi";
+    Layout = "_ReaderLayout";
+    ViewData["Title"] = "Sách đang mượn";
     var today = DateOnly.FromDateTime(DateTime.Today);
 }
 <div class="container py-4">
     <div class="mb-4">
         <h1 class="h3 mb-1 text-primary fw-bold">Phiếu mượn của tôi</h1>
-        <p class="text-muted mb-0">Theo dõi hạn trả và gia hạn phiếu mượn còn hiệu lực.</p>
+        <p class="text-muted mb-0">Theo dõi sách đang mượn và hạn trả từng cuốn.</p>
     </div>
     @if (TempData["SuccessMessage"] is string success) { <div class="alert alert-success">@success</div> }
     @if (TempData["ErrorMessage"] is string error) { <div class="alert alert-danger">@error</div> }
+
+    <ul class="nav nav-tabs mb-3" aria-label="Phiếu mượn">
+        <li class="nav-item"><a class="nav-link active" aria-current="page" asp-controller="ReaderLoan" asp-action="Index">Đang mượn</a></li>
+        <li class="nav-item"><a class="nav-link" asp-controller="ReaderLoan" asp-action="History">Lịch sử đã trả</a></li>
+    </ul>
+
     <div class="card shadow-sm border-0"><div class="table-responsive">
         <table class="table table-hover align-middle mb-0">
-            <thead class="table-light"><tr><th>Sách</th><th>Ngày mượn</th><th>Hạn trả</th><th>Số lần gia hạn</th><th>Thao tác</th></tr></thead>
+            <thead class="table-light"><tr><th>Sách</th><th>Mã vạch bản sao</th><th>Ngày mượn</th><th>Hạn trả</th><th>Số ngày còn lại</th><th>Lần gia hạn</th><th>Thao tác</th></tr></thead>
             <tbody>
-            @if (Model.Count == 0) { <tr><td colspan="5" class="text-center text-muted py-4">Bạn chưa có phiếu mượn nào.</td></tr> }
+            @if (Model.Count == 0) { <tr><td colspan="7" class="text-center text-muted py-4">Bạn hiện không có sách đang mượn.</td></tr> }
             @foreach (var loan in Model)
             {
+                var daysRemaining = loan.DueDate.DayNumber - today.DayNumber;
                 var renewalLimit = loan.ReaderAccount?.LibraryCard?.LibraryCardType?.MaxRenewals ?? 0;
-                var isOpen = !loan.IsReturned;
                 <tr>
                     <td>@loan.Book?.Title</td>
+                    <td class="font-monospace">@(loan.BookCopy?.CopyCode ?? "—")</td>
                     <td>@loan.LoanDate.ToString("dd/MM/yyyy")</td>
                     <td class="fw-semibold">@loan.DueDate.ToString("dd/MM/yyyy")</td>
+                    <td>
+                        @if (daysRemaining < 0)
+                        {
+                            <span class="badge bg-danger">Quá hạn @(-daysRemaining) ngày</span>
+                        }
+                        else if (daysRemaining < 3)
+                        {
+                            <span class="badge bg-warning text-dark">Sắp đến hạn</span>
+                            <span class="small text-muted">Còn @daysRemaining ngày</span>
+                        }
+                        else { <span>Còn @daysRemaining ngày</span> }
+                    </td>
                     <td>@loan.RenewalCount / @renewalLimit</td>
                     <td>
-                        @if (isOpen && loan.DueDate >= today)
+                        @if (loan.DueDate >= today)
                         {
                             <form asp-action="Renew" method="post" class="d-inline">
                                 @Html.AntiForgeryToken()
@@ -34,8 +53,6 @@
                                 <button class="btn btn-sm btn-outline-primary" type="submit">Gia hạn</button>
                             </form>
                         }
-                        else if (!isOpen) { <span class="badge bg-secondary">Đã đóng</span> }
-                        else { <span class="badge bg-danger">Đã quá hạn</span> }
                     </td>
                 </tr>
             }

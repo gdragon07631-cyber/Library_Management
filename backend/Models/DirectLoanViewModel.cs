@@ -9,6 +9,9 @@ public sealed class DirectLoanRequest
     public string CardCode { get; set; } = string.Empty;
     [Required(ErrorMessage = "Vui lòng nhập mã vạch bản sao."), MaxLength(50)]
     public string CopyCode { get; set; } = string.Empty;
+    [MaxLength(160)]
+    public string? BypassReason { get; set; }
+    public bool ConfirmBypass { get; set; }
 }
 
 public sealed class DirectLoanViewModel
@@ -19,10 +22,14 @@ public sealed class DirectLoanViewModel
     public string CardCode { get; set; } = string.Empty;
     public string CopyCode { get; set; } = string.Empty;
     public string? ReaderName { get; set; }
+    public int? ReaderAccountId { get; set; }
     public string? CardTypeName { get; set; }
     public int CurrentLoans { get; set; }
     public int RemainingLoans { get; set; }
     public int MaxBooks { get; set; }
+    public decimal OutstandingDebt { get; set; }
+    public bool CanOverride { get; set; }
+    public bool CanOverrideBlock { get; set; }
     public string? ReaderError { get; set; }
     public string? BookTitle { get; set; }
     public string? CopyStatus { get; set; }
@@ -49,6 +56,9 @@ public sealed class DirectLoanBatchRequest
     public string CardCode { get; set; } = string.Empty;
     public List<string> CopyCodes { get; set; } = [];
     public List<string> RowIds { get; set; } = [];
+    [MaxLength(160)]
+    public string? BypassReason { get; set; }
+    public bool ConfirmBypass { get; set; }
 }
 
 public sealed record DirectLoanBatchOutcome(bool IsSuccess, string? ErrorMessage = null, IReadOnlyList<BookLoan>? Loans = null,
