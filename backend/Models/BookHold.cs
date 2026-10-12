@@ -3,7 +3,9 @@ namespace Project.Models;
 public static class BookHoldStatus
 {
     public const string Waiting = "Đang chờ";
+    public const string Pending = Waiting;
     public const string Available = "Đã có sách";
+    public const string Assigned = Available;
     public const string Cancelled = "Đã hủy";
     public const string ConvertedToLoan = "Đã chuyển thành phiếu mượn";
     public const string ExpiredCancellationReason = "Quá hạn nhận sách – hệ thống tự hủy";

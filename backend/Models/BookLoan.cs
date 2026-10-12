@@ -23,6 +23,7 @@ public sealed class BookLoan
     public DateOnly DueDate { get; set; }
     public int RenewalCount { get; set; }
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
+    public DateTime? ReturnedAtUtc { get; set; }
 
     [NotMapped]
     public DateOnly? ReturnDate { get; set; }

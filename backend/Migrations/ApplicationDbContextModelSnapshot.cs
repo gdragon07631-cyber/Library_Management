@@ -448,6 +448,9 @@ namespace Project.Migrations
                         .HasColumnType("int")
                         .HasDefaultValue(0);
 
+                    b.Property<DateTime?>("ReturnedAtUtc")
+                        .HasColumnType("datetime2");
+
                     b.Property<long?>("SourceBookHoldId")
                         .HasColumnType("bigint");
 

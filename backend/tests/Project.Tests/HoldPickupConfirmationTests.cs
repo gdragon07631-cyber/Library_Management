@@ -355,5 +355,7 @@ public sealed class HoldPickupConfirmationTests
         public Task<IReadOnlyList<BlockedLoanLogEntry>> GetBlockedLoanLogsAsync(int? readerId = null, CancellationToken ct = default) => throw new NotImplementedException();
         public Task<BookLoanOutcome> OverrideCreateAsync(int bookId, int readerId, DateOnly date, string actor, string reason, CancellationToken ct = default) => throw new NotImplementedException();
         public Task<BatchBookLoanOutcome> OverrideCreateManyAsync(IReadOnlyList<int> ids, int readerId, DateOnly date, string actor, string reason, CancellationToken ct = default) => throw new NotImplementedException();
+        public Task<ReturnBookLoanOutcome> ReturnAsync(long id, DateTime returnedAtUtc, CancellationToken ct = default) => throw new NotImplementedException();
+        public Task<BookCopyLoanLookupOutcome> LookupByCopyCodeAsync(string copyCode, DateOnly today, CancellationToken ct = default) => throw new NotImplementedException();
     }
 }

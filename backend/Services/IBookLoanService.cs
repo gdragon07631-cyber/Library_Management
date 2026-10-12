@@ -7,6 +7,14 @@ public sealed record BatchBookLoanOutcome(bool IsSuccess, string? ErrorMessage =
 public sealed record RenewBookLoanOutcome(
     bool IsSuccess, string? ErrorMessage = null, BookLoan? Loan = null,
     DateOnly? OldDueDate = null, string? ReasonCode = null);
+public enum BookCopyLoanLookupStatus { CopyNotFound, NotBorrowed, Borrowed, Inconsistent, UnassignedOpenLoan }
+public sealed record BookCopyLoanLookupOutcome(
+    BookCopyLoanLookupStatus Status, long? LoanId = null, string? CopyCode = null,
+    string? ReaderName = null, DateOnly? DueDate = null, int OverdueDays = 0, string? BookTitle = null);
+public sealed record ReturnBookLoanOutcome(
+    bool IsSuccess, string? ErrorMessage = null, BookLoan? Loan = null,
+    bool IsNotFound = false, bool IsConflict = false,
+    BookHold? AssignedHold = null, string? CopyStatus = null);
 
 public interface IBookLoanService
 {
@@ -23,4 +31,6 @@ public interface IBookLoanService
     Task<IReadOnlyList<BlockedLoanLogEntry>> GetBlockedLoanLogsAsync(int? readerAccountId = null, CancellationToken cancellationToken = default);
     Task<BookLoanOutcome> OverrideCreateAsync(int bookId, int readerAccountId, DateOnly loanDate, string actor, string bypassReason, CancellationToken cancellationToken = default);
     Task<BatchBookLoanOutcome> OverrideCreateManyAsync(IReadOnlyList<int> bookIds, int readerAccountId, DateOnly loanDate, string actor, string bypassReason, CancellationToken cancellationToken = default);
+    Task<ReturnBookLoanOutcome> ReturnAsync(long loanId, DateTime returnedAtUtc, CancellationToken cancellationToken = default);
+    Task<BookCopyLoanLookupOutcome> LookupByCopyCodeAsync(string copyCode, DateOnly today, CancellationToken cancellationToken = default);
 }

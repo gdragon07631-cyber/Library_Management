@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using System.Data;
 using Project.Data;
 using Project.Models;
 
@@ -11,6 +12,7 @@ public sealed class BookLoanService(ApplicationDbContext db, IWorkingScheduleSer
 
     public async Task<IReadOnlyList<BookLoan>> GetAllAsync(CancellationToken cancellationToken = default) =>
         await db.BookLoans.Include(loan => loan.Book)
+            .Include(loan => loan.BookCopy)
             .Include(loan => loan.ReaderAccount).ThenInclude(reader => reader!.LibraryCard)
                 .ThenInclude(card => card!.LibraryCardType)
             .OrderByDescending(loan => loan.CreatedAtUtc).ToListAsync(cancellationToken);
@@ -101,6 +103,9 @@ public sealed class BookLoanService(ApplicationDbContext db, IWorkingScheduleSer
     {
         if (bookIds == null || bookIds.Count == 0)
             return new(false, "Vui lòng chọn ít nhất một cuốn sách.", []);
+
+        if (bookIds.Distinct().Count() != bookIds.Count)
+            return new(false, "Danh sách sách có mã bị trùng.", []);
 
         var reader = await db.ReaderAccounts
             .Include(r => r.LibraryCard)
@@ -240,6 +245,121 @@ public sealed class BookLoanService(ApplicationDbContext db, IWorkingScheduleSer
         await db.SaveChangesAsync(cancellationToken);
         return new(true, Loans: createdLoans);
     }
+
+    public async Task<ReturnBookLoanOutcome> ReturnAsync(
+        long loanId, DateTime returnedAtUtc, CancellationToken cancellationToken = default)
+    {
+        var returnedAt = returnedAtUtc.Kind switch
+        {
+            DateTimeKind.Utc => returnedAtUtc,
+            DateTimeKind.Local => returnedAtUtc.ToUniversalTime(),
+            _ => DateTime.SpecifyKind(returnedAtUtc, DateTimeKind.Utc)
+        };
+
+        if (!db.Database.IsRelational())
+        {
+            var copyStatuses = (Available: BookCopyStatus.Available, Borrowed: BookCopyStatus.OnLoan, Held: BookCopyStatus.OnHold);
+            var holdStatuses = (Pending: BookHoldStatus.Waiting, Assigned: BookHoldStatus.Available);
+            var loan = await db.BookLoans.Include(item => item.BookCopy).Include(item => item.ReaderAccount)
+                .FirstOrDefaultAsync(item => item.Id == loanId, cancellationToken);
+            if (loan is null) return new(false, "Không tìm thấy phiếu mượn.", IsNotFound: true);
+            if (loan.ReturnedAtUtc.HasValue) return new(false, "Phiếu mượn này đã được trả trước đó.", loan, IsConflict: true);
+            if (loan.BookCopy is null) return new(false, "Phiếu mượn chưa được gán bản sao.", loan, IsConflict: true);
+            if (!string.Equals(loan.BookCopy.Status, copyStatuses.Borrowed, StringComparison.OrdinalIgnoreCase))
+                return new(false, "Trạng thái bản sao không hợp lệ để nhận trả.", loan, IsConflict: true);
+
+            var assignedHold = await FindNextPendingHoldAsync(loan.BookCopy.BookId, cancellationToken);
+            loan.ReturnedAtUtc = returnedAt;
+            loan.BookCopy.Status = assignedHold is null ? copyStatuses.Available : copyStatuses.Held;
+            if (assignedHold is not null)
+            {
+                assignedHold.Status = holdStatuses.Assigned;
+                assignedHold.BookCopyId = loan.BookCopy.Id;
+            }
+            await db.SaveChangesAsync(cancellationToken);
+            return new(true, Loan: loan, AssignedHold: assignedHold, CopyStatus: loan.BookCopy.Status);
+        }
+
+        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
+        var currentLoan = await db.BookLoans.AsNoTracking().Include(item => item.BookCopy).Include(item => item.ReaderAccount)
+            .FirstOrDefaultAsync(item => item.Id == loanId, cancellationToken);
+        if (currentLoan is null) return new(false, "Không tìm thấy phiếu mượn.", IsNotFound: true);
+        if (currentLoan.ReturnedAtUtc.HasValue)
+            return new(false, "Phiếu mượn này đã được trả trước đó.", currentLoan, IsConflict: true);
+        if (currentLoan.BookCopyId is null || currentLoan.BookCopy is null)
+            return new(false, "Phiếu mượn chưa được gán bản sao.", currentLoan, IsConflict: true);
+        if (!string.Equals(currentLoan.BookCopy.Status, BookCopyStatus.OnLoan, StringComparison.OrdinalIgnoreCase))
+            return new(false, "Trạng thái bản sao không hợp lệ để nhận trả.", currentLoan, IsConflict: true);
+
+        var nextHold = await FindNextPendingHoldAsync(currentLoan.BookCopy.BookId, cancellationToken);
+        var claimed = await db.BookLoans
+            .Where(item => item.Id == loanId && item.BookCopyId == currentLoan.BookCopyId && item.ReturnedAtUtc == null)
+            .ExecuteUpdateAsync(update => update.SetProperty(item => item.ReturnedAtUtc, returnedAt), cancellationToken);
+        if (claimed != 1)
+            return new(false, "Phiếu mượn này đã được trả trước đó.", currentLoan, IsConflict: true);
+
+        if (nextHold is not null)
+        {
+            var holdClaimed = await db.BookHolds
+                .Where(hold => hold.Id == nextHold.Id && hold.Status == BookHoldStatus.Waiting && hold.BookCopyId == null)
+                .ExecuteUpdateAsync(update => update
+                    .SetProperty(hold => hold.Status, BookHoldStatus.Available)
+                    .SetProperty(hold => hold.BookCopyId, currentLoan.BookCopyId), cancellationToken);
+            if (holdClaimed != 1)
+                throw new InvalidOperationException("Yêu cầu đặt giữ đầu hàng đợi vừa được xử lý bởi thao tác khác.");
+        }
+
+        var copyStatus = nextHold is null ? BookCopyStatus.Available : BookCopyStatus.OnHold;
+        var copyUpdated = await db.BookCopies
+            .Where(item => item.Id == currentLoan.BookCopyId && item.Status == BookCopyStatus.OnLoan)
+            .ExecuteUpdateAsync(update => update.SetProperty(item => item.Status, copyStatus), cancellationToken);
+        if (copyUpdated != 1) throw new InvalidOperationException("Không thể cập nhật trạng thái bản sao.");
+
+        await transaction.CommitAsync(cancellationToken);
+        currentLoan.ReturnedAtUtc = returnedAt;
+        currentLoan.BookCopy.Status = copyStatus;
+        if (nextHold is not null)
+        {
+            nextHold.Status = BookHoldStatus.Available;
+            nextHold.BookCopyId = currentLoan.BookCopyId;
+        }
+        return new(true, Loan: currentLoan, AssignedHold: nextHold, CopyStatus: copyStatus);
+    }
+
+    public async Task<BookCopyLoanLookupOutcome> LookupByCopyCodeAsync(
+        string copyCode, DateOnly today, CancellationToken cancellationToken = default)
+    {
+        var code = copyCode?.Trim();
+        if (string.IsNullOrEmpty(code)) return new(BookCopyLoanLookupStatus.CopyNotFound);
+        var copy = await db.BookCopies.AsNoTracking().Include(item => item.Book)
+            .FirstOrDefaultAsync(item => item.CopyCode == code, cancellationToken);
+        if (copy is null) return new(BookCopyLoanLookupStatus.CopyNotFound);
+
+        var unassignedOpenLoan = await db.BookLoans.AsNoTracking().AnyAsync(
+            loan => loan.BookId == copy.BookId && loan.BookCopyId == null && loan.ReturnedAtUtc == null,
+            cancellationToken);
+        if (unassignedOpenLoan)
+            return new(BookCopyLoanLookupStatus.UnassignedOpenLoan, CopyCode: copy.CopyCode);
+
+        var openLoans = await db.BookLoans.AsNoTracking().Include(loan => loan.ReaderAccount)
+            .Where(loan => loan.BookCopyId == copy.Id && loan.ReturnedAtUtc == null)
+            .OrderByDescending(loan => loan.CreatedAtUtc).ThenByDescending(loan => loan.Id)
+            .Take(2).ToListAsync(cancellationToken);
+        if (openLoans.Count > 1) return new(BookCopyLoanLookupStatus.Inconsistent, CopyCode: copy.CopyCode);
+        if (openLoans.Count == 0) return new(BookCopyLoanLookupStatus.NotBorrowed, CopyCode: copy.CopyCode);
+
+        var loan = openLoans[0];
+        var overdueDays = loan.DueDate < today ? today.DayNumber - loan.DueDate.DayNumber : 0;
+        return new(BookCopyLoanLookupStatus.Borrowed, loan.Id, copy.CopyCode,
+            loan.ReaderAccount?.FullName ?? string.Empty, loan.DueDate, overdueDays, copy.Book?.Title ?? string.Empty);
+    }
+
+    private async Task<BookHold?> FindNextPendingHoldAsync(int bookId, CancellationToken cancellationToken) =>
+        await db.BookHolds.Include(hold => hold.ReaderAccount)
+            .Where(hold => hold.BookId == bookId && hold.Status == BookHoldStatus.Waiting && hold.BookCopyId == null &&
+                hold.ReaderAccount != null && hold.ReaderAccount.Status == "Đang hoạt động")
+            .OrderBy(hold => hold.HeldAtUtc).ThenBy(hold => hold.Id)
+            .FirstOrDefaultAsync(cancellationToken);
 
     public async Task<RenewBookLoanOutcome> RenewAsync(long loanId, DateOnly today, CancellationToken cancellationToken = default)
     {

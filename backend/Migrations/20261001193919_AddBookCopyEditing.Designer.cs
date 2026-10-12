@@ -337,15 +337,9 @@ namespace Project.Migrations
 
                     b.HasKey("Id");
 
-<<<<<<< HEAD:backend/Migrations/20261001193919_AddBookCopyEditing.Designer.cs
                     b.HasIndex("BookCopyId");
 
                     b.HasIndex("BookId");
-=======
-                    b.HasIndex("BookCopyId")
-                        .IsUnique()
-                        .HasFilter("[BookCopyId] IS NOT NULL");
->>>>>>> feature/S3-07/nhan_tra_nhieu_cuon_va_tong_ket:Migrations/ApplicationDbContextModelSnapshot.cs
 
                     b.HasIndex("ReaderAccountId", "BookId")
                         .IsUnique();
@@ -389,12 +383,8 @@ namespace Project.Migrations
                         .HasColumnType("int")
                         .HasDefaultValue(0);
 
-<<<<<<< HEAD:backend/Migrations/20261001193919_AddBookCopyEditing.Designer.cs
-=======
                     b.Property<DateTime?>("ReturnedAtUtc")
                         .HasColumnType("datetime2");
-
->>>>>>> feature/S3-07/nhan_tra_nhieu_cuon_va_tong_ket:Migrations/ApplicationDbContextModelSnapshot.cs
                     b.HasKey("Id");
 
                     b.HasIndex("BookCopyId");

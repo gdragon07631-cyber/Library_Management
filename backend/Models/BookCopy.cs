@@ -6,8 +6,10 @@ public static class BookCopyStatus
 {
     public const string Available = "Sẵn sàng";
     public const string OnLoan = "Đang mượn";
+    public const string Borrowed = OnLoan;
     /// <summary>Bản sao đang được giữ cho một đơn đặt giữ.</summary>
     public const string OnHold = "Đang giữ";
+    public const string Held = OnHold;
     /// <summary>Bản sao đang sửa chữa: không cho mượn và không tính vào số bản rảnh.</summary>
     public const string UnderRepair = "Đang sửa chữa";
     public const string Removed = "Đã loại khỏi kho";

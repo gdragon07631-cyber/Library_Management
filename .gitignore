@@ -9,3 +9,7 @@ backend/Data/Keys/
 
 # Ảnh người dùng tải lên khi chạy app (mỗi máy một bộ khác nhau, không đưa lên Git)
 frontend/wwwroot/uploads/
+
+# Keep the existing Data Protection key ring at the backend's configured path.
+!backend/Data/Keys/
+!backend/Data/Keys/*.xml
