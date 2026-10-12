@@ -135,11 +135,16 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
         modelBuilder.Entity<BookHold>(entity =>
         {
             entity.HasIndex(hold => new { hold.ReaderAccountId, hold.BookId }).IsUnique();
+            entity.HasIndex(hold => new { hold.BookId, hold.Status, hold.HeldAtUtc, hold.Id });
+            entity.HasIndex(hold => hold.BookCopyId).IsUnique().HasFilter("[BookCopyId] IS NOT NULL");
             entity.Property(hold => hold.HeldAtUtc).HasColumnType("datetime2");
+            entity.Property(hold => hold.Status).HasMaxLength(50).HasDefaultValue(BookHoldStatuses.Pending).IsRequired();
             entity.HasOne(hold => hold.ReaderAccount).WithMany(reader => reader.BookHolds)
                 .HasForeignKey(hold => hold.ReaderAccountId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne(hold => hold.Book).WithMany()
                 .HasForeignKey(hold => hold.BookId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(hold => hold.BookCopy).WithMany()
+                .HasForeignKey(hold => hold.BookCopyId).OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<Warehouse>(entity =>
@@ -166,5 +171,94 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
                 .HasForeignKey(s => s.WarehouseId)
                 .OnDelete(DeleteBehavior.Restrict);
         });
+<<<<<<< HEAD
+=======
+
+        modelBuilder.Entity<BookLoan>(entity =>
+        {
+            entity.Property(loan => loan.LoanDate).HasColumnType("date");
+            entity.Property(loan => loan.OriginalDueDate).HasColumnType("date");
+            entity.Property(loan => loan.DueDate).HasColumnType("date");
+            entity.Property(loan => loan.RenewalCount).HasDefaultValue(0);
+            entity.Property(loan => loan.CreatedAtUtc).HasColumnType("datetime2");
+            entity.Property(loan => loan.ReturnedAtUtc).HasColumnType("datetime2");
+            entity.HasIndex(loan => loan.BookCopyId);
+            entity.HasOne(loan => loan.Book).WithMany()
+                .HasForeignKey(loan => loan.BookId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(loan => loan.BookCopy).WithMany()
+                .HasForeignKey(loan => loan.BookCopyId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(loan => loan.ReaderAccount).WithMany()
+                .HasForeignKey(loan => loan.ReaderAccountId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<BookCopy>(entity =>
+        {
+            entity.HasIndex(copy => copy.CopyCode).IsUnique();
+            entity.HasIndex(copy => copy.ShelfId);
+            entity.Property(copy => copy.CopyCode).HasMaxLength(50).IsRequired();
+            entity.Property(copy => copy.Status).HasMaxLength(50).HasDefaultValue("Sẵn sàng").IsRequired();
+            entity.HasOne(copy => copy.Book).WithMany()
+                .HasForeignKey(copy => copy.BookId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(copy => copy.Shelf).WithMany()
+                .HasForeignKey(copy => copy.ShelfId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<WeeklyWorkingSchedule>(entity =>
+        {
+            entity.HasIndex(schedule => schedule.DayOfWeek).IsUnique();
+            entity.Property(schedule => schedule.DayOfWeek).HasConversion<int>().IsRequired();
+            entity.Property(schedule => schedule.IsOpen).HasDefaultValue(true);
+            entity.Property(schedule => schedule.Note).HasMaxLength(500);
+        });
+
+        modelBuilder.Entity<HolidayClosure>(entity =>
+        {
+            entity.HasIndex(holiday => holiday.HolidayDate).IsUnique();
+            entity.Property(holiday => holiday.HolidayDate).HasColumnType("date").IsRequired();
+            entity.Property(holiday => holiday.Reason).HasMaxLength(150).IsRequired();
+            entity.Property(holiday => holiday.Note).HasMaxLength(500);
+        });
+
+        modelBuilder.Entity<ReaderPasswordResetToken>(entity =>
+        {
+            entity.HasIndex(token => token.TokenHash).IsUnique();
+            entity.HasIndex(token => new { token.ReaderAccountId, token.ExpiresAtUtc });
+            entity.Property(token => token.TokenHash).HasMaxLength(64).IsRequired();
+            entity.HasOne(token => token.ReaderAccount)
+                .WithMany()
+                .HasForeignKey(token => token.ReaderAccountId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<ReaderPasswordResetRequest>(entity =>
+        {
+            entity.HasIndex(request => new { request.EmailHash, request.RequestedAtUtc });
+            entity.Property(request => request.EmailHash).HasMaxLength(64).IsRequired();
+        });
+
+        modelBuilder.Entity<AuditLog>(entity =>
+        {
+            // The database trigger rejects UPDATE/DELETE; declaring it stops EF from using OUTPUT on INSERT.
+            entity.ToTable(table => table.HasTrigger(AuditLogReadOnlyTrigger));
+            entity.HasIndex(log => log.OccurredAtUtc);
+            entity.Property(log => log.OccurredAtUtc).HasColumnType("datetime2");
+            entity.Property(log => log.Actor).HasMaxLength(256).IsRequired();
+            entity.Property(log => log.Action).HasMaxLength(100).IsRequired();
+            entity.Property(log => log.Target).HasMaxLength(500).IsRequired();
+            entity.Property(log => log.IpAddress).HasMaxLength(45).IsRequired();
+        });
+
+        modelBuilder.Entity<LoanPolicy>(entity =>
+        {
+            entity.Property(policy => policy.Id).ValueGeneratedNever();
+            entity.Property(policy => policy.UpdatedAtUtc).HasColumnType("datetime2");
+            entity.HasData(new LoanPolicy
+            {
+                Id = LoanPolicy.SingletonId,
+                LoanDays = LoanPolicy.DefaultLoanDays,
+                UpdatedAtUtc = new DateTime(2026, 9, 29, 0, 0, 0, DateTimeKind.Utc)
+            });
+        });
+>>>>>>> feature/S3-07/nhan_tra_nhieu_cuon_va_tong_ket
     }
 }

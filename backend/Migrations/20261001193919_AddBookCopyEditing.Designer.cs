@@ -337,12 +337,20 @@ namespace Project.Migrations
 
                     b.HasKey("Id");
 
+<<<<<<< HEAD:backend/Migrations/20261001193919_AddBookCopyEditing.Designer.cs
                     b.HasIndex("BookCopyId");
 
                     b.HasIndex("BookId");
+=======
+                    b.HasIndex("BookCopyId")
+                        .IsUnique()
+                        .HasFilter("[BookCopyId] IS NOT NULL");
+>>>>>>> feature/S3-07/nhan_tra_nhieu_cuon_va_tong_ket:Migrations/ApplicationDbContextModelSnapshot.cs
 
                     b.HasIndex("ReaderAccountId", "BookId")
                         .IsUnique();
+
+                    b.HasIndex("BookId", "Status", "HeldAtUtc", "Id");
 
                     b.ToTable("BookHolds");
                 });
@@ -354,6 +362,9 @@ namespace Project.Migrations
                         .HasColumnType("bigint");
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<long?>("BookCopyId")
+                        .HasColumnType("bigint");
 
                     b.Property<int>("BookId")
                         .HasColumnType("int");
@@ -378,7 +389,15 @@ namespace Project.Migrations
                         .HasColumnType("int")
                         .HasDefaultValue(0);
 
+<<<<<<< HEAD:backend/Migrations/20261001193919_AddBookCopyEditing.Designer.cs
+=======
+                    b.Property<DateTime?>("ReturnedAtUtc")
+                        .HasColumnType("datetime2");
+
+>>>>>>> feature/S3-07/nhan_tra_nhieu_cuon_va_tong_ket:Migrations/ApplicationDbContextModelSnapshot.cs
                     b.HasKey("Id");
+
+                    b.HasIndex("BookCopyId");
 
                     b.HasIndex("BookId");
 
@@ -1015,6 +1034,11 @@ namespace Project.Migrations
 
             modelBuilder.Entity("Project.Models.BookLoan", b =>
                 {
+                    b.HasOne("Project.Models.BookCopy", "BookCopy")
+                        .WithMany()
+                        .HasForeignKey("BookCopyId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("Project.Models.Book", "Book")
                         .WithMany()
                         .HasForeignKey("BookId")
@@ -1028,6 +1052,8 @@ namespace Project.Migrations
                         .IsRequired();
 
                     b.Navigation("Book");
+
+                    b.Navigation("BookCopy");
 
                     b.Navigation("ReaderAccount");
                 });
