@@ -39,6 +39,11 @@ public sealed class BookIncident
 
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
 
+    /// <summary>Đánh dấu sự cố đã được đảo bằng bút toán điều chỉnh (Lát 5).</summary>
+    public bool IsReversed { get; set; }
+
+    public long? ReversalVoucherId { get; set; }
+
     public BookIncidentCompensation? Compensation { get; set; }
 }
 

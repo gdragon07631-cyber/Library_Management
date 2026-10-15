@@ -55,6 +55,56 @@ public sealed class BookIncidentController(
         return Ok(new { success = true, data = model });
     }
 
+    [HttpGet("api/book-incidents/eligible-for-adjustment")]
+    public async Task<IActionResult> GetEligibleForAdjustment(CancellationToken ct = default)
+    {
+        var items = await incidentService.GetEligibleIncidentsForAdjustmentAsync(ct);
+        return Ok(items);
+    }
+
+    [HttpGet("api/book-incidents/loans/{loanId:long}/vouchers")]
+    public async Task<IActionResult> GetVouchersForLoan(long loanId, CancellationToken ct = default)
+    {
+        var vouchers = await incidentService.GetVouchersByLoanIdAsync(loanId, ct);
+        return Ok(vouchers);
+    }
+
+    [HttpPost("BookIncident/CreateAdjustmentVoucher")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> CreateAdjustmentVoucher(CreateAdjustmentVoucherRequest model, CancellationToken ct = default)
+    {
+        var (staffRole, staffEmail) = await GetSignedInStaffInfoAsync(ct);
+        model.StaffRole = staffRole;
+        model.StaffEmail = staffEmail;
+
+        var outcome = await incidentService.CreateAndApplyAdjustmentVoucherAsync(model, ct);
+        if (!outcome.IsSuccess)
+        {
+            TempData["ErrorMessage"] = outcome.ErrorMessage;
+            return RedirectToAction(nameof(Index));
+        }
+
+        TempData["SuccessMessage"] = $"Lập bút toán điều chỉnh #{outcome.Voucher!.VoucherCode} thành công. Đã đảo nghiệp vụ sự cố.";
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost("api/book-incidents/vouchers")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> CreateAdjustmentVoucherApi([FromForm] CreateAdjustmentVoucherRequest model, CancellationToken ct = default)
+    {
+        var (staffRole, staffEmail) = await GetSignedInStaffInfoAsync(ct);
+        model.StaffRole = staffRole;
+        model.StaffEmail = staffEmail;
+
+        var outcome = await incidentService.CreateAndApplyAdjustmentVoucherAsync(model, ct);
+        if (!outcome.IsSuccess)
+        {
+            return BadRequest(new { success = false, message = outcome.ErrorMessage });
+        }
+
+        return Ok(new { success = true, data = outcome.Voucher });
+    }
+
     [HttpPost]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Record(

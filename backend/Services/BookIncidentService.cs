@@ -388,13 +388,251 @@ public sealed class BookIncidentService(ApplicationDbContext db) : IBookIncident
             .ThenByDescending(l => l.Id)
             .ToListAsync(cancellationToken);
 
+        var vouchers = await db.IncidentAdjustmentVouchers
+            .AsNoTracking()
+            .Where(v => v.BookLoanId == loanId)
+            .OrderByDescending(v => v.CreatedAtUtc)
+            .ToListAsync(cancellationToken);
+
         return new LoanIncidentHistoryViewModel
         {
             Loan = loan,
             Incident = incident,
             Compensation = compensation,
-            Logs = logs
+            Logs = logs,
+            Vouchers = vouchers
         };
+    }
+
+    public async Task<IReadOnlyList<EligibleIncidentItemViewModel>> GetEligibleIncidentsForAdjustmentAsync(CancellationToken cancellationToken = default)
+    {
+        return await db.BookIncidents
+            .AsNoTracking()
+            .Include(i => i.BookLoan).ThenInclude(l => l!.ReaderAccount)
+            .Include(i => i.BookCopy).ThenInclude(c => c!.Book)
+            .Include(i => i.Compensation)
+            .Where(i => !i.IsReversed)
+            .OrderByDescending(i => i.CreatedAtUtc)
+            .Select(i => new EligibleIncidentItemViewModel
+            {
+                IncidentId = i.Id,
+                LoanId = i.BookLoanId,
+                BookTitle = i.BookCopy != null && i.BookCopy.Book != null ? i.BookCopy.Book.Title : "N/A",
+                CopyCode = i.BookCopy != null ? i.BookCopy.CopyCode : "-",
+                ReaderName = i.BookLoan != null && i.BookLoan.ReaderAccount != null ? i.BookLoan.ReaderAccount.FullName : "-",
+                IncidentType = i.IncidentType,
+                Description = i.Description,
+                OverdueFee = i.BookLoan != null ? i.BookLoan.OverdueFee : 0m,
+                CompensationAmount = i.Compensation != null ? i.Compensation.CurrentAmount : null,
+                CreatedAtUtc = i.CreatedAtUtc,
+                ReportedBy = i.ReportedBy,
+                IsReversed = i.IsReversed
+            })
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<CreateAdjustmentVoucherOutcome> CreateAndApplyAdjustmentVoucherAsync(
+        CreateAdjustmentVoucherRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        // 1. Phân quyền: Chỉ Quản lý thư viện hoặc Quản trị hệ thống
+        if (request.StaffRole is not (AccountRoles.LibraryManager or AccountRoles.SystemAdmin))
+        {
+            return CreateAdjustmentVoucherOutcome.Failed("Chỉ Quản lý thư viện hoặc Quản trị hệ thống mới có quyền lập và xác nhận bút toán điều chỉnh.");
+        }
+
+        // 2. Kiểm tra tính hợp lệ của tham số bắt buộc
+        if (request.IncidentId <= 0)
+        {
+            return CreateAdjustmentVoucherOutcome.Failed("Mã sự cố không hợp lệ.");
+        }
+
+        var normalizedReason = request.Reason?.Trim();
+        if (string.IsNullOrWhiteSpace(normalizedReason) || normalizedReason.Length < 5)
+        {
+            return CreateAdjustmentVoucherOutcome.Failed("Vui lòng nhập lý do điều chỉnh (tối thiểu 5 ký tự).");
+        }
+
+        var normalizedRef = request.ReferenceDocument?.Trim();
+        if (string.IsNullOrWhiteSpace(normalizedRef) || normalizedRef.Length < 2)
+        {
+            return CreateAdjustmentVoucherOutcome.Failed("Vui lòng nhập tài liệu/biên bản căn cứ (tối thiểu 2 ký tự).");
+        }
+
+        await using var transaction = db.Database.IsRelational() ? await db.Database.BeginTransactionAsync(cancellationToken) : null;
+        try
+        {
+            var incident = await db.BookIncidents
+                .Include(i => i.BookLoan).ThenInclude(l => l!.ReaderAccount)
+                .Include(i => i.BookCopy).ThenInclude(c => c!.Book)
+                .Include(i => i.Compensation)
+                .FirstOrDefaultAsync(i => i.Id == request.IncidentId, cancellationToken);
+
+            if (incident is null)
+            {
+                if (transaction != null) await transaction.RollbackAsync(cancellationToken);
+                return CreateAdjustmentVoucherOutcome.Failed("Không tìm thấy thông tin sự cố gốc cần điều chỉnh.");
+            }
+
+            if (incident.IsReversed)
+            {
+                if (transaction != null) await transaction.RollbackAsync(cancellationToken);
+                return CreateAdjustmentVoucherOutcome.Failed("Nghiệp vụ sự cố này đã được lập bút toán đảo trước đó, không thể đảo lặp lại.");
+            }
+
+            var loan = incident.BookLoan;
+            var copy = incident.BookCopy;
+
+            if (loan is null || copy is null)
+            {
+                if (transaction != null) await transaction.RollbackAsync(cancellationToken);
+                return CreateAdjustmentVoucherOutcome.Failed("Dữ liệu phiếu mượn hoặc bản sao liên quan không tồn tại.");
+            }
+
+            var nowUtc = DateTime.UtcNow;
+            var voucherCode = $"ADJ-{nowUtc:yyyyMMdd}-{incident.Id:D4}";
+
+            // Snapshot trước điều chỉnh
+            var prevCopyStatus = copy.Status;
+            var prevLoanCloseReason = loan.CloseReason;
+            var prevCompensationAmount = incident.Compensation?.CurrentAmount ?? 0m;
+            var prevOverdueFee = loan.OverdueFee;
+
+            // Xác định trạng thái mới theo lựa chọn CopyAction
+            string newCopyStatus;
+            string? newLoanCloseReason;
+
+            if (string.Equals(request.CopyAction, CopyReversalActions.ReturnToInventory, StringComparison.OrdinalIgnoreCase))
+            {
+                // Nhập lại kho sẵn sàng: Bản sao trở về Available, phiếu mượn đóng với lý do Đã trả
+                newCopyStatus = BookCopyStatus.Available;
+                newLoanCloseReason = BookLoanCloseReason.Returned;
+
+                copy.Status = BookCopyStatus.Available;
+                copy.StatusReason = $"Nhập lại kho sau bút toán điều chỉnh #{voucherCode}: {normalizedReason}";
+
+                loan.ReturnedAtUtc = nowUtc;
+                loan.CloseReason = BookLoanCloseReason.Returned;
+                loan.IsReturned = true;
+            }
+            else
+            {
+                // Mặc định: Khôi phục đang mượn (Bản sao về OnLoan, phiếu mượn mở lại)
+                newCopyStatus = BookCopyStatus.OnLoan;
+                newLoanCloseReason = null;
+
+                copy.Status = BookCopyStatus.OnLoan;
+                copy.StatusReason = $"Khôi phục đang mượn sau bút toán điều chỉnh #{voucherCode}: {normalizedReason}";
+
+                loan.ReturnedAtUtc = null;
+                loan.CloseReason = null;
+                loan.IsReturned = false;
+            }
+
+            // Khoản bồi thường: Điều chỉnh về 0đ do hủy sự cố nhầm
+            if (incident.Compensation != null)
+            {
+                var comp = incident.Compensation;
+                var oldAmount = comp.CurrentAmount;
+                comp.CurrentAmount = 0m;
+                comp.IsAdjusted = true;
+                comp.AdjustmentReason = $"Hủy bồi thường theo bút toán điều chỉnh #{voucherCode}: {normalizedReason} (Căn cứ: {normalizedRef})";
+                comp.AdjustedBy = request.StaffEmail;
+                comp.AdjustedAtUtc = nowUtc;
+
+                db.CompensationAdjustmentHistories.Add(new CompensationAdjustmentHistory
+                {
+                    BookIncidentCompensationId = comp.Id,
+                    FromAmount = oldAmount,
+                    ToAmount = 0m,
+                    Reason = $"Hủy theo bút toán điều chỉnh #{voucherCode}: {normalizedReason}",
+                    AdjustedBy = request.StaffEmail,
+                    AdjustedAtUtc = nowUtc
+                });
+            }
+
+            // Đánh dấu sự cố đã đảo
+            incident.IsReversed = true;
+
+            // Tạo bản ghi Bút toán điều chỉnh
+            var voucher = new IncidentAdjustmentVoucher
+            {
+                VoucherCode = voucherCode,
+                BookIncidentId = incident.Id,
+                BookLoanId = loan.Id,
+                BookCopyId = copy.Id,
+                AdjustmentType = IncidentAdjustmentTypes.FullReversal,
+                Reason = normalizedReason,
+                ReferenceDocument = normalizedRef,
+                CreatedBy = request.StaffEmail,
+                ApprovedBy = request.StaffEmail,
+                CreatedAtUtc = nowUtc,
+                PreviousCopyStatus = prevCopyStatus,
+                PreviousLoanCloseReason = prevLoanCloseReason,
+                PreviousCompensationAmount = prevCompensationAmount,
+                PreviousOverdueFee = prevOverdueFee,
+                NewCopyStatus = newCopyStatus,
+                NewLoanCloseReason = newLoanCloseReason,
+                NewCompensationAmount = 0m,
+                NewOverdueFee = prevOverdueFee,
+                Status = "Đã xác nhận",
+                Notes = request.Notes?.Trim() ?? string.Empty
+            };
+            db.IncidentAdjustmentVouchers.Add(voucher);
+
+            // Ghi nhật ký nghiệp vụ kiểm toán bất biến (Lát 4 & Lát 5)
+            db.BookIncidentAuditLogs.Add(new BookIncidentAuditLog
+            {
+                BookLoanId = loan.Id,
+                BookIncidentId = incident.Id,
+                BookCopyId = copy.Id,
+                OperationType = "Bút toán điều chỉnh",
+                Actor = request.StaffEmail,
+                OccurredAtUtc = nowUtc,
+                CloseReason = newLoanCloseReason,
+                CopyStatusResult = newCopyStatus,
+                FromAmount = prevCompensationAmount,
+                ToAmount = 0m,
+                OverdueFee = prevOverdueFee,
+                AdjustmentReason = $"Lý do: {normalizedReason} | Căn cứ: {normalizedRef}",
+                Summary = $"Lập bút toán điều chỉnh #{voucherCode}: Đảo ghi nhận {incident.IncidentType} bản sao {copy.CopyCode}. Trạng thái bản sao: {newCopyStatus}. Bồi thường điều chỉnh từ {prevCompensationAmount:N0}đ về 0đ. Căn cứ: {normalizedRef}."
+            });
+
+            // Ghi nhật ký hệ thống chung
+            db.AuditLogs.Add(AuditLogService.Create(
+                request.StaffEmail,
+                "ReverseBookIncident",
+                $"Bút toán #{voucherCode}: Đảo sự cố #{incident.Id} trên phiếu #{loan.Id} – Lý do: {normalizedReason} – Căn cứ: {normalizedRef}",
+                "127.0.0.1"));
+
+            await db.SaveChangesAsync(cancellationToken);
+
+            incident.ReversalVoucherId = voucher.Id;
+            await db.SaveChangesAsync(cancellationToken);
+
+            if (transaction != null)
+                await transaction.CommitAsync(cancellationToken);
+
+            return CreateAdjustmentVoucherOutcome.Success(voucher);
+        }
+        catch (Exception ex)
+        {
+            if (transaction != null)
+                await transaction.RollbackAsync(CancellationToken.None);
+
+            return CreateAdjustmentVoucherOutcome.Failed($"Lỗi khi lập bút toán điều chỉnh: {ex.Message}");
+        }
+    }
+
+    public async Task<IReadOnlyList<IncidentAdjustmentVoucher>> GetVouchersByLoanIdAsync(long loanId, CancellationToken cancellationToken = default)
+    {
+        if (loanId <= 0) return [];
+
+        return await db.IncidentAdjustmentVouchers
+            .AsNoTracking()
+            .Where(v => v.BookLoanId == loanId)
+            .OrderByDescending(v => v.CreatedAtUtc)
+            .ToListAsync(cancellationToken);
     }
 }
 

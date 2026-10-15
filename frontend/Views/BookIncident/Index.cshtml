@@ -373,19 +373,34 @@
                                     <a asp-action="History" asp-route-loanId="@inc.BookLoanId" class="btn btn-sm btn-outline-secondary me-1" title="Xem lịch sử nghiệp vụ sự cố & bồi thường">
                                         <i class="bi bi-clock-history"></i> Lịch sử
                                     </a>
-                                    @if (inc.Compensation != null)
+                                    @if (inc.IsReversed)
                                     {
-                                        <button type="button" class="btn btn-sm btn-outline-primary btn-adjust-compensation"
+                                        <span class="badge bg-secondary" title="Sự cố đã được đảo bằng bút toán điều chỉnh">Đã đảo nghiệp vụ</span>
+                                    }
+                                    else
+                                    {
+                                        <button type="button" class="btn btn-sm btn-outline-warning btn-reverse-incident me-1"
                                                 data-incident-id="@inc.Id"
                                                 data-summary="#@inc.Id - @(inc.BookCopy?.Book?.Title ?? "")"
-                                                data-cover-price="@((inc.Compensation.RecordedCoverPrice ?? 0).ToString("N0")) VNĐ"
-                                                data-rate="@((inc.Compensation.AppliedRate ?? 1).ToString("0.##"))"
-                                                data-initial-amount="@inc.Compensation.InitialAmount.ToString("N0") VNĐ"
-                                                data-current-amount="@inc.Compensation.CurrentAmount.ToString("N0") VNĐ"
-                                                data-current-val="@inc.Compensation.CurrentAmount.ToString(System.Globalization.CultureInfo.InvariantCulture)"
-                                                data-reason="@(inc.Compensation.AdjustmentReason ?? "")">
-                                            Điều chỉnh
+                                                data-copy-code="@(inc.BookCopy?.CopyCode ?? "-")"
+                                                data-incident-type="@inc.IncidentType"
+                                                data-compensation="@(inc.Compensation?.CurrentAmount.ToString("N0") ?? "0") VNĐ">
+                                            <i class="bi bi-arrow-counterclockwise"></i> Đảo
                                         </button>
+                                        @if (inc.Compensation != null)
+                                        {
+                                            <button type="button" class="btn btn-sm btn-outline-primary btn-adjust-compensation"
+                                                    data-incident-id="@inc.Id"
+                                                    data-summary="#@inc.Id - @(inc.BookCopy?.Book?.Title ?? "")"
+                                                    data-cover-price="@((inc.Compensation.RecordedCoverPrice ?? 0).ToString("N0")) VNĐ"
+                                                    data-rate="@((inc.Compensation.AppliedRate ?? 1).ToString("0.##"))"
+                                                    data-initial-amount="@inc.Compensation.InitialAmount.ToString("N0") VNĐ"
+                                                    data-current-amount="@inc.Compensation.CurrentAmount.ToString("N0") VNĐ"
+                                                    data-current-val="@inc.Compensation.CurrentAmount.ToString(System.Globalization.CultureInfo.InvariantCulture)"
+                                                    data-reason="@(inc.Compensation.AdjustmentReason ?? "")">
+                                                Điều chỉnh
+                                            </button>
+                                        }
                                     }
                                 </td>
                             </tr>
@@ -429,6 +444,80 @@
                     <div class="modal-footer">
                         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Hủy</button>
                         <button type="submit" class="btn btn-primary fw-semibold" id="btnConfirmAdjust">Lưu điều chỉnh</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL ĐẢO NGHIỆP VỤ BẰNG BÚT TOÁN ĐIỀU CHỈNH (LÁT 5) -->
+    <div class="modal fade" id="reverseIncidentModal" tabindex="-1" aria-labelledby="reverseIncidentModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <form asp-action="CreateAdjustmentVoucher" method="post" id="reverseIncidentForm">
+                    @Html.AntiForgeryToken()
+                    <input type="hidden" name="IncidentId" id="reverseModalIncidentId" value="" />
+                    <div class="modal-header bg-light">
+                        <h5 class="modal-title fw-bold text-danger" id="reverseIncidentModalLabel">
+                            <i class="bi bi-arrow-counterclockwise"></i> Lập bút toán đảo / điều chỉnh sự cố (Lát 5)
+                        </h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Đóng"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="alert alert-warning d-flex align-items-center mb-3">
+                            <i class="bi bi-exclamation-triangle-fill fs-4 me-2"></i>
+                            <div>
+                                <strong>Lưu ý quan trọng:</strong> Thao tác này sẽ lập bút toán điều chỉnh bất biến, khôi phục bản sao sách, hủy/điều chỉnh khoản bồi thường nhầm, nhưng <u>bảo toàn nguyên vẹn nhật ký gốc và phí trễ hạn</u> đã phát sinh. Bút toán sau khi lập sẽ không thể sửa hoặc xóa.
+                            </div>
+                        </div>
+
+                        <div class="mb-3 p-3 bg-light rounded border">
+                            <div class="row g-2">
+                                <div class="col-md-6"><strong>Sự cố gốc:</strong> <span id="reverseModalSummary">-</span></div>
+                                <div class="col-md-6"><strong>Mã bản sao:</strong> <span id="reverseModalCopyCode" class="badge bg-light text-dark border">-</span></div>
+                                <div class="col-md-6"><strong>Loại sự cố:</strong> <span id="reverseModalType" class="badge bg-secondary">-</span></div>
+                                <div class="col-md-6"><strong>Khoản bồi thường hiện tại:</strong> <span id="reverseModalCompensation" class="fw-bold text-danger">-</span></div>
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold">Phương án xử lý bản sao sách <span class="text-danger">*</span></label>
+                            <div class="form-check mb-2">
+                                <input class="form-check-input" type="radio" name="CopyAction" id="actionRestoreToLoan" value="@Project.Models.CopyReversalActions.RestoreToLoan" checked>
+                                <label class="form-check-label" for="actionRestoreToLoan">
+                                    <strong>Khôi phục trạng thái Đang mượn (@Project.Models.CopyReversalActions.RestoreToLoan)</strong>
+                                    <div class="text-muted small">Mở lại phiếu mượn, bản sao chuyển về trạng thái OnLoan (Dùng khi ghi nhận nhầm sự cố trong khi bạn đọc vẫn đang mượn sách).</div>
+                                </label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="CopyAction" id="actionReturnToInventory" value="@Project.Models.CopyReversalActions.ReturnToInventory">
+                                <label class="form-check-label" for="actionReturnToInventory">
+                                    <strong>Nhập lại kho sẵn sàng (@Project.Models.CopyReversalActions.ReturnToInventory)</strong>
+                                    <div class="text-muted small">Bản sao chuyển về trạng thái Available (tăng số bản rảnh), đóng phiếu mượn với lý do 'Đã trả' (Dùng khi tìm lại được sách hoặc bạn đọc mang sách đến trả).</div>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="reverseModalReason" class="form-label fw-semibold">Lý do điều chỉnh / đảo nghiệp vụ <span class="text-danger">*</span></label>
+                            <textarea class="form-control" id="reverseModalReason" name="Reason" rows="3" required minlength="5" maxlength="1000" placeholder="Ví dụ: Thủ thư ghi nhận nhầm mã vạch bản sao; bạn đọc đã tìm lại sách và đem trả nguyên vẹn..."></textarea>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="reverseModalReferenceDocument" class="form-label fw-semibold">Tài liệu / Biên bản căn cứ <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="reverseModalReferenceDocument" name="ReferenceDocument" required minlength="2" maxlength="500" placeholder="Ví dụ: Biên bản kiểm kê số 15/BB-TV; Giấy xác nhận thu hồi số 24/XN-TV" />
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="reverseModalNotes" class="form-label fw-semibold">Ghi chú bổ sung (tùy chọn)</label>
+                            <input type="text" class="form-control" id="reverseModalNotes" name="Notes" maxlength="1000" placeholder="Ghi chú thêm thông tin đối soát hoặc hoàn tiền nếu bạn đọc đã nộp tiền phạt..." />
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Hủy bỏ</button>
+                        <button type="submit" class="btn btn-danger fw-semibold" id="btnConfirmReverse">
+                            <i class="bi bi-check-circle"></i> Xác nhận lập bút toán điều chỉnh
+                        </button>
                     </div>
                 </form>
             </div>
@@ -658,6 +747,41 @@
                         adjustModal.show();
                     } else if (typeof bootstrap !== 'undefined') {
                         new bootstrap.Modal(adjustModalEl).show();
+                    }
+                });
+            });
+
+            // Reverse Incident Modal Handling (Slice 5)
+            const reverseModalEl = document.getElementById('reverseIncidentModal');
+            let reverseModal = null;
+            if (reverseModalEl && typeof bootstrap !== 'undefined') {
+                reverseModal = new bootstrap.Modal(reverseModalEl);
+            }
+
+            document.querySelectorAll('.btn-reverse-incident').forEach(function (button) {
+                button.addEventListener('click', function () {
+                    const incidentId = this.getAttribute('data-incident-id');
+                    const summary = this.getAttribute('data-summary');
+                    const copyCode = this.getAttribute('data-copy-code');
+                    const incidentType = this.getAttribute('data-incident-type');
+                    const compensation = this.getAttribute('data-compensation');
+
+                    document.getElementById('reverseModalIncidentId').value = incidentId;
+                    document.getElementById('reverseModalSummary').textContent = summary || `#${incidentId}`;
+                    document.getElementById('reverseModalCopyCode').textContent = copyCode || '-';
+                    document.getElementById('reverseModalType').textContent = incidentType || '-';
+                    document.getElementById('reverseModalCompensation').textContent = compensation || '0 VNĐ';
+                    document.getElementById('reverseModalReason').value = '';
+                    document.getElementById('reverseModalReferenceDocument').value = '';
+                    document.getElementById('reverseModalNotes').value = '';
+
+                    const radioDefault = document.getElementById('actionRestoreToLoan');
+                    if (radioDefault) radioDefault.checked = true;
+
+                    if (reverseModal) {
+                        reverseModal.show();
+                    } else if (typeof bootstrap !== 'undefined') {
+                        new bootstrap.Modal(reverseModalEl).show();
                     }
                 });
             });

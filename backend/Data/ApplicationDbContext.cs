@@ -42,6 +42,7 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     public DbSet<BookIncidentCompensation> BookIncidentCompensations => Set<BookIncidentCompensation>();
     public DbSet<CompensationAdjustmentHistory> CompensationAdjustmentHistories => Set<CompensationAdjustmentHistory>();
     public DbSet<BookIncidentAuditLog> BookIncidentAuditLogs => Set<BookIncidentAuditLog>();
+    public DbSet<IncidentAdjustmentVoucher> IncidentAdjustmentVouchers => Set<IncidentAdjustmentVoucher>();
 
     public const string AuditLogReadOnlyTrigger = "TR_AuditLogs_ReadOnly";
 
@@ -57,7 +58,7 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
         return base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
     }
 
-    /// <summary>Nhật ký hoạt động và nhật ký sự cố chỉ được thêm mới; mọi thao tác sửa/xóa qua hệ thống đều bị từ chối.</summary>
+    /// <summary>Nhật ký hoạt động, nhật ký sự cố và bút toán điều chỉnh chỉ được thêm mới; mọi thao tác sửa/xóa qua hệ thống đều bị từ chối.</summary>
     private void EnsureAuditLogsAreAppendOnly()
     {
         if (ChangeTracker.Entries<AuditLog>().Any(entry => entry.State is EntityState.Modified or EntityState.Deleted))
@@ -65,6 +66,9 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
 
         if (ChangeTracker.Entries<BookIncidentAuditLog>().Any(entry => entry.State is EntityState.Modified or EntityState.Deleted))
             throw new InvalidOperationException("Nhật ký sự cố là dữ liệu chỉ đọc, không được sửa hoặc xóa.");
+
+        if (ChangeTracker.Entries<IncidentAdjustmentVoucher>().Any(entry => entry.State is EntityState.Modified or EntityState.Deleted))
+            throw new InvalidOperationException("Bút toán điều chỉnh là dữ liệu chỉ đọc sau khi xác nhận, không được sửa hoặc xóa.");
     }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -532,6 +536,41 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
             entity.HasOne(l => l.BookCopy)
                 .WithMany()
                 .HasForeignKey(l => l.BookCopyId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<IncidentAdjustmentVoucher>(entity =>
+        {
+            entity.HasIndex(v => v.VoucherCode).IsUnique();
+            entity.HasIndex(v => new { v.BookLoanId, v.CreatedAtUtc });
+            entity.Property(v => v.VoucherCode).IsRequired().HasMaxLength(50);
+            entity.Property(v => v.AdjustmentType).IsRequired().HasMaxLength(100);
+            entity.Property(v => v.Reason).IsRequired().HasMaxLength(1000);
+            entity.Property(v => v.ReferenceDocument).IsRequired().HasMaxLength(500);
+            entity.Property(v => v.CreatedBy).IsRequired().HasMaxLength(256);
+            entity.Property(v => v.ApprovedBy).HasMaxLength(256);
+            entity.Property(v => v.PreviousCopyStatus).HasMaxLength(50);
+            entity.Property(v => v.PreviousLoanCloseReason).HasMaxLength(50);
+            entity.Property(v => v.NewCopyStatus).HasMaxLength(50);
+            entity.Property(v => v.NewLoanCloseReason).HasMaxLength(50);
+            entity.Property(v => v.PreviousCompensationAmount).HasColumnType("decimal(18,2)");
+            entity.Property(v => v.PreviousOverdueFee).HasColumnType("decimal(18,2)");
+            entity.Property(v => v.NewCompensationAmount).HasColumnType("decimal(18,2)");
+            entity.Property(v => v.NewOverdueFee).HasColumnType("decimal(18,2)");
+            entity.Property(v => v.Status).HasMaxLength(50);
+            entity.Property(v => v.Notes).HasMaxLength(1000);
+            entity.Property(v => v.CreatedAtUtc).HasColumnType("datetime2");
+            entity.HasOne(v => v.BookIncident)
+                .WithMany()
+                .HasForeignKey(v => v.BookIncidentId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(v => v.BookLoan)
+                .WithMany()
+                .HasForeignKey(v => v.BookLoanId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(v => v.BookCopy)
+                .WithMany()
+                .HasForeignKey(v => v.BookCopyId)
                 .OnDelete(DeleteBehavior.Restrict);
         });
     }

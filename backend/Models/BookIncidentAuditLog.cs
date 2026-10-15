@@ -93,5 +93,6 @@ public sealed class LoanIncidentHistoryViewModel
     public BookIncident? Incident { get; set; }
     public BookIncidentCompensation? Compensation { get; set; }
     public IReadOnlyList<BookIncidentAuditLog> Logs { get; set; } = [];
+    public IReadOnlyList<IncidentAdjustmentVoucher> Vouchers { get; set; } = [];
 }
 
