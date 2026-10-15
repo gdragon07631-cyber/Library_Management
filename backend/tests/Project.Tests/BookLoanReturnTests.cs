@@ -148,7 +148,7 @@ public sealed class BookLoanReturnTests
     public async Task Return_RepeatedRequestsOnlySucceedOnce()
     {
         await using var db = CreateInMemoryDb();
-        var (loan, _, _) = await SeedLoanAsync(db, 3);
+        var (loan, _, _) = await SeedLoanAsync(db, -3);
         var service = CreateService(db);
 
         var first = await service.ReturnAsync(loan.Id, DateTime.UtcNow);
@@ -157,6 +157,104 @@ public sealed class BookLoanReturnTests
         Assert.True(first.IsSuccess);
         Assert.False(second.IsSuccess);
         Assert.Equal(first.Loan!.ReturnedAtUtc, (await db.BookLoans.AsNoTracking().SingleAsync()).ReturnedAtUtc);
+        Assert.Single(await db.ReaderFees.ToListAsync());
+        Assert.Equal(6_000m, (await db.ReaderAccounts.AsNoTracking().SingleAsync()).OutstandingBalance);
+    }
+
+    [Fact]
+    public async Task Return_OverdueLoan_CreatesOneReceivableMatchingFinalizedFee()
+    {
+        await using var db = CreateInMemoryDb();
+        var (loan, _, _) = await SeedLoanAsync(db, -3);
+
+        var result = await CreateService(db).ReturnAsync(loan.Id, DateTime.UtcNow);
+        var fee = await db.ReaderFees.SingleAsync();
+        var savedLoan = await db.BookLoans.AsNoTracking().SingleAsync();
+        var reader = await db.ReaderAccounts.AsNoTracking().SingleAsync();
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(3, savedLoan.OverdueDaysAtReturn);
+        Assert.Equal(2_000m, savedLoan.DailyOverdueFeeAtReturn);
+        Assert.Equal(6_000m, savedLoan.OverdueFee);
+        Assert.Equal(savedLoan.OverdueFee, fee.Amount);
+        Assert.Equal(loan.Id, fee.BookLoanId);
+        Assert.Equal(6_000m, reader.OutstandingBalance);
+        Assert.Equal(fee.Id, result.Receivable?.Id);
+    }
+
+    [Theory]
+    [InlineData(3, 2_000, 0)]
+    [InlineData(-3, 100, 0)]
+    public async Task Return_ZeroFinalFee_ClosesLoanWithoutReceivable(int dueDateOffset, decimal dailyFee, decimal expectedFee)
+    {
+        await using var db = CreateInMemoryDb();
+        var (loan, _, _) = await SeedLoanAsync(db, dueDateOffset, dailyFee);
+
+        var result = await CreateService(db).ReturnAsync(loan.Id, DateTime.UtcNow);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(expectedFee, result.Loan!.OverdueFee);
+        Assert.Empty(await db.ReaderFees.ToListAsync());
+        Assert.Equal(0m, (await db.ReaderAccounts.AsNoTracking().SingleAsync()).OutstandingBalance);
+    }
+
+    [Fact]
+    public async Task Return_FeeInsertFailure_RollsBackLoanCopyAndReaderBalance()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>().UseSqlite(connection).Options;
+        await using var db = new ApplicationDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+        var (loan, copy, _) = await SeedRelationalLoanAsync(db, -3);
+        await db.Database.ExecuteSqlRawAsync(
+            "CREATE TRIGGER FailReaderFeeInsert BEFORE INSERT ON ReaderFees BEGIN SELECT RAISE(ABORT, 'fee insert failed'); END;");
+
+        await Assert.ThrowsAsync<DbUpdateException>(() => CreateService(db).ReturnAsync(loan.Id, DateTime.UtcNow));
+
+        var savedLoan = await db.BookLoans.AsNoTracking().SingleAsync(item => item.Id == loan.Id);
+        Assert.Null(savedLoan.ReturnedAtUtc);
+        Assert.Equal(0m, savedLoan.OverdueFee);
+        Assert.Equal(BookCopyStatuses.Borrowed,
+            (await db.BookCopies.AsNoTracking().SingleAsync(item => item.Id == copy.Id)).Status);
+        Assert.Equal(0m, (await db.ReaderAccounts.AsNoTracking().SingleAsync()).OutstandingBalance);
+        Assert.Empty(await db.ReaderFees.ToListAsync());
+    }
+
+    [Fact]
+    public async Task Return_ConcurrentRequests_CreateAtMostOneReceivable()
+    {
+        var connectionString = $"Data Source=ReturnConcurrent-{Guid.NewGuid():N};Mode=Memory;Cache=Shared";
+        await using var anchor = new SqliteConnection(connectionString);
+        await anchor.OpenAsync();
+        var anchorOptions = new DbContextOptionsBuilder<ApplicationDbContext>().UseSqlite(anchor).Options;
+        long loanId;
+        await using (var seedDb = new ApplicationDbContext(anchorOptions))
+        {
+            await seedDb.Database.EnsureCreatedAsync();
+            var seeded = await SeedRelationalLoanAsync(seedDb, -3);
+            loanId = seeded.Loan.Id;
+        }
+
+        async Task<ReturnBookLoanOutcome?> TryReturnAsync()
+        {
+            try
+            {
+                var options = new DbContextOptionsBuilder<ApplicationDbContext>().UseSqlite(connectionString).Options;
+                await using var db = new ApplicationDbContext(options);
+                return await CreateService(db).ReturnAsync(loanId, DateTime.UtcNow);
+            }
+            catch (SqliteException) { return null; }
+            catch (DbUpdateException) { return null; }
+        }
+
+        var outcomes = await Task.WhenAll(TryReturnAsync(), TryReturnAsync());
+
+        await using var verifyDb = new ApplicationDbContext(anchorOptions);
+        Assert.Single(outcomes, outcome => outcome?.IsSuccess == true);
+        Assert.Single(await verifyDb.ReaderFees.ToListAsync());
+        Assert.Equal(6_000m, (await verifyDb.ReaderFees.AsNoTracking().SingleAsync()).Amount);
+        Assert.Equal(6_000m, (await verifyDb.ReaderAccounts.AsNoTracking().SingleAsync()).OutstandingBalance);
     }
 
     [Fact]
@@ -234,10 +332,10 @@ public sealed class BookLoanReturnTests
     };
 
     private static async Task<(BookLoan Loan, BookCopy Copy, BookCopy OtherCopy)> SeedLoanAsync(
-        ApplicationDbContext db, int dueDateOffset)
+        ApplicationDbContext db, int dueDateOffset, decimal dailyFee = 2_000m)
     {
         if (!await db.LoanPolicies.AnyAsync())
-            db.LoanPolicies.Add(new LoanPolicy { Id = LoanPolicy.SingletonId, DailyOverdueFee = 2_000m });
+            db.LoanPolicies.Add(new LoanPolicy { Id = LoanPolicy.SingletonId, DailyOverdueFee = dailyFee });
         if (!await db.WeeklyWorkingSchedules.AnyAsync())
             db.WeeklyWorkingSchedules.AddRange(Enum.GetValues<DayOfWeek>().Select(day => new WeeklyWorkingSchedule { DayOfWeek = day, IsOpen = true }));
         var book = new Book { Id = 1, Title = "Return test book", AuthorId = 1 };
@@ -261,8 +359,14 @@ public sealed class BookLoanReturnTests
         return (loan, copy, otherCopy);
     }
 
-    private static async Task<(BookLoan Loan, BookCopy Copy, BookCopy OtherCopy)> SeedRelationalLoanAsync(ApplicationDbContext db)
+    private static async Task<(BookLoan Loan, BookCopy Copy, BookCopy OtherCopy)> SeedRelationalLoanAsync(
+        ApplicationDbContext db, int dueDateOffset = 5)
     {
+        if (!await db.LoanPolicies.AnyAsync())
+            db.LoanPolicies.Add(new LoanPolicy { Id = LoanPolicy.SingletonId, DailyOverdueFee = 2_000m });
+        if (!await db.WeeklyWorkingSchedules.AnyAsync())
+            db.WeeklyWorkingSchedules.AddRange(Enum.GetValues<DayOfWeek>().Select(day => new WeeklyWorkingSchedule { DayOfWeek = day, IsOpen = true }));
+        await db.SaveChangesAsync();
         var author = new Author { Name = "Return test author" };
         var warehouse = new Warehouse { Code = "RET", Name = "Return test warehouse" };
         var shelf = new Shelf { Code = "RET-1", Name = "Return test shelf", Warehouse = warehouse };
@@ -281,7 +385,7 @@ public sealed class BookLoanReturnTests
         db.BookCopies.AddRange(copy, otherCopy);
         await db.SaveChangesAsync();
 
-        var dueDate = DateOnly.FromDateTime(DateTime.Today).AddDays(5);
+        var dueDate = DateOnly.FromDateTime(DateTime.Today).AddDays(dueDateOffset);
         var loan = new BookLoan
         {
             BookId = book.Id, BookCopyId = copy.Id, ReaderAccountId = reader.Id,

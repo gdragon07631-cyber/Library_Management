@@ -25,6 +25,7 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     public DbSet<BookHold> BookHolds => Set<BookHold>();
     public DbSet<HoldPickupExpiryRun> HoldPickupExpiryRuns => Set<HoldPickupExpiryRun>();
     public DbSet<BookLoan> BookLoans => Set<BookLoan>();
+    public DbSet<ReaderFee> ReaderFees => Set<ReaderFee>();
     public DbSet<DirectLoanOperation> DirectLoanOperations => Set<DirectLoanOperation>();
     public DbSet<DirectLoanOperationItem> DirectLoanOperationItems => Set<DirectLoanOperationItem>();
     public DbSet<LoanContactHistory> LoanContactHistories => Set<LoanContactHistory>();
@@ -319,6 +320,8 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
             entity.Property(loan => loan.ReturnedAtUtc).HasColumnType("datetime2");
             entity.Property(loan => loan.CloseReason).HasMaxLength(50);
             entity.Property(loan => loan.OverdueFee).HasColumnType("decimal(18,2)").HasDefaultValue(0m);
+            entity.Property(loan => loan.OverdueDaysAtReturn).HasDefaultValue(0);
+            entity.Property(loan => loan.DailyOverdueFeeAtReturn).HasColumnType("decimal(18,2)").HasDefaultValue(0m);
             entity.HasOne(loan => loan.Book).WithMany()
                 .HasForeignKey(loan => loan.BookId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne(loan => loan.ReaderAccount).WithMany()
@@ -331,6 +334,21 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
                 .HasForeignKey(loan => loan.SourceBookHoldId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne(loan => loan.CreatedByAdminAccount).WithMany()
                 .HasForeignKey(loan => loan.CreatedByAdminAccountId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(loan => loan.OverdueReceivable).WithOne(fee => fee.BookLoan)
+                .HasForeignKey<ReaderFee>(fee => fee.BookLoanId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<ReaderFee>(entity =>
+        {
+            entity.HasIndex(fee => fee.ReaderAccountId);
+            entity.HasIndex(fee => fee.BookLoanId).IsUnique().HasFilter("[BookLoanId] IS NOT NULL");
+            entity.Property(fee => fee.Amount).HasColumnType("decimal(18,2)");
+            entity.Property(fee => fee.PaidAmount).HasColumnType("decimal(18,2)").HasDefaultValue(0m);
+            entity.Property(fee => fee.Status).HasMaxLength(50);
+            entity.Property(fee => fee.Description).HasMaxLength(500);
+            entity.Property(fee => fee.CreatedAtUtc).HasColumnType("datetime2");
+            entity.HasOne<ReaderAccount>().WithMany().HasForeignKey(fee => fee.ReaderAccountId)
+                .OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<LoanContactHistory>(entity =>

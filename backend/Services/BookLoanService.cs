@@ -278,6 +278,8 @@ public sealed class BookLoanService(ApplicationDbContext db, IWorkingScheduleSer
             if (loan.BookCopy is null) return new(false, "Phiếu mượn chưa được gán bản sao.", loan, IsConflict: true);
             if (!string.Equals(loan.BookCopy.Status, copyStatuses.Borrowed, StringComparison.OrdinalIgnoreCase))
                 return new(false, "Trạng thái bản sao không hợp lệ để nhận trả.", loan, IsConflict: true);
+            if (await db.ReaderFees.AnyAsync(fee => fee.BookLoanId == loanId, cancellationToken))
+                return new(false, "Phiếu mượn đã có khoản phải thu; cần kiểm tra dữ liệu trước khi nhận trả.", loan, IsConflict: true);
 
             var inMemoryFeePolicy = await db.LoanPolicies.AsNoTracking()
                 .SingleOrDefaultAsync(policy => policy.Id == LoanPolicy.SingletonId, cancellationToken);
@@ -297,6 +299,17 @@ public sealed class BookLoanService(ApplicationDbContext db, IWorkingScheduleSer
                 catch (InvalidOperationException exception) { return new(false, exception.Message); }
             }
             loan.OverdueFee = inMemoryFeeCalculation.EstimatedFee;
+            loan.OverdueDaysAtReturn = inMemoryFeeCalculation.OverdueDays;
+            loan.DailyOverdueFeeAtReturn = inMemoryFeeCalculation.DailyRate;
+            ReaderFee? inMemoryReceivable = null;
+            if (loan.OverdueFee > 0m)
+            {
+                inMemoryReceivable = CreateOverdueReceivable(loan, returnedAt);
+                if (loan.ReaderAccount is null)
+                    return new(false, "Không tìm thấy bạn đọc của phiếu mượn.", loan, IsConflict: true);
+                loan.ReaderAccount.OutstandingBalance += loan.OverdueFee;
+                db.ReaderFees.Add(inMemoryReceivable);
+            }
             loan.ReturnedAtUtc = returnedAt;
             loan.CloseReason = BookLoanCloseReason.Returned;
             loan.BookCopy.Status = assignedHold is null ? copyStatuses.Available : copyStatuses.Held;
@@ -308,7 +321,7 @@ public sealed class BookLoanService(ApplicationDbContext db, IWorkingScheduleSer
             }
             await db.SaveChangesAsync(cancellationToken);
             return new(true, Loan: loan, AssignedHold: assignedHold, CopyStatus: loan.BookCopy.Status,
-                OverdueDays: inMemoryFeeCalculation.OverdueDays);
+                OverdueDays: inMemoryFeeCalculation.OverdueDays, Receivable: inMemoryReceivable);
         }
 
         await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
@@ -321,6 +334,8 @@ public sealed class BookLoanService(ApplicationDbContext db, IWorkingScheduleSer
             return new(false, "Phiếu mượn chưa được gán bản sao.", currentLoan, IsConflict: true);
         if (!string.Equals(currentLoan.BookCopy.Status, BookCopyStatus.OnLoan, StringComparison.OrdinalIgnoreCase))
             return new(false, "Trạng thái bản sao không hợp lệ để nhận trả.", currentLoan, IsConflict: true);
+        if (await db.ReaderFees.AnyAsync(fee => fee.BookLoanId == loanId, cancellationToken))
+            return new(false, "Phiếu mượn đã có khoản phải thu; cần kiểm tra dữ liệu trước khi nhận trả.", currentLoan, IsConflict: true);
 
         var feePolicy = await db.LoanPolicies.AsNoTracking()
             .SingleOrDefaultAsync(policy => policy.Id == LoanPolicy.SingletonId, cancellationToken);
@@ -333,6 +348,15 @@ public sealed class BookLoanService(ApplicationDbContext db, IWorkingScheduleSer
         catch (InvalidOperationException exception) { return new(false, exception.Message, currentLoan); }
         var overdueFee = feeCalculation.EstimatedFee;
         currentLoan.OverdueFee = overdueFee;
+        currentLoan.OverdueDaysAtReturn = feeCalculation.OverdueDays;
+        currentLoan.DailyOverdueFeeAtReturn = feeCalculation.DailyRate;
+        ReaderFee? receivable = null;
+        if (overdueFee > 0m)
+        {
+            if (currentLoan.ReaderAccount is null)
+                return new(false, "Không tìm thấy bạn đọc của phiếu mượn.", currentLoan, IsConflict: true);
+            receivable = CreateOverdueReceivable(currentLoan, returnedAt);
+        }
 
         var nextHold = await FindNextPendingHoldAsync(currentLoan.BookCopy.BookId, cancellationToken);
         DateTime? nextPickupDeadlineUtc = null;
@@ -348,7 +372,9 @@ public sealed class BookLoanService(ApplicationDbContext db, IWorkingScheduleSer
                 .ExecuteUpdateAsync(update => update
                     .SetProperty(item => item.ReturnedAtUtc, returnedAt)
                     .SetProperty(item => item.CloseReason, BookLoanCloseReason.Returned)
-                    .SetProperty(item => item.OverdueFee, overdueFee), cancellationToken);
+                    .SetProperty(item => item.OverdueFee, overdueFee)
+                    .SetProperty(item => item.OverdueDaysAtReturn, feeCalculation.OverdueDays)
+                    .SetProperty(item => item.DailyOverdueFeeAtReturn, feeCalculation.DailyRate), cancellationToken);
             if (claimed != 1)
                 return new(false, "Phiếu mượn này đã được trả hoặc đã đóng trước đó.", currentLoan, IsConflict: true);
         }
@@ -361,6 +387,8 @@ public sealed class BookLoanService(ApplicationDbContext db, IWorkingScheduleSer
             inMemLoan.ReturnedAtUtc = returnedAt;
             inMemLoan.CloseReason = BookLoanCloseReason.Returned;
             inMemLoan.OverdueFee = overdueFee;
+            inMemLoan.OverdueDaysAtReturn = feeCalculation.OverdueDays;
+            inMemLoan.DailyOverdueFeeAtReturn = feeCalculation.DailyRate;
             await db.SaveChangesAsync(cancellationToken);
         }
 
@@ -394,6 +422,18 @@ public sealed class BookLoanService(ApplicationDbContext db, IWorkingScheduleSer
             }
         }
 
+        if (receivable is not null)
+        {
+            var balanceUpdated = await db.ReaderAccounts
+                .Where(reader => reader.Id == currentLoan.ReaderAccountId)
+                .ExecuteUpdateAsync(update => update.SetProperty(
+                    reader => reader.OutstandingBalance, reader => reader.OutstandingBalance + overdueFee), cancellationToken);
+            if (balanceUpdated != 1) throw new InvalidOperationException("Không thể cập nhật số dư phải thu của bạn đọc.");
+            db.ReaderFees.Add(receivable);
+            await db.SaveChangesAsync(cancellationToken);
+            currentLoan.ReaderAccount!.OutstandingBalance += overdueFee;
+        }
+
         await transaction.CommitAsync(cancellationToken);
         currentLoan.ReturnedAtUtc = returnedAt;
         currentLoan.CloseReason = BookLoanCloseReason.Returned;
@@ -415,8 +455,20 @@ public sealed class BookLoanService(ApplicationDbContext db, IWorkingScheduleSer
             nextHold.PickupDeadlineUtc = nextPickupDeadlineUtc;
         }
         return new(true, Loan: currentLoan, AssignedHold: nextHold, CopyStatus: copyStatus,
-            OverdueDays: feeCalculation.OverdueDays);
+            OverdueDays: feeCalculation.OverdueDays, Receivable: receivable);
     }
+
+    private static ReaderFee CreateOverdueReceivable(BookLoan loan, DateTime createdAtUtc) => new()
+    {
+        ReaderAccountId = loan.ReaderAccountId,
+        BookLoanId = loan.Id,
+        Amount = loan.OverdueFee,
+        PaidAmount = 0m,
+        IsPaid = false,
+        Status = "Chưa thanh toán",
+        Description = $"Phí trễ hạn phiếu mượn #{loan.Id}",
+        CreatedAtUtc = createdAtUtc
+    };
 
     public async Task<BookCopyLoanLookupOutcome> LookupByCopyCodeAsync(
         string copyCode, DateOnly today, CancellationToken cancellationToken = default)

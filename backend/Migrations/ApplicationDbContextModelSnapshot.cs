@@ -451,6 +451,25 @@ namespace Project.Migrations
                     b.Property<DateTime?>("ReturnedAtUtc")
                         .HasColumnType("datetime2");
 
+                    b.Property<string>("CloseReason")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<decimal>("OverdueFee")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("decimal(18,2)")
+                        .HasDefaultValue(0m);
+
+                    b.Property<int>("OverdueDaysAtReturn")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(0);
+
+                    b.Property<decimal>("DailyOverdueFeeAtReturn")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("decimal(18,2)")
+                        .HasDefaultValue(0m);
+
                     b.Property<long?>("SourceBookHoldId")
                         .HasColumnType("bigint");
 
@@ -835,6 +854,53 @@ namespace Project.Migrations
                     b.HasIndex("StudentOrStaffCode");
 
                     b.ToTable("ReaderAccounts", (string)null);
+                });
+
+            modelBuilder.Entity("Project.Models.ReaderFee", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<decimal>("Amount")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<long?>("BookLoanId")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<bool>("IsPaid")
+                        .HasColumnType("bit");
+
+                    b.Property<decimal>("PaidAmount")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("decimal(18,2)")
+                        .HasDefaultValue(0m);
+
+                    b.Property<int>("ReaderAccountId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Status")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ReaderAccountId");
+
+                    b.HasIndex("BookLoanId")
+                        .IsUnique()
+                        .HasFilter("[BookLoanId] IS NOT NULL");
+
+                    b.ToTable("ReaderFees", (string)null);
                 });
 
             modelBuilder.Entity("Project.Models.ReaderEmailVerificationToken", b =>
@@ -1280,6 +1346,24 @@ namespace Project.Migrations
                     b.Navigation("ReaderAccount");
 
                     b.Navigation("SourceBookHold");
+
+                    b.Navigation("OverdueReceivable");
+                });
+
+            modelBuilder.Entity("Project.Models.ReaderFee", b =>
+                {
+                    b.HasOne("Project.Models.BookLoan", "BookLoan")
+                        .WithOne("OverdueReceivable")
+                        .HasForeignKey("Project.Models.ReaderFee", "BookLoanId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("Project.Models.ReaderAccount", null)
+                        .WithMany()
+                        .HasForeignKey("ReaderAccountId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("BookLoan");
                 });
 
             modelBuilder.Entity("Project.Models.Category", b =>

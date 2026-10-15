@@ -90,6 +90,14 @@ public sealed class LoanReturnController(IBookLoanService loans) : Controller
                 returnDate = LibraryCalendarDate.DateFromUtc(returnedAtUtc),
                 overdueDays = outcome.OverdueDays,
                 overdueFee = outcome.Loan.OverdueFee,
+                dailyOverdueFee = outcome.Loan.DailyOverdueFeeAtReturn,
+                receivable = outcome.Receivable is null ? null : new
+                {
+                    id = outcome.Receivable.Id,
+                    amount = outcome.Receivable.Amount,
+                    status = outcome.Receivable.Status,
+                    description = outcome.Receivable.Description
+                },
                 copyStatus = outcome.CopyStatus,
                 hasWaitingHold = outcome.AssignedHold is not null,
                 reservedFor = outcome.AssignedHold is null ? null : new

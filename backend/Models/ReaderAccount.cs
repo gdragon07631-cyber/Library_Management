@@ -7,12 +7,15 @@ public sealed class ReaderFee
 {
     public int Id { get; set; }
     public int ReaderAccountId { get; set; }
+    /// <summary>Loan that produced this receivable; null is reserved for other fee types.</summary>
+    public long? BookLoanId { get; set; }
     public decimal Amount { get; set; }
     public decimal PaidAmount { get; set; }
     public bool IsPaid { get; set; }
     public string? Status { get; set; }
     public string? Description { get; set; }
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
+    public BookLoan? BookLoan { get; set; }
 
     public decimal RemainingAmount
     {

@@ -82,7 +82,7 @@
         if (entries.length === 0) {
             const row = document.createElement("tr");
             const cell = document.createElement("td");
-            cell.colSpan = 8;
+            cell.colSpan = 10;
             cell.className = "text-center text-muted";
             cell.textContent = emptyMessage;
             row.append(cell);
@@ -99,6 +99,8 @@
                 entry.readerName || "Không có dữ liệu",
                 formatTimestamp(entry.returnedAtUtc),
                 entry.result || "Đã nhận trả",
+                `${new Intl.NumberFormat("vi-VN").format(Number(entry.overdueFee) || 0)} VNĐ`,
+                entry.receivable ? `${entry.receivable.id} · ${new Intl.NumberFormat("vi-VN").format(Number(entry.receivable.amount) || 0)} VNĐ` : "—",
                 entry.copyStatus || "Không có dữ liệu",
                 entry.reservedFor
                     ? [entry.reservedFor.readerName, entry.reservedFor.readerCode].filter(Boolean).join(" — ")
@@ -186,6 +188,8 @@
                 bookTitle: loan.bookTitle || "Không có dữ liệu",
                 readerName: payload.readerName || loan.readerName || "Không có dữ liệu",
                 returnedAtUtc: payload.returnedAtUtc || new Date().toISOString(),
+                overdueFee: payload.overdueFee || 0,
+                receivable: payload.receivable || null,
                 result: "Đã nhận trả",
                 copyStatus: payload.copyStatus || "Không có dữ liệu",
                 reservedFor: payload.reservedFor || null
@@ -205,10 +209,18 @@
             detail(returned, "Mã vạch bản sao", entry.copyCode);
             detail(returned, "Tên sách", entry.bookTitle);
             detail(returned, "Bạn đọc", entry.readerName);
-            detail(returned, "Ngày trả", formatTimestamp(entry.returnedAtUtc));
+            detail(returned, "Hạn trả", formatDate(payload.dueDate));
+            detail(returned, "Ngày trả thực tế", formatDate(payload.returnDate));
+            detail(returned, "Thời điểm nhận trả", formatTimestamp(entry.returnedAtUtc));
             detail(returned, "Số ngày trễ theo lịch mở cửa", String(payload.overdueDays ?? 0));
+            detail(returned, "Mức phí mỗi ngày", `${new Intl.NumberFormat("vi-VN").format(Number(payload.dailyOverdueFee) || 0)} VNĐ`);
             detail(returned, "Phí trễ hạn đã ghi nhận", `${new Intl.NumberFormat("vi-VN").format(Number(payload.overdueFee) || 0)} VNĐ`);
             detail(returned, "Trạng thái phiếu mượn", payload.loanStatus || "Đã trả");
+            if (payload.receivable) {
+                detail(returned, "Khoản phải thu", `#${payload.receivable.id} · ${new Intl.NumberFormat("vi-VN").format(Number(payload.receivable.amount) || 0)} VNĐ · ${payload.receivable.status}`);
+            } else {
+                detail(returned, "Khoản phải thu", "Không phát sinh");
+            }
             detail(returned, "Trạng thái bản sao", entry.copyStatus);
             if (payload.hasWaitingHold && entry.reservedFor) {
                 const identity = [entry.reservedFor.readerName, entry.reservedFor.readerCode]

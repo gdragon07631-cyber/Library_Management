@@ -32,6 +32,14 @@ public sealed class BookLoan
     /// <summary>Khoản phí trễ hạn đã phát sinh tính đến ngày đóng phiếu mượn (Lát 3).</summary>
     public decimal OverdueFee { get; set; } = 0m;
 
+    /// <summary>Calendar opening days charged at return.</summary>
+    public int OverdueDaysAtReturn { get; set; }
+
+    /// <summary>Daily rate captured at return so the finalized calculation is auditable.</summary>
+    public decimal DailyOverdueFeeAtReturn { get; set; }
+
+    public ReaderFee? OverdueReceivable { get; set; }
+
     /// <summary>Đơn giá phí trễ hạn mỗi ngày theo quy định thư viện (2.000 VNĐ / ngày).</summary>
     public const decimal DailyOverdueFeeRate = 2000m;
 
