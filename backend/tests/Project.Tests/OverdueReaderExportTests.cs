@@ -39,6 +39,29 @@ public sealed class OverdueReaderExportTests : IDisposable
     public void Dispose() { db.Dispose(); connection.Dispose(); }
 
     [Fact]
+    public async Task OneCardPerReaderIsEnforcedByDatabase()
+    {
+        var type = await CardType("Chuẩn");
+        var reader = await Reader(1);
+        await AttachCard(reader, type);
+        db.ChangeTracker.Clear();
+        db.LibraryCards.Add(new LibraryCard { ReaderAccountId = reader.Id, LibraryCardTypeId = type.Id,
+            CardCode = "SECOND", IssuedOn = Today, ExpiresOn = Today.AddYears(1) });
+        await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync());
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    public async Task EachTypeExportsOnlyItsReaders(int selected)
+    {
+        var types = new[] { await CardType("Loại một"), await CardType("Loại hai") };
+        for (var i = 0; i < types.Length; i++) await AttachCard(await Reader(100 + i), types[i]);
+        var result = await service.ExportAsync(Manager, "", default, null, types[selected].Id);
+        Assert.Equal((100 + selected).ToString(), Assert.Single(ReadExportRows(result.Content!))[5]);
+    }
+
+    [Fact]
     public async Task CardTypeOptionsReuseActiveTypesAndExposeOnlyIdAndName()
     {
         var active = await CardType("Loại thực tế");
