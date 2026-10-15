@@ -5,6 +5,7 @@ namespace Project.Models;
 public static class AuditActions
 {
     public const string Login = "Đăng nhập";
+    public const string ExportOverdueReaders = "Xuất bạn đọc quá hạn và nợ phí";
     public const string CreateAccount = "Tạo tài khoản";
     public const string UpdateAccount = "Sửa tài khoản";
     public const string IssueCard = "Cấp thẻ";
@@ -23,7 +24,7 @@ public static class AuditActions
     public static readonly IReadOnlyList<string> All =
     [
         Login, LoginFailed, Logout, CreateAccount, UpdateAccount, ChangePassword, ResetPassword,
-        IssueCard, CreateLoan, RenewLoan, PlaceHold, CancelHold, UpdateLoanPolicy
+        IssueCard, CreateLoan, RenewLoan, PlaceHold, CancelHold, UpdateLoanPolicy, ExportOverdueReaders
     ];
 
     /// <summary>Màu nhãn trên trang nhật ký để phân biệt nhanh từng nhóm hành động.</summary>

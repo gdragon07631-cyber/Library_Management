@@ -34,6 +34,7 @@ builder.Services.AddScoped<IShelfService, ShelfService>();
 builder.Services.AddScoped<IWorkingScheduleService, WorkingScheduleService>();
 builder.Services.AddScoped<IBookLoanService, BookLoanService>();
 builder.Services.AddScoped<DirectLoanService>();
+builder.Services.AddScoped<OverdueReaderExportService>();
 builder.Services.AddScoped<ILoanContactHistoryService, LoanContactHistoryService>();
 builder.Services.AddScoped<IBookLoanDetailsService, BookLoanDetailsService>();
 builder.Services.AddScoped<ILoanLookupService, LoanLookupService>();

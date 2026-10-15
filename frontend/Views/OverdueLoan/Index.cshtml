@@ -1,6 +1,8 @@
 @model Project.Models.OverdueLoanViewModel
+@inject Project.Services.IAuditLogService AuditService
 @{
     ViewData["Title"] = "Phiếu mượn quá hạn";
+    var exportStaff = await AuditService.GetSignedInStaffAsync(Context.Request, Context.RequestAborted);
 }
 
 <div class="d-flex justify-content-between align-items-center mb-4">
@@ -9,6 +11,31 @@
         <p class="text-muted mb-0">Ưu tiên liên hệ các trường hợp trễ lâu nhất.</p>
     </div>
 </div>
+
+@if (exportStaff?.Role == Project.Models.AccountRoles.LibraryManager)
+{
+    <form id="overdue-export" action="@Url.Content("~/api/overdue-readers/export")" method="post" class="mb-3">
+        @Html.AntiForgeryToken()
+        <div class="mb-2">
+            <label for="exportLibraryCardTypeId" class="form-label">Loại thẻ</label>
+            <select id="exportLibraryCardTypeId" name="libraryCardTypeId" class="form-select"
+                    data-source="@Url.Content("~/api/overdue-readers/card-types")" disabled>
+                <option value="">Tất cả</option>
+            </select>
+            <div id="export-card-types-status" role="status" aria-live="polite">Đang tải loại thẻ…</div>
+            <button id="reload-export-card-types" type="button" class="btn btn-outline-secondary btn-sm mt-1" hidden>Thử tải lại loại thẻ</button>
+        </div>
+        <div class="mb-2">
+            <label for="minimumOverdueDays" class="form-label">Số ngày trễ tối thiểu</label>
+            <input id="minimumOverdueDays" name="minimumOverdueDays" type="text" inputmode="numeric"
+                   class="form-control" aria-describedby="minimum-overdue-help" />
+            <div id="minimum-overdue-help" class="form-text">Bỏ trống: không lọc ngày trễ. Nhập 0: áp dụng ngưỡng 0, gồm cả bạn đọc chỉ nợ phí. Nhập số nguyên từ 0 đến 2147483647; ngưỡng lớn hơn 0 loại bạn đọc chỉ nợ phí.</div>
+        </div>
+        <button type="submit" class="btn btn-success" disabled>Xuất Excel</button>
+        <span class="text-muted ms-2">Xuất bạn đọc thỏa đồng thời loại thẻ và ngưỡng ngày trễ trên; không áp dụng bộ lọc danh sách bên dưới.</span>
+        <div id="overdue-export-message" role="status" aria-live="polite" class="mt-2"></div>
+    </form>
+}
 
 @if (TempData["SuccessMessage"] is string successMessage)
 {
@@ -86,6 +113,7 @@
 </div>
 
 @section Scripts {
+<script src="~/js/overdue-reader-export.js" asp-append-version="true"></script>
 <script>
     document.querySelectorAll('.contact-button').forEach(function (button) {
         button.addEventListener('click', function () {
