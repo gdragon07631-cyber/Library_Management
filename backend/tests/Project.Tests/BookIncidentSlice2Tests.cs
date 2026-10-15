@@ -736,10 +736,11 @@ public class BookIncidentSlice2Tests : IDisposable
         var refreshedCopy = await _db.BookCopies.FindAsync(copy.Id);
         Assert.Equal(BookCopyStatus.Removed, refreshedCopy!.Status);
 
-        // Verify loan remains OPEN (ReturnedAtUtc is null, IsReturned is false)
+        // Verify loan is closed (Lát 3)
         var refreshedLoan = await _db.BookLoans.FindAsync(loan.Id);
-        Assert.Null(refreshedLoan!.ReturnedAtUtc);
-        Assert.False(refreshedLoan.IsReturned);
+        Assert.NotNull(refreshedLoan!.ReturnedAtUtc);
+        Assert.True(refreshedLoan.IsReturned);
+        Assert.Equal(BookIncidentType.Lost, refreshedLoan.CloseReason);
     }
 
     // -------------------------------------------------------------------------

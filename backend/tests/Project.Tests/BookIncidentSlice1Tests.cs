@@ -159,11 +159,12 @@ public class BookIncidentSlice1Tests : IDisposable
         Assert.Equal(BookCopyStatus.Removed, history.ToStatus);
         Assert.Contains("Bạn đọc báo bị mất sách", history.Reason);
 
-        // Phiếu mượn KHÔNG bị đóng
+        // Phiếu mượn được đóng với lý do Mất (Lát 3)
         var updatedLoan = await _db.BookLoans.FindAsync(loan.Id);
         Assert.NotNull(updatedLoan);
-        Assert.Null(updatedLoan.ReturnedAtUtc);
-        Assert.False(updatedLoan.IsReturned);
+        Assert.NotNull(updatedLoan.ReturnedAtUtc);
+        Assert.True(updatedLoan.IsReturned);
+        Assert.Equal(BookIncidentType.Lost, updatedLoan.CloseReason);
     }
 
     // 2. Ghi nhận bản sao bị Hỏng nặng thành công
@@ -192,11 +193,12 @@ public class BookIncidentSlice1Tests : IDisposable
         Assert.Equal(BookCopyCondition.MajorDamage, updatedCopy.PhysicalCondition);
         Assert.Contains(BookIncidentType.Damaged, updatedCopy.StatusReason);
 
-        // Phiếu mượn KHÔNG bị đóng
+        // Phiếu mượn được đóng với lý do Hỏng nặng (Lát 3)
         var updatedLoan = await _db.BookLoans.FindAsync(loan.Id);
         Assert.NotNull(updatedLoan);
-        Assert.Null(updatedLoan.ReturnedAtUtc);
-        Assert.False(updatedLoan.IsReturned);
+        Assert.NotNull(updatedLoan.ReturnedAtUtc);
+        Assert.True(updatedLoan.IsReturned);
+        Assert.Equal(BookIncidentType.Damaged, updatedLoan.CloseReason);
     }
 
     // 3. Lưu đúng mô tả tình trạng
@@ -579,20 +581,22 @@ public class BookIncidentSlice1Tests : IDisposable
         });
         Assert.True(outcome.IsSuccess);
 
-        // 4. Phiếu mượn ban đầu vẫn mở bình thường (không bị đóng, không tự ý trả)
+        // 4. Phiếu mượn được đóng với lý do Hỏng nặng (Lát 3)
         var loanInDb = await _db.BookLoans.FindAsync(loan.Id);
         Assert.NotNull(loanInDb);
-        Assert.Null(loanInDb.ReturnedAtUtc);
-        Assert.False(loanInDb.IsReturned);
+        Assert.NotNull(loanInDb.ReturnedAtUtc);
+        Assert.True(loanInDb.IsReturned);
+        Assert.Equal(BookIncidentType.Damaged, loanInDb.CloseReason);
 
-        // 5. Phiếu mượn vẫn xuất hiện trong danh sách phiếu đang mở
+        // 5. Phiếu mượn đã đóng không còn xuất hiện trong danh sách phiếu đang mở
         var openLoansAfter = await _incidentService.GetOpenLoansAsync();
-        Assert.Contains(openLoansAfter, l => l.LoanId == loan.Id);
+        Assert.DoesNotContain(openLoansAfter, l => l.LoanId == loan.Id);
 
         // 6. Bản sao đã loại không cho mượn tiếp hoặc trùng lặp
         var recheckCopies = await _incidentService.GetCopiesForLoanAsync(loan.Id);
-        Assert.Single(recheckCopies);
-        Assert.Equal(BookCopyStatus.Removed, recheckCopies[0].Status);
+        Assert.Empty(recheckCopies);
+        var recheckCopy = await _db.BookCopies.FindAsync(copy.Id);
+        Assert.Equal(BookCopyStatus.Removed, recheckCopy!.Status);
     }
 
     // Test bổ sung: Kiểm tra Controller hoạt động chuẩn xác

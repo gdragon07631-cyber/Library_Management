@@ -65,6 +65,7 @@
                                             data-card="@loan.CardCode"
                                             data-loandate="@loan.LoanDate.ToString("dd/MM/yyyy")"
                                             data-duedate="@loan.DueDate.ToString("dd/MM/yyyy")"
+                                            data-duedate-raw="@loan.DueDate.ToString("yyyy-MM-dd")"
                                             data-copyid="@loan.BookCopyId"
                                             data-barcode="@loan.CopyBarcode">
                                         #@loan.LoanId - @loan.ReaderName (@loan.CardCode) - @loan.BookTitle
@@ -83,6 +84,10 @@
                                 <div><strong>Tên sách:</strong> <span id="detailBook">-</span></div>
                                 <div><strong>Ngày mượn:</strong> <span id="detailLoanDate">-</span></div>
                                 <div><strong>Hạn trả:</strong> <span id="detailDueDate">-</span></div>
+                                <div class="mt-2 pt-2 border-top">
+                                    <strong>Trạng thái trễ hạn & Phí phát sinh (Lát 3):</strong>
+                                    <div id="detailOverdueInfo" class="mt-1 text-muted">-</div>
+                                </div>
                             </div>
                         </div>
 
@@ -259,7 +264,8 @@
                         <th>Bản sao sách</th>
                         <th>Phiếu mượn</th>
                         <th>Bạn đọc</th>
-                        <th>Khoản bồi thường</th>
+                        <th>Phí trễ hạn (Lát 3)</th>
+                        <th>Khoản bồi thường (Lát 2)</th>
                         <th>Mô tả & Ảnh</th>
                         <th>Người ghi nhận</th>
                         <th>Thời gian</th>
@@ -270,7 +276,7 @@
                     @if (Model.RecentIncidents.Count == 0)
                     {
                         <tr>
-                            <td colspan="10" class="text-center text-muted py-4">Chưa có sự cố nào được ghi nhận.</td>
+                            <td colspan="11" class="text-center text-muted py-4">Chưa có sự cố nào được ghi nhận.</td>
                         </tr>
                     }
                     else
@@ -293,8 +299,32 @@
                                     <div class="fw-semibold">@(inc.BookCopy?.Book?.Title ?? "Chưa rõ")</div>
                                     <small class="text-muted">Mã: @(inc.BookCopy?.CopyCode ?? "-")</small>
                                 </td>
-                                <td>#@inc.BookLoanId</td>
+                                <td>
+                                    <div><strong class="text-dark">#@inc.BookLoanId</strong></div>
+                                    @if (!string.IsNullOrEmpty(inc.BookLoan?.CloseReason))
+                                    {
+                                        <span class="badge bg-secondary" title="Đã đóng phiếu với lý do @inc.BookLoan.CloseReason">
+                                            Đã đóng: @inc.BookLoan.CloseReason
+                                        </span>
+                                    }
+                                    else if (inc.BookLoan?.ReturnedAtUtc.HasValue == true)
+                                    {
+                                        <span class="badge bg-secondary">Đã đóng</span>
+                                    }
+                                </td>
                                 <td>@(inc.BookLoan?.ReaderAccount?.FullName ?? "-")</td>
+                                <td>
+                                    @if (inc.BookLoan != null && inc.BookLoan.OverdueFee > 0)
+                                    {
+                                        <div class="fw-bold text-danger">@inc.BookLoan.OverdueFee.ToString("N0") VNĐ</div>
+                                        <div class="text-muted small" style="font-size: 0.8rem;">(2.000đ/ngày trễ)</div>
+                                    }
+                                    else
+                                    {
+                                        <div class="text-success fw-semibold">0 VNĐ</div>
+                                        <div class="text-muted small" style="font-size: 0.78rem;">Đúng hạn</div>
+                                    }
+                                </td>
                                 <td>
                                     @if (inc.Compensation != null)
                                     {
@@ -510,6 +540,7 @@
                     detailBook.textContent = selectedOption.getAttribute('data-book') || '-';
                     detailLoanDate.textContent = selectedOption.getAttribute('data-loandate') || '-';
                     detailDueDate.textContent = selectedOption.getAttribute('data-duedate') || '-';
+                    updateOverdueDisplay(selectedOption);
                     loanDetailsBox.classList.remove('d-none');
 
                     // Fetch copies for this loan via API
@@ -539,6 +570,43 @@
                     }
                 });
 
+                function updateOverdueDisplay(selectedOption) {
+                    const detailOverdueInfo = document.getElementById('detailOverdueInfo');
+                    if (!detailOverdueInfo || !selectedOption) return;
+                    const dueDateRaw = selectedOption.getAttribute('data-duedate-raw');
+                    if (!dueDateRaw) {
+                        detailOverdueInfo.textContent = '-';
+                        return;
+                    }
+                    const parts = dueDateRaw.split('-');
+                    if (parts.length !== 3) {
+                        detailOverdueInfo.textContent = '-';
+                        return;
+                    }
+                    const dueYear = parseInt(parts[0], 10);
+                    const dueMonth = parseInt(parts[1], 10) - 1;
+                    const dueDay = parseInt(parts[2], 10);
+                    const dueDateObj = new Date(dueYear, dueMonth, dueDay);
+
+                    const now = new Date();
+                    const todayObj = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+                    const diffDays = Math.floor((todayObj.getTime() - dueDateObj.getTime()) / (1000 * 60 * 60 * 24));
+                    if (diffDays > 0) {
+                        const estFee = diffDays * 2000;
+                        detailOverdueInfo.innerHTML = `
+                            <span class="badge bg-danger">Quá hạn ${diffDays} ngày</span>
+                            <span class="ms-1 fw-bold text-danger">Phí trễ hạn: ${new Intl.NumberFormat('vi-VN').format(estFee)} VNĐ</span>
+                            <div class="small text-muted mt-1">(Tính theo đơn giá 2.000 VNĐ / ngày trễ, hệ thống sẽ chốt và giữ nguyên khi đóng phiếu)</div>
+                        `;
+                    } else {
+                        detailOverdueInfo.innerHTML = `
+                            <span class="badge bg-success">Đúng hạn</span>
+                            <span class="ms-1 text-muted">Phí trễ hạn phát sinh: 0 VNĐ</span>
+                        `;
+                    }
+                }
+
                 // Trigger if already selected on page load
                 if (loanSelect.value) {
                     const selectedOption = loanSelect.options[loanSelect.selectedIndex];
@@ -547,6 +615,7 @@
                     detailBook.textContent = selectedOption.getAttribute('data-book') || '-';
                     detailLoanDate.textContent = selectedOption.getAttribute('data-loandate') || '-';
                     detailDueDate.textContent = selectedOption.getAttribute('data-duedate') || '-';
+                    updateOverdueDisplay(selectedOption);
                     updateCompensationPreview();
                 }
             }

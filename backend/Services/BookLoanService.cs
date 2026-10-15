@@ -274,7 +274,8 @@ public sealed class BookLoanService(ApplicationDbContext db, IWorkingScheduleSer
             var loan = await db.BookLoans.Include(item => item.BookCopy).Include(item => item.ReaderAccount)
                 .FirstOrDefaultAsync(item => item.Id == loanId, cancellationToken);
             if (loan is null) return new(false, "Không tìm thấy phiếu mượn.", IsNotFound: true);
-            if (loan.ReturnedAtUtc.HasValue) return new(false, "Phiếu mượn này đã được trả trước đó.", loan, IsConflict: true);
+            if (loan.ReturnedAtUtc.HasValue || !string.IsNullOrEmpty(loan.CloseReason))
+                return new(false, "Phiếu mượn này đã được trả hoặc đã đóng trước đó.", loan, IsConflict: true);
             if (loan.BookCopy is null) return new(false, "Phiếu mượn chưa được gán bản sao.", loan, IsConflict: true);
             if (!string.Equals(loan.BookCopy.Status, copyStatuses.Borrowed, StringComparison.OrdinalIgnoreCase))
                 return new(false, "Trạng thái bản sao không hợp lệ để nhận trả.", loan, IsConflict: true);
@@ -287,6 +288,7 @@ public sealed class BookLoanService(ApplicationDbContext db, IWorkingScheduleSer
                 catch (InvalidOperationException exception) { return new(false, exception.Message); }
             }
             loan.ReturnedAtUtc = returnedAt;
+            loan.CloseReason = BookLoanCloseReason.Returned;
             loan.BookCopy.Status = assignedHold is null ? copyStatuses.Available : copyStatuses.Held;
             if (assignedHold is not null)
             {
@@ -302,8 +304,8 @@ public sealed class BookLoanService(ApplicationDbContext db, IWorkingScheduleSer
         var currentLoan = await db.BookLoans.AsNoTracking().Include(item => item.BookCopy).Include(item => item.ReaderAccount)
             .FirstOrDefaultAsync(item => item.Id == loanId, cancellationToken);
         if (currentLoan is null) return new(false, "Không tìm thấy phiếu mượn.", IsNotFound: true);
-        if (currentLoan.ReturnedAtUtc.HasValue)
-            return new(false, "Phiếu mượn này đã được trả trước đó.", currentLoan, IsConflict: true);
+        if (currentLoan.ReturnedAtUtc.HasValue || !string.IsNullOrEmpty(currentLoan.CloseReason))
+            return new(false, "Phiếu mượn này đã được trả hoặc đã đóng trước đó.", currentLoan, IsConflict: true);
         if (currentLoan.BookCopyId is null || currentLoan.BookCopy is null)
             return new(false, "Phiếu mượn chưa được gán bản sao.", currentLoan, IsConflict: true);
         if (!string.Equals(currentLoan.BookCopy.Status, BookCopyStatus.OnLoan, StringComparison.OrdinalIgnoreCase))
@@ -316,11 +318,26 @@ public sealed class BookLoanService(ApplicationDbContext db, IWorkingScheduleSer
             try { nextPickupDeadlineUtc = await HoldPickupDeadlineCalculator.ThreeOpenDaysAfterAsync(returnedAt, this, cancellationToken); }
             catch (InvalidOperationException exception) { return new(false, exception.Message); }
         }
-        var claimed = await db.BookLoans
-            .Where(item => item.Id == loanId && item.BookCopyId == currentLoan.BookCopyId && item.ReturnedAtUtc == null)
-            .ExecuteUpdateAsync(update => update.SetProperty(item => item.ReturnedAtUtc, returnedAt), cancellationToken);
-        if (claimed != 1)
-            return new(false, "Phiếu mượn này đã được trả trước đó.", currentLoan, IsConflict: true);
+        if (db.Database.IsRelational())
+        {
+            var claimed = await db.BookLoans
+                .Where(item => item.Id == loanId && item.BookCopyId == currentLoan.BookCopyId && item.ReturnedAtUtc == null && item.CloseReason == null)
+                .ExecuteUpdateAsync(update => update
+                    .SetProperty(item => item.ReturnedAtUtc, returnedAt)
+                    .SetProperty(item => item.CloseReason, BookLoanCloseReason.Returned), cancellationToken);
+            if (claimed != 1)
+                return new(false, "Phiếu mượn này đã được trả hoặc đã đóng trước đó.", currentLoan, IsConflict: true);
+        }
+        else
+        {
+            var inMemLoan = await db.BookLoans.FirstOrDefaultAsync(l => l.Id == loanId, cancellationToken);
+            if (inMemLoan == null || inMemLoan.ReturnedAtUtc != null || !string.IsNullOrEmpty(inMemLoan.CloseReason))
+                return new(false, "Phiếu mượn này đã được trả hoặc đã đóng trước đó.", currentLoan, IsConflict: true);
+
+            inMemLoan.ReturnedAtUtc = returnedAt;
+            inMemLoan.CloseReason = BookLoanCloseReason.Returned;
+            await db.SaveChangesAsync(cancellationToken);
+        }
 
         if (nextHold is not null)
         {
@@ -335,14 +352,35 @@ public sealed class BookLoanService(ApplicationDbContext db, IWorkingScheduleSer
         }
 
         var copyStatus = nextHold is null ? BookCopyStatus.Available : BookCopyStatus.OnHold;
-        var copyUpdated = await db.BookCopies
-            .Where(item => item.Id == currentLoan.BookCopyId && item.Status == BookCopyStatus.OnLoan)
-            .ExecuteUpdateAsync(update => update.SetProperty(item => item.Status, copyStatus), cancellationToken);
-        if (copyUpdated != 1) throw new InvalidOperationException("Không thể cập nhật trạng thái bản sao.");
+        if (db.Database.IsRelational())
+        {
+            var copyUpdated = await db.BookCopies
+                .Where(item => item.Id == currentLoan.BookCopyId && item.Status == BookCopyStatus.OnLoan)
+                .ExecuteUpdateAsync(update => update.SetProperty(item => item.Status, copyStatus), cancellationToken);
+            if (copyUpdated != 1) throw new InvalidOperationException("Không thể cập nhật trạng thái bản sao.");
+        }
+        else
+        {
+            var inMemCopy = await db.BookCopies.FirstOrDefaultAsync(c => c.Id == currentLoan.BookCopyId, cancellationToken);
+            if (inMemCopy != null)
+            {
+                inMemCopy.Status = copyStatus;
+                await db.SaveChangesAsync(cancellationToken);
+            }
+        }
 
         await transaction.CommitAsync(cancellationToken);
         currentLoan.ReturnedAtUtc = returnedAt;
+        currentLoan.CloseReason = BookLoanCloseReason.Returned;
         currentLoan.BookCopy.Status = copyStatus;
+
+        var trackedLoan = db.ChangeTracker.Entries<BookLoan>().FirstOrDefault(e => e.Entity.Id == loanId)?.Entity;
+        if (trackedLoan != null)
+        {
+            trackedLoan.ReturnedAtUtc = returnedAt;
+            trackedLoan.CloseReason = BookLoanCloseReason.Returned;
+        }
+
         if (nextHold is not null)
         {
             nextHold.Status = BookHoldStatus.Available;

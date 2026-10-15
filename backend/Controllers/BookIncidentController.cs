@@ -77,7 +77,16 @@ public sealed class BookIncidentController(
             return View(nameof(Index), indexModel);
         }
 
-        var successMsg = $"Ghi nhận sự cố sách {model.IncidentType} thành công. Bản sao đã được chuyển sang trạng thái Đã loại khỏi kho.";
+        var successMsg = $"Ghi nhận sự cố sách {model.IncidentType} thành công. Đã đóng phiếu mượn #{model.LoanId} (Lý do: {outcome.CloseReason ?? model.IncidentType}). Bản sao đã được chuyển sang trạng thái Đã loại khỏi kho.";
+        if (outcome.OverdueFee > 0)
+        {
+            successMsg += $" Phí trễ hạn: {outcome.OverdueFee:N0}đ.";
+        }
+        else
+        {
+            successMsg += " Phí trễ hạn: 0đ.";
+        }
+
         if (outcome.Compensation != null)
         {
             successMsg += $" Tiền bồi thường ban đầu: {outcome.Compensation.InitialAmount:N0}đ (Hệ số: {outcome.Compensation.AppliedRate}).";
@@ -133,8 +142,11 @@ public sealed class BookIncidentController(
         return Ok(new
         {
             success = true,
-            message = $"Ghi nhận sự cố sách {model.IncidentType} thành công. Bản sao đã được chuyển sang trạng thái Đã loại khỏi kho.",
+            message = $"Ghi nhận sự cố sách {model.IncidentType} thành công. Đã đóng phiếu mượn #{model.LoanId} (Lý do: {outcome.CloseReason ?? model.IncidentType}). Bản sao đã được chuyển sang trạng thái Đã loại khỏi kho.",
             incidentId = outcome.Incident!.Id,
+            loanId = outcome.ClosedLoan?.Id ?? model.LoanId,
+            closeReason = outcome.CloseReason,
+            overdueFee = outcome.OverdueFee,
             copyStatus = outcome.UpdatedCopy!.Status,
             copyCondition = outcome.UpdatedCopy!.PhysicalCondition,
             compensation = outcome.Compensation != null ? new

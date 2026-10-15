@@ -25,6 +25,16 @@ public sealed class BookLoan
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
     public DateTime? ReturnedAtUtc { get; set; }
 
+    /// <summary>Lý do đóng phiếu mượn: Đã trả, Mất, hoặc Hỏng nặng (Lát 3).</summary>
+    [MaxLength(50)]
+    public string? CloseReason { get; set; }
+
+    /// <summary>Khoản phí trễ hạn đã phát sinh tính đến ngày đóng phiếu mượn (Lát 3).</summary>
+    public decimal OverdueFee { get; set; } = 0m;
+
+    /// <summary>Đơn giá phí trễ hạn mỗi ngày theo quy định thư viện (2.000 VNĐ / ngày).</summary>
+    public const decimal DailyOverdueFeeRate = 2000m;
+
     [NotMapped]
     public DateOnly? ReturnDate { get; set; }
 
@@ -42,12 +52,23 @@ public sealed class BookLoan
     public bool IsReturned
     {
         get => _isReturned
+            || ReturnedAtUtc.HasValue
             || ReturnDate.HasValue
+            || !string.IsNullOrEmpty(CloseReason)
             || string.Equals(Status, "Đã trả", StringComparison.OrdinalIgnoreCase)
             || string.Equals(Status, "Da tra", StringComparison.OrdinalIgnoreCase);
         set => _isReturned = value;
     }
     private bool _isReturned;
+}
+
+public static class BookLoanCloseReason
+{
+    public const string Returned = "Đã trả";
+    public const string Lost = "Mất";
+    public const string Damaged = "Hỏng nặng";
+
+    public static readonly IReadOnlyList<string> All = [Returned, Lost, Damaged];
 }
 
 public sealed class CreateBookLoanViewModel : IValidatableObject

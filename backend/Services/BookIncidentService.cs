@@ -118,12 +118,6 @@ public sealed class BookIncidentService(ApplicationDbContext db) : IBookIncident
                 return RecordIncidentOutcome.Failed("Phiếu mượn không tồn tại.");
             }
 
-            if (loan.ReturnedAtUtc != null || loan.IsReturned)
-            {
-                if (transaction != null) await transaction.RollbackAsync(cancellationToken);
-                return RecordIncidentOutcome.Failed("Phiếu mượn đã đóng hoặc đã được trả, không thể ghi nhận sự cố.");
-            }
-
             // Kiểm tra bản sao sách
             var copy = await db.BookCopies
                 .FirstOrDefaultAsync(c => c.Id == request.BookCopyId, cancellationToken);
@@ -154,6 +148,26 @@ public sealed class BookIncidentService(ApplicationDbContext db) : IBookIncident
                 if (transaction != null) await transaction.RollbackAsync(cancellationToken);
                 return RecordIncidentOutcome.Failed("Không thể ghi nhận: Bản sao này đã được ghi nhận sự cố trước đó.");
             }
+
+            if (loan.ReturnedAtUtc != null || loan.IsReturned || !string.IsNullOrEmpty(loan.CloseReason))
+            {
+                if (transaction != null) await transaction.RollbackAsync(cancellationToken);
+                return RecordIncidentOutcome.Failed("Phiếu mượn đã đóng hoặc đã được trả, không thể ghi nhận sự cố.");
+            }
+
+            var nowUtc = request.IncidentDateUtc ?? DateTime.UtcNow;
+            var incidentDate = DateOnly.FromDateTime(nowUtc);
+
+            // Tính phí trễ hạn phát sinh đến ngày ghi nhận sự cố (Lát 3): 2.000 VNĐ / ngày trễ
+            var overdueDays = incidentDate > loan.DueDate ? (incidentDate.DayNumber - loan.DueDate.DayNumber) : 0;
+            var calculatedOverdueFee = overdueDays * BookLoan.DailyOverdueFeeRate;
+            // Bảo toàn khoản phí trễ hạn đã phát sinh trước đó (không xóa, không ghi đè, không đặt lại về 0)
+            var finalOverdueFee = Math.Max(loan.OverdueFee, calculatedOverdueFee);
+
+            // Đóng phiếu mượn theo đúng lý do sự cố (Lát 3)
+            loan.ReturnedAtUtc = nowUtc;
+            loan.CloseReason = normalizedType;
+            loan.OverdueFee = finalOverdueFee;
 
             // Lưu ảnh chụp nếu có
             string? savedPhotoPath = null;
@@ -194,7 +208,7 @@ public sealed class BookIncidentService(ApplicationDbContext db) : IBookIncident
                 ToStatus = BookCopyStatus.Removed,
                 Reason = $"{normalizedType}: {normalizedDescription}",
                 ChangedBy = staffActor,
-                ChangedAtUtc = DateTime.UtcNow
+                ChangedAtUtc = nowUtc
             });
 
             // Ghi nhận bản ghi sự cố
@@ -206,7 +220,7 @@ public sealed class BookIncidentService(ApplicationDbContext db) : IBookIncident
                 Description = normalizedDescription,
                 PhotoPath = savedPhotoPath,
                 ReportedBy = staffActor,
-                CreatedAtUtc = DateTime.UtcNow
+                CreatedAtUtc = nowUtc
             };
             db.BookIncidents.Add(incident);
 
@@ -242,7 +256,7 @@ public sealed class BookIncidentService(ApplicationDbContext db) : IBookIncident
                             InitialAmount = initialAmount,
                             CurrentAmount = initialAmount,
                             IsAdjusted = false,
-                            CreatedAtUtc = DateTime.UtcNow
+                            CreatedAtUtc = nowUtc
                         };
                         db.BookIncidentCompensations.Add(compensation);
                     }
@@ -253,7 +267,7 @@ public sealed class BookIncidentService(ApplicationDbContext db) : IBookIncident
             db.AuditLogs.Add(AuditLogService.Create(
                 staffActor,
                 "RecordBookIncident",
-                $"Ghi nhận sách {normalizedType} – phiếu #{loan.Id}, bản sao {copy.CopyCode}: {normalizedDescription}" +
+                $"Ghi nhận sách {normalizedType} – đóng phiếu #{loan.Id} (Lý do: {normalizedType}, Phí trễ hạn: {finalOverdueFee:N0}đ), bản sao {copy.CopyCode}: {normalizedDescription}" +
                 (compensation != null ? $"; Khoản bồi thường: {compensation.InitialAmount:N0}đ (Hệ số: {compensation.AppliedRate})" : ""),
                 request.IpAddress ?? "127.0.0.1"));
 
@@ -262,7 +276,14 @@ public sealed class BookIncidentService(ApplicationDbContext db) : IBookIncident
             if (transaction != null)
                 await transaction.CommitAsync(cancellationToken);
 
-            return RecordIncidentOutcome.Success(incident, copy, compensation, compensationMessage);
+            return RecordIncidentOutcome.Success(
+                incident,
+                copy,
+                compensation,
+                compensationMessage,
+                loan,
+                finalOverdueFee,
+                normalizedType);
         }
         catch (Exception ex)
         {

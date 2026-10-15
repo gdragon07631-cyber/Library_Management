@@ -51,6 +51,7 @@ public sealed class RecordIncidentRequest
     public IFormFile? Photo { get; set; }
     public string? StaffEmail { get; set; }
     public string? IpAddress { get; set; }
+    public DateTime? IncidentDateUtc { get; set; }
 }
 
 public sealed class RecordIncidentOutcome
@@ -59,21 +60,30 @@ public sealed class RecordIncidentOutcome
     public string? ErrorMessage { get; init; }
     public BookIncident? Incident { get; init; }
     public BookCopy? UpdatedCopy { get; init; }
+    public BookLoan? ClosedLoan { get; init; }
     public BookIncidentCompensation? Compensation { get; init; }
     public string? CompensationMessage { get; init; }
+    public decimal OverdueFee { get; init; }
+    public string? CloseReason { get; init; }
 
     public static RecordIncidentOutcome Success(
         BookIncident incident,
         BookCopy copy,
         BookIncidentCompensation? compensation = null,
-        string? compensationMessage = null) =>
+        string? compensationMessage = null,
+        BookLoan? closedLoan = null,
+        decimal overdueFee = 0m,
+        string? closeReason = null) =>
         new()
         {
             IsSuccess = true,
             Incident = incident,
             UpdatedCopy = copy,
+            ClosedLoan = closedLoan,
             Compensation = compensation,
-            CompensationMessage = compensationMessage
+            CompensationMessage = compensationMessage,
+            OverdueFee = overdueFee,
+            CloseReason = closeReason
         };
 
     public static RecordIncidentOutcome Failed(string message) =>
