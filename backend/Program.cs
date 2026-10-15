@@ -52,6 +52,7 @@ builder.Services.AddScoped<IHoldPickupExpiryService, HoldPickupExpiryService>();
 builder.Services.AddScoped<IHoldPickupExpirySchedulingService, HoldPickupExpirySchedulingService>();
 builder.Services.AddScoped<IHoldPickupExpiryHistoryService, HoldPickupExpiryHistoryService>();
 builder.Services.AddScoped<IReaderAccountAdminService, ReaderAccountAdminService>();
+builder.Services.AddSingleton<IPermissionMatrixService, PermissionMatrixService>();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddHostedService<HoldPickupExpiryScheduledWorker>();
 builder.Services.Configure<BookCopyLabelPrintOptions>(builder.Configuration.GetSection("BookCopyLabels"));

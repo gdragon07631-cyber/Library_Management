@@ -1,0 +1,48 @@
+@model Project.Models.PermissionMatrixDto
+@{
+    ViewData["Title"] = "Ma trận Phân quyền Hệ thống";
+}
+<div class="container-fluid py-4 permission-matrix-page">
+    <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-4">
+        <div>
+            <h1 class="h3 mb-1 text-primary fw-bold">Ma trận Phân quyền Hệ thống</h1>
+            <p class="text-muted mb-0">Đối chiếu quyền hiện hành với ma trận chuẩn. Màn hình chỉ đọc, không thay đổi quyền.</p>
+        </div>
+        <div class="d-flex gap-2 align-items-center">
+            <span class="badge rounded-pill @(Model.DifferenceCount == 0 ? "text-bg-success" : "text-bg-warning") px-3 py-2" id="difference-count">@Model.DifferenceCount sai lệch</span>
+            <button type="button" class="btn btn-outline-secondary btn-sm" id="matrix-filter-toggle" aria-pressed="false">Chỉ xem sai lệch</button>
+        </div>
+    </div>
+    <div class="alert alert-light border d-flex flex-wrap gap-3 align-items-center small" role="note">
+        <span><i class="bi bi-check-circle-fill text-success"></i> Khớp với chuẩn</span>
+        <span><i class="bi bi-exclamation-triangle-fill text-warning"></i> Thiếu quyền</span>
+        <span><i class="bi bi-x-octagon-fill text-danger"></i> Thừa quyền</span>
+        <span class="ms-auto text-muted">Cập nhật: @Model.GeneratedAtUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</span>
+    </div>
+    <div class="card shadow-sm border-0"><div class="table-responsive">
+        <table class="table table-bordered align-middle mb-0 permission-matrix" id="permission-matrix">
+            <thead class="table-light"><tr><th>Phân hệ</th><th>Quyền / hành động</th>@foreach (var role in Model.Roles) { <th class="text-center">@role.Name</th> }</tr></thead>
+            <tbody>
+            @foreach (var row in Model.Rows)
+            {
+                var hasDifference = row.Roles.Values.Any(cell => cell.Status != "match");
+                <tr data-difference="@hasDifference.ToString().ToLowerInvariant()">
+                    <td><span class="fw-semibold">@row.ModuleName</span></td>
+                    <td>@row.PermissionName <span class="text-muted small">(@row.PermissionCode)</span></td>
+                    @foreach (var role in Model.Roles)
+                    {
+                        var cell = row.Roles[role.Code];
+                        var css = cell.Status == "match" ? "matrix-match" : cell.Status == "missing" ? "matrix-missing" : "matrix-excess";
+                        var icon = cell.Status == "match" ? "bi-check-circle-fill" : cell.Status == "missing" ? "bi-exclamation-triangle-fill" : "bi-x-octagon-fill";
+                        <td class="text-center @css" title="Chuẩn: @(cell.Expected ? "Có" : "Không"); Hiện tại: @(cell.Current ? "Có" : "Không")">
+                            <i class="bi @icon" aria-hidden="true"></i><span class="visually-hidden">@cell.StatusLabel</span>
+                            @if (cell.Status != "match") { <span class="badge ms-1 @((cell.Status == "missing") ? "text-bg-warning" : "text-bg-danger")">@cell.StatusLabel</span> }
+                        </td>
+                    }
+                </tr>
+            }
+            </tbody>
+        </table>
+    </div></div>
+</div>
+@section Scripts { <script src="~/js/permission-matrix.js" asp-append-version="true"></script> }
