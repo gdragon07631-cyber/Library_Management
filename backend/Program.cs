@@ -22,7 +22,13 @@ builder.Services.AddScoped<IPasswordHasher<AdminAccount>, PasswordHasher<AdminAc
 builder.Services.AddScoped<IReaderRegistrationService, ReaderRegistrationService>();
 builder.Services.AddScoped<IReaderPasswordResetService, ReaderPasswordResetService>();
 builder.Services.AddScoped<IReaderEmailVerificationService, ReaderEmailVerificationService>();
-builder.Services.AddScoped<IEmailSender, SmtpEmailSender>();
+builder.Services.AddScoped<SmtpEmailSender>();
+builder.Services.AddScoped<IEmailSender>(services => new RetryingEmailSender(
+    services.GetRequiredService<SmtpEmailSender>(),
+    services.GetRequiredService<ApplicationDbContext>(),
+    services.GetRequiredService<IConfiguration>(),
+    services.GetRequiredService<TimeProvider>(),
+    services.GetRequiredService<ILogger<RetryingEmailSender>>()));
 builder.Services.AddSingleton<ReaderRegistrationIpRateLimiter>();
 builder.Services.AddScoped<IPasswordHasher<ReaderAccount>, PasswordHasher<ReaderAccount>>();
 builder.Services.AddScoped<IAuthorService, AuthorService>();

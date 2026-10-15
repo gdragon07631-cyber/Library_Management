@@ -25,6 +25,7 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     public DbSet<BookHold> BookHolds => Set<BookHold>();
     public DbSet<HoldPickupExpiryRun> HoldPickupExpiryRuns => Set<HoldPickupExpiryRun>();
     public DbSet<BookLoan> BookLoans => Set<BookLoan>();
+    public DbSet<EmailSendHistory> EmailSendHistories => Set<EmailSendHistory>();
     public DbSet<ReaderFee> ReaderFees => Set<ReaderFee>();
     public DbSet<FeeWaiverRequest> FeeWaiverRequests => Set<FeeWaiverRequest>();
     public DbSet<DirectLoanOperation> DirectLoanOperations => Set<DirectLoanOperation>();
@@ -337,6 +338,23 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
                 .HasForeignKey(loan => loan.CreatedByAdminAccountId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne(loan => loan.OverdueReceivable).WithOne(fee => fee.BookLoan)
                 .HasForeignKey<ReaderFee>(fee => fee.BookLoanId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<EmailSendHistory>(entity =>
+        {
+            entity.HasIndex(item => item.StartedAtUtc);
+            entity.HasIndex(item => item.DeduplicationKey).IsUnique();
+            entity.HasIndex(item => new { item.ReaderAccountId, item.StartedAtUtc });
+            entity.HasIndex(item => new { item.Recipient, item.StartedAtUtc });
+            entity.Property(item => item.Recipient).HasMaxLength(256).IsRequired();
+            entity.Property(item => item.DeduplicationKey).HasMaxLength(64).IsRequired();
+            entity.Property(item => item.NotificationType).HasMaxLength(30).IsRequired();
+            entity.Property(item => item.Subject).HasMaxLength(500).IsRequired();
+            entity.Property(item => item.Status).HasMaxLength(20).IsRequired();
+            entity.Property(item => item.AttemptErrors).HasMaxLength(4000);
+            entity.Property(item => item.ErrorMessage).HasMaxLength(1000);
+            entity.Property(item => item.StartedAtUtc).HasColumnType("datetime2");
+            entity.Property(item => item.CompletedAtUtc).HasColumnType("datetime2");
         });
 
         modelBuilder.Entity<ReaderFee>(entity =>
