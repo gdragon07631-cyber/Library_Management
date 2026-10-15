@@ -1,12 +1,14 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Project.Data;
+using Project.Filters;
 using Project.Models;
 using Project.Services;
 
 namespace Project.Controllers;
 
 /// <summary>Trang nghiệp vụ dành cho thủ thư duyệt hồ sơ bạn đọc.</summary>
+[StaffOnly(AccountRoles.Librarian)]
 public sealed class ReaderApprovalController(
     IReaderRegistrationService registrationService,
     ApplicationDbContext dbContext,

@@ -504,7 +504,6 @@ public sealed class OverdueReaderExportTests : IDisposable
 
     [Theory]
     [InlineData(AccountRoles.Librarian)]
-    [InlineData(AccountRoles.SystemAdmin)]
     public async Task OtherRolesCannotExport(string role)
     {
         var result = await service.ExportAsync(new AdminAccount { Role = role }, "", default);
@@ -512,7 +511,7 @@ public sealed class OverdueReaderExportTests : IDisposable
         Assert.Null(result.Content);
         Assert.Empty(await db.AuditLogs.ToListAsync());
         var filter = Assert.Single(typeof(OverdueReaderExportController).GetCustomAttributes(typeof(StaffOnlyAttribute), true).Cast<StaffOnlyAttribute>());
-        Assert.Equal([AccountRoles.LibraryManager], filter.Roles);
+        Assert.Equal([AccountRoles.LibraryManager, AccountRoles.SystemAdmin].Order(), filter.Roles.Order());
     }
 
     [Theory]

@@ -41,7 +41,7 @@ public sealed class OverdueReaderExportService(ApplicationDbContext db, IWorking
     public async Task<OverdueReaderExportResult> ExportAsync(AdminAccount staff, string ip, CancellationToken ct,
         int? minimumOverdueDays = null, int? libraryCardTypeId = null)
     {
-        if (!staff.IsActive || staff.Role != AccountRoles.LibraryManager)
+        if (!staff.IsActive || staff.Role is not (AccountRoles.LibraryManager or AccountRoles.SystemAdmin))
             return new(null, "", "Tài khoản của bạn không có quyền xuất danh sách.", 403);
         if (minimumOverdueDays < 0)
             return new(null, "", OverdueReaderExportFilter.ValidationMessage, 400);

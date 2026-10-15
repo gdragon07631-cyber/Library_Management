@@ -64,10 +64,8 @@ public sealed class PermissionMatrixService : IPermissionMatrixService
 
     private static HashSet<string> GetCurrentRoles(Definition definition, HashSet<string> expected)
     {
-        // Mirrors the existing controller policies. Known review finding: the export endpoint
-        // currently permits LibraryManager only, while the approved matrix also requires SystemAdmin.
-        if (definition.ModuleCode == "reports" && definition.PermissionCode == "Export")
-            return new HashSet<string> { AccountRoles.LibraryManager };
+        // Mirrors the controller policies. This is deliberately read-only and never participates
+        // in a request authorization decision.
         return new HashSet<string>(expected);
     }
 

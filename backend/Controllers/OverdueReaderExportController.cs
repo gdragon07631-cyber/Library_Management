@@ -5,7 +5,7 @@ using Project.Services;
 
 namespace Project.Controllers;
 
-[StaffOnly(AccountRoles.LibraryManager)]
+[StaffOnly(AccountRoles.LibraryManager, AccountRoles.SystemAdmin)]
 public sealed class OverdueReaderExportController(OverdueReaderExportService exports, IAuditLogService audit) : Controller
 {
     [HttpGet("api/overdue-readers/card-types")]
