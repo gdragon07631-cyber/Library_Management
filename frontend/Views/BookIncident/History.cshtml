@@ -1,0 +1,223 @@
+@model Project.Models.LoanIncidentHistoryViewModel
+@{
+    ViewData["Title"] = $"Lịch sử sự cố & bồi thường – Phiếu #{Model.Loan.Id}";
+}
+
+<div class="container-fluid py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <nav aria-label="breadcrumb">
+                <ol class="breadcrumb mb-1">
+                    <li class="breadcrumb-item"><a asp-action="Index">Quản lý sự cố sách</a></li>
+                    <li class="breadcrumb-item active" aria-current="page">Lịch sử phiếu #@Model.Loan.Id</li>
+                </ol>
+            </nav>
+            <h1 class="h3 mb-0 text-gray-800">
+                <i class="bi bi-clock-history me-2 text-primary"></i>Lịch sử nghiệp vụ sự cố & bồi thường
+            </h1>
+            <p class="text-muted small mb-0">Nhật ký bất biến lưu vết các thao tác ghi nhận sự cố, đóng phiếu, tính và điều chỉnh bồi thường.</p>
+        </div>
+        <div>
+            <a asp-action="Index" class="btn btn-outline-secondary">
+                <i class="bi bi-arrow-left me-1"></i>Quay lại màn hình sự cố
+            </a>
+        </div>
+    </div>
+
+    <!-- Thông tin tổng quan phiếu mượn -->
+    <div class="card shadow-sm mb-4 border-0">
+        <div class="card-header bg-light py-3">
+            <h5 class="card-title mb-0 text-dark fw-bold">
+                <i class="bi bi-journal-text me-2"></i>Thông tin phiếu mượn #@Model.Loan.Id
+            </h5>
+        </div>
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <div class="p-3 bg-light rounded">
+                        <div class="text-muted small">Tên sách</div>
+                        <div class="fw-bold fs-6">@(Model.Loan.Book?.Title ?? "N/A")</div>
+                        <div class="text-muted small mt-2">Mã bản sao</div>
+                        <div class="fw-bold"><code>@(Model.Loan.BookCopy?.CopyCode ?? "Chưa gán")</code></div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="p-3 bg-light rounded">
+                        <div class="text-muted small">Bạn đọc</div>
+                        <div class="fw-bold fs-6">@(Model.Loan.ReaderAccount?.FullName ?? "N/A")</div>
+                        <div class="text-muted small mt-2">Ngày mượn / Hạn trả</div>
+                        <div>
+                            <span class="badge bg-secondary-subtle text-secondary-emphasis">@Model.Loan.LoanDate.ToString("dd/MM/yyyy")</span>
+                            <i class="bi bi-arrow-right mx-1"></i>
+                            <span class="badge bg-primary-subtle text-primary-emphasis">@Model.Loan.DueDate.ToString("dd/MM/yyyy")</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="p-3 bg-light rounded">
+                        <div class="text-muted small">Trạng thái đóng phiếu & Tài chính</div>
+                        <div>
+                            @if (!string.IsNullOrEmpty(Model.Loan.CloseReason))
+                            {
+                                <span class="badge bg-danger">Đã đóng: @Model.Loan.CloseReason</span>
+                            }
+                            else if (Model.Loan.ReturnedAtUtc.HasValue)
+                            {
+                                <span class="badge bg-success">Đã trả</span>
+                            }
+                            else
+                            {
+                                <span class="badge bg-warning text-dark">Đang mượn</span>
+                            }
+                        </div>
+                        <div class="mt-2 small">
+                            <span class="text-muted">Phí trễ hạn:</span>
+                            <span class="fw-bold text-danger">@Model.Loan.OverdueFee.ToString("N0") VNĐ</span>
+                        </div>
+                        <div class="small">
+                            <span class="text-muted">Tiền bồi thường:</span>
+                            @if (Model.Compensation != null)
+                            {
+                                <span class="fw-bold text-danger">@Model.Compensation.CurrentAmount.ToString("N0") VNĐ</span>
+                                @if (Model.Compensation.IsAdjusted)
+                                {
+                                    <span class="badge bg-warning-subtle text-warning-emphasis ms-1">Đã điều chỉnh</span>
+                                }
+                            }
+                            else
+                            {
+                                <span class="text-muted">Chưa phát sinh</span>
+                            }
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Dòng thời gian / Bảng nhật ký bất biến -->
+    <div class="card shadow-sm border-0">
+        <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
+            <h5 class="card-title mb-0 text-dark fw-bold">
+                <i class="bi bi-shield-check me-2 text-success"></i>Nhật ký nghiệp vụ (Không thể sửa / xóa)
+            </h5>
+            <span class="badge bg-info-subtle text-info-emphasis">Tổng cộng: @Model.Logs.Count bản ghi</span>
+        </div>
+        <div class="card-body p-0">
+            @if (Model.Logs.Count == 0)
+            {
+                <div class="text-center py-5 text-muted">
+                    <i class="bi bi-inbox fs-1 d-block mb-2"></i>
+                    Chưa có bản ghi nhật ký sự cố nào cho phiếu mượn này.
+                </div>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th style="width: 180px;">Thời điểm</th>
+                                <th style="width: 170px;">Thao tác</th>
+                                <th style="width: 200px;">Người thực hiện</th>
+                                <th>Chi tiết nghiệp vụ đã ghi nhận</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var log in Model.Logs)
+                            {
+                                <tr>
+                                    <td>
+                                        <div class="fw-bold text-dark">@log.OccurredAtUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss")</div>
+                                        <small class="text-muted">@log.OccurredAtUtc.ToString("yyyy-MM-ddTHH:mm:ssZ")</small>
+                                    </td>
+                                    <td>
+                                        <span class="badge @Project.Models.IncidentAuditOperations.BadgeClass(log.OperationType) px-2 py-1">
+                                            @log.OperationType
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <i class="bi bi-person me-1 text-secondary"></i>
+                                        <span class="fw-medium">@log.Actor</span>
+                                    </td>
+                                    <td>
+                                        <div class="mb-1 fw-bold text-dark">@log.Summary</div>
+
+                                        @if (!string.IsNullOrEmpty(log.IncidentType))
+                                        {
+                                            <div class="small text-muted">
+                                                <strong>Sự cố:</strong> <span class="badge bg-danger-subtle text-danger-emphasis">@log.IncidentType</span>
+                                                @if (!string.IsNullOrEmpty(log.Description))
+                                                {
+                                                    <span class="ms-2"><strong>Mô tả:</strong> @log.Description</span>
+                                                }
+                                            </div>
+                                        }
+
+                                        @if (!string.IsNullOrEmpty(log.CloseReason))
+                                        {
+                                            <div class="small text-muted">
+                                                <strong>Đóng phiếu:</strong> Lý do <code>@log.CloseReason</code>
+                                                @if (log.IncidentDate.HasValue)
+                                                {
+                                                    <span class="ms-2">| Ngày sự cố: <code>@log.IncidentDate.Value.ToString("dd/MM/yyyy")</code></span>
+                                                }
+                                                @if (log.OverdueFee.HasValue)
+                                                {
+                                                    <span class="ms-2">| Phí trễ hạn giữ lại: <strong class="text-danger">@log.OverdueFee.Value.ToString("N0") VNĐ</strong></span>
+                                                }
+                                            </div>
+                                        }
+
+                                        @if (log.RecordedCoverPrice.HasValue || log.AppliedRate.HasValue || log.InitialCompensationAmount.HasValue)
+                                        {
+                                            <div class="small text-muted">
+                                                @if (log.RecordedCoverPrice.HasValue)
+                                                {
+                                                    <span>Giá bìa: <strong>@log.RecordedCoverPrice.Value.ToString("N0") VNĐ</strong></span>
+                                                }
+                                                @if (log.AppliedRate.HasValue)
+                                                {
+                                                    <span class="ms-2">| Hệ số: <strong>@log.AppliedRate.Value</strong></span>
+                                                }
+                                                @if (log.InitialCompensationAmount.HasValue)
+                                                {
+                                                    <span class="ms-2">| Tiền ban đầu: <strong class="text-danger">@log.InitialCompensationAmount.Value.ToString("N0") VNĐ</strong></span>
+                                                }
+                                            </div>
+                                        }
+
+                                        @if (log.FromAmount.HasValue && log.ToAmount.HasValue)
+                                        {
+                                            <div class="small text-muted">
+                                                <strong>Điều chỉnh:</strong> Từ <span class="text-decoration-line-through">@log.FromAmount.Value.ToString("N0") VNĐ</span>
+                                                sang <strong class="text-danger">@log.ToAmount.Value.ToString("N0") VNĐ</strong>
+                                                @if (!string.IsNullOrEmpty(log.AdjustmentReason))
+                                                {
+                                                    <span class="ms-2">| <strong>Lý do:</strong> <em>@log.AdjustmentReason</em></span>
+                                                }
+                                            </div>
+                                        }
+
+                                        @if (!string.IsNullOrEmpty(log.PhotoPath))
+                                        {
+                                            <div class="mt-2">
+                                                <a href="@log.PhotoPath" target="_blank" class="btn btn-sm btn-outline-info py-0 px-2">
+                                                    <i class="bi bi-image me-1"></i>Xem ảnh chụp minh chứng
+                                                </a>
+                                            </div>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+        <div class="card-footer bg-light py-2 text-muted small text-center">
+            <i class="bi bi-lock me-1"></i>Dữ liệu nhật ký được bảo vệ chống sửa đổi và xóa ở cấp hệ thống cơ sở dữ liệu.
+        </div>
+    </div>
+</div>
+

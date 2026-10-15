@@ -41,6 +41,7 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     public DbSet<CompensationPolicy> CompensationPolicies => Set<CompensationPolicy>();
     public DbSet<BookIncidentCompensation> BookIncidentCompensations => Set<BookIncidentCompensation>();
     public DbSet<CompensationAdjustmentHistory> CompensationAdjustmentHistories => Set<CompensationAdjustmentHistory>();
+    public DbSet<BookIncidentAuditLog> BookIncidentAuditLogs => Set<BookIncidentAuditLog>();
 
     public const string AuditLogReadOnlyTrigger = "TR_AuditLogs_ReadOnly";
 
@@ -56,11 +57,14 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
         return base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
     }
 
-    /// <summary>Nhật ký hoạt động chỉ được thêm mới; mọi thao tác sửa/xóa qua hệ thống đều bị từ chối.</summary>
+    /// <summary>Nhật ký hoạt động và nhật ký sự cố chỉ được thêm mới; mọi thao tác sửa/xóa qua hệ thống đều bị từ chối.</summary>
     private void EnsureAuditLogsAreAppendOnly()
     {
         if (ChangeTracker.Entries<AuditLog>().Any(entry => entry.State is EntityState.Modified or EntityState.Deleted))
             throw new InvalidOperationException("Nhật ký hoạt động là dữ liệu chỉ đọc, không được sửa hoặc xóa.");
+
+        if (ChangeTracker.Entries<BookIncidentAuditLog>().Any(entry => entry.State is EntityState.Modified or EntityState.Deleted))
+            throw new InvalidOperationException("Nhật ký sự cố là dữ liệu chỉ đọc, không được sửa hoặc xóa.");
     }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -496,6 +500,39 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
                 .WithMany(c => c.AdjustmentHistories)
                 .HasForeignKey(h => h.BookIncidentCompensationId)
                 .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<BookIncidentAuditLog>(entity =>
+        {
+            entity.HasIndex(l => new { l.BookLoanId, l.OccurredAtUtc });
+            entity.Property(l => l.OperationType).IsRequired().HasMaxLength(100);
+            entity.Property(l => l.Actor).IsRequired().HasMaxLength(256);
+            entity.Property(l => l.IncidentType).HasMaxLength(50);
+            entity.Property(l => l.Description).HasMaxLength(1000);
+            entity.Property(l => l.PhotoPath).HasMaxLength(500);
+            entity.Property(l => l.CopyStatusResult).HasMaxLength(50);
+            entity.Property(l => l.CloseReason).HasMaxLength(50);
+            entity.Property(l => l.OverdueFee).HasColumnType("decimal(18,2)");
+            entity.Property(l => l.RecordedCoverPrice).HasColumnType("decimal(18,2)");
+            entity.Property(l => l.AppliedRate).HasColumnType("decimal(6,2)");
+            entity.Property(l => l.InitialCompensationAmount).HasColumnType("decimal(18,2)");
+            entity.Property(l => l.FromAmount).HasColumnType("decimal(18,2)");
+            entity.Property(l => l.ToAmount).HasColumnType("decimal(18,2)");
+            entity.Property(l => l.AdjustmentReason).HasMaxLength(1000);
+            entity.Property(l => l.Summary).IsRequired().HasMaxLength(1000);
+            entity.Property(l => l.OccurredAtUtc).HasColumnType("datetime2");
+            entity.HasOne(l => l.BookLoan)
+                .WithMany()
+                .HasForeignKey(l => l.BookLoanId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(l => l.BookIncident)
+                .WithMany()
+                .HasForeignKey(l => l.BookIncidentId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(l => l.BookCopy)
+                .WithMany()
+                .HasForeignKey(l => l.BookCopyId)
+                .OnDelete(DeleteBehavior.Restrict);
         });
     }
 }

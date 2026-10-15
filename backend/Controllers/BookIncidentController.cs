@@ -32,6 +32,29 @@ public sealed class BookIncidentController(
         return Ok(copies);
     }
 
+    [HttpGet("BookIncident/History/{loanId:long}")]
+    [HttpGet("BookIncident/LoanHistory/{loanId:long}")]
+    public async Task<IActionResult> History(long loanId, CancellationToken ct = default)
+    {
+        var model = await incidentService.GetLoanIncidentHistoryAsync(loanId, ct);
+        if (model == null)
+        {
+            return NotFound("Không tìm thấy thông tin phiếu mượn.");
+        }
+        return View("History", model);
+    }
+
+    [HttpGet("api/book-incidents/loans/{loanId:long}/history")]
+    public async Task<IActionResult> HistoryApi(long loanId, CancellationToken ct = default)
+    {
+        var model = await incidentService.GetLoanIncidentHistoryAsync(loanId, ct);
+        if (model == null)
+        {
+            return NotFound(new { success = false, message = "Không tìm thấy thông tin phiếu mượn." });
+        }
+        return Ok(new { success = true, data = model });
+    }
+
     [HttpPost]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Record(

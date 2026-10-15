@@ -133,6 +133,22 @@ public sealed class CompensationService(ApplicationDbContext db) : ICompensation
         };
 
         db.BookIncidentCompensations.Add(compensation);
+
+        db.BookIncidentAuditLogs.Add(new BookIncidentAuditLog
+        {
+            BookLoanId = incident.BookLoanId,
+            BookIncidentId = incident.Id,
+            BookCopyId = incident.BookCopyId,
+            OperationType = IncidentAuditOperations.CalculateCompensation,
+            Actor = "Hệ thống / Quản lý",
+            OccurredAtUtc = DateTime.UtcNow,
+            RecordedCoverPrice = coverPrice.Value,
+            AppliedRate = appliedRate,
+            InitialCompensationAmount = initialAmount,
+            ToAmount = initialAmount,
+            Summary = $"Tính khoản bồi thường ban đầu: {initialAmount:N0}đ (Giá bìa: {coverPrice.Value:N0}đ, Hệ số: {appliedRate})."
+        });
+
         await db.SaveChangesAsync(cancellationToken);
 
         return CompensationOutcome.Success(compensation);
@@ -182,10 +198,13 @@ public sealed class CompensationService(ApplicationDbContext db) : ICompensation
             .Include(c => c.AdjustmentHistories)
             .FirstOrDefaultAsync(c => c.BookIncidentId == request.IncidentId, cancellationToken);
 
+        BookIncident? incident = null;
+        decimal fromAmount = 0m;
+
         if (comp is null)
         {
             // Kiểm tra xem incident có tồn tại không
-            var incident = await db.BookIncidents
+            incident = await db.BookIncidents
                 .Include(i => i.BookCopy)
                 .FirstOrDefaultAsync(i => i.Id == request.IncidentId, cancellationToken);
 
@@ -193,6 +212,8 @@ public sealed class CompensationService(ApplicationDbContext db) : ICompensation
             {
                 return CompensationOutcome.Failed("Không tìm thấy thông tin sự cố tương ứng.");
             }
+
+            fromAmount = 0m;
 
             // Trường hợp trước đó thiếu giá bìa/chưa có hệ số, nay thủ thư thiết lập số tiền ban đầu bằng điều chỉnh
             comp = new BookIncidentCompensation
@@ -224,7 +245,7 @@ public sealed class CompensationService(ApplicationDbContext db) : ICompensation
         else
         {
             // Đã có bồi thường -> ghi nhận lịch sử điều chỉnh
-            var fromAmount = comp.CurrentAmount;
+            fromAmount = comp.CurrentAmount;
             comp.CurrentAmount = request.NewAmount;
             comp.IsAdjusted = true;
             comp.AdjustmentReason = normalizedReason;
@@ -241,6 +262,30 @@ public sealed class CompensationService(ApplicationDbContext db) : ICompensation
                 AdjustedAtUtc = DateTime.UtcNow
             });
         }
+
+        var effectiveLoanId = incident?.BookLoanId
+            ?? (comp.BookIncident?.BookLoanId != null && comp.BookIncident.BookLoanId > 0
+                ? comp.BookIncident.BookLoanId
+                : await db.BookIncidents.Where(i => i.Id == comp.BookIncidentId).Select(i => i.BookLoanId).FirstOrDefaultAsync(cancellationToken));
+
+        var effectiveCopyId = incident?.BookCopyId
+            ?? (comp.BookIncident?.BookCopyId != null && comp.BookIncident.BookCopyId > 0
+                ? comp.BookIncident.BookCopyId
+                : await db.BookIncidents.Where(i => i.Id == comp.BookIncidentId).Select(i => i.BookCopyId).FirstOrDefaultAsync(cancellationToken));
+
+        db.BookIncidentAuditLogs.Add(new BookIncidentAuditLog
+        {
+            BookLoanId = effectiveLoanId,
+            BookIncidentId = comp.BookIncidentId,
+            BookCopyId = effectiveCopyId,
+            OperationType = IncidentAuditOperations.AdjustCompensation,
+            Actor = staffEmail,
+            OccurredAtUtc = DateTime.UtcNow,
+            FromAmount = fromAmount,
+            ToAmount = request.NewAmount,
+            AdjustmentReason = normalizedReason,
+            Summary = $"Điều chỉnh tiền bồi thường từ {fromAmount:N0}đ thành {request.NewAmount:N0}đ. Lý do: {normalizedReason}"
+        });
 
         db.AuditLogs.Add(AuditLogService.Create(
             staffEmail,

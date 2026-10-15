@@ -263,6 +263,58 @@ public sealed class BookIncidentService(ApplicationDbContext db) : IBookIncident
                 }
             }
 
+            // Ghi nhật ký nghiệp vụ không thể sửa/xóa (Lát 4)
+            // 1. Nhật ký ghi nhận sự cố sách
+            db.BookIncidentAuditLogs.Add(new BookIncidentAuditLog
+            {
+                BookLoanId = loan.Id,
+                BookIncident = incident,
+                BookCopyId = copy.Id,
+                OperationType = IncidentAuditOperations.RecordIncident,
+                Actor = staffActor,
+                OccurredAtUtc = nowUtc,
+                IncidentType = normalizedType,
+                Description = normalizedDescription,
+                PhotoPath = savedPhotoPath,
+                CopyStatusResult = BookCopyStatus.Removed,
+                Summary = $"Ghi nhận sách {normalizedType}: Bản sao {copy.CopyCode} đã chuyển sang trạng thái Đã loại khỏi kho. Mô tả: {normalizedDescription}"
+            });
+
+            // 2. Nhật ký đóng phiếu mượn do sự cố và bảo toàn phí trễ hạn
+            db.BookIncidentAuditLogs.Add(new BookIncidentAuditLog
+            {
+                BookLoanId = loan.Id,
+                BookIncident = incident,
+                BookCopyId = copy.Id,
+                OperationType = IncidentAuditOperations.CloseLoan,
+                Actor = staffActor,
+                OccurredAtUtc = nowUtc,
+                CloseReason = normalizedType,
+                IncidentDate = incidentDate,
+                OverdueFee = finalOverdueFee,
+                InitialCompensationAmount = compensation?.InitialAmount,
+                Summary = $"Đóng phiếu mượn #{loan.Id} do {normalizedType}. Ngày sự cố: {incidentDate:yyyy-MM-dd}. Phí trễ hạn bảo toàn: {finalOverdueFee:N0}đ."
+            });
+
+            // 3. Nhật ký tính khoản bồi thường ban đầu (nếu có đủ giá bìa và hệ số)
+            if (compensation != null)
+            {
+                db.BookIncidentAuditLogs.Add(new BookIncidentAuditLog
+                {
+                    BookLoanId = loan.Id,
+                    BookIncident = incident,
+                    BookCopyId = copy.Id,
+                    OperationType = IncidentAuditOperations.CalculateCompensation,
+                    Actor = staffActor,
+                    OccurredAtUtc = nowUtc,
+                    RecordedCoverPrice = copy.CoverPrice,
+                    AppliedRate = compensation.AppliedRate,
+                    InitialCompensationAmount = compensation.InitialAmount,
+                    ToAmount = compensation.InitialAmount,
+                    Summary = $"Tính khoản bồi thường ban đầu: {compensation.InitialAmount:N0}đ (Giá bìa: {copy.CoverPrice:N0}đ, Hệ số: {compensation.AppliedRate})."
+                });
+            }
+
             // Ghi nhật ký hệ thống (AuditLog)
             db.AuditLogs.Add(AuditLogService.Create(
                 staffActor,
@@ -304,6 +356,45 @@ public sealed class BookIncidentService(ApplicationDbContext db) : IBookIncident
             .OrderByDescending(i => i.CreatedAtUtc)
             .Take(count)
             .ToListAsync(cancellationToken);
+    }
+
+    public async Task<LoanIncidentHistoryViewModel?> GetLoanIncidentHistoryAsync(long loanId, CancellationToken cancellationToken = default)
+    {
+        if (loanId <= 0) return null;
+
+        var loan = await db.BookLoans
+            .AsNoTracking()
+            .Include(l => l.Book)
+            .Include(l => l.BookCopy)
+            .Include(l => l.ReaderAccount)
+            .FirstOrDefaultAsync(l => l.Id == loanId, cancellationToken);
+
+        if (loan == null) return null;
+
+        var incident = await db.BookIncidents
+            .AsNoTracking()
+            .Include(i => i.Compensation).ThenInclude(c => c!.AdjustmentHistories)
+            .FirstOrDefaultAsync(i => i.BookLoanId == loanId, cancellationToken);
+
+        var compensation = incident?.Compensation ?? await db.BookIncidentCompensations
+            .AsNoTracking()
+            .Include(c => c.AdjustmentHistories)
+            .FirstOrDefaultAsync(c => c.BookIncidentId == (incident != null ? incident.Id : 0), cancellationToken);
+
+        var logs = await db.BookIncidentAuditLogs
+            .AsNoTracking()
+            .Where(l => l.BookLoanId == loanId)
+            .OrderByDescending(l => l.OccurredAtUtc)
+            .ThenByDescending(l => l.Id)
+            .ToListAsync(cancellationToken);
+
+        return new LoanIncidentHistoryViewModel
+        {
+            Loan = loan,
+            Incident = incident,
+            Compensation = compensation,
+            Logs = logs
+        };
     }
 }
 

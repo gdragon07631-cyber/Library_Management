@@ -369,7 +369,10 @@
                                     }
                                 </td>
                                 <td><small class="text-muted">@inc.CreatedAtUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</small></td>
-                                <td class="text-end">
+                                <td class="text-end text-nowrap">
+                                    <a asp-action="History" asp-route-loanId="@inc.BookLoanId" class="btn btn-sm btn-outline-secondary me-1" title="Xem lịch sử nghiệp vụ sự cố & bồi thường">
+                                        <i class="bi bi-clock-history"></i> Lịch sử
+                                    </a>
                                     @if (inc.Compensation != null)
                                     {
                                         <button type="button" class="btn btn-sm btn-outline-primary btn-adjust-compensation"
@@ -383,10 +386,6 @@
                                                 data-reason="@(inc.Compensation.AdjustmentReason ?? "")">
                                             Điều chỉnh
                                         </button>
-                                    }
-                                    else
-                                    {
-                                        <span class="text-muted small">-</span>
                                     }
                                 </td>
                             </tr>
