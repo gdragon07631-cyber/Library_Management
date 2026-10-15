@@ -26,6 +26,7 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     public DbSet<HoldPickupExpiryRun> HoldPickupExpiryRuns => Set<HoldPickupExpiryRun>();
     public DbSet<BookLoan> BookLoans => Set<BookLoan>();
     public DbSet<ReaderFee> ReaderFees => Set<ReaderFee>();
+    public DbSet<FeeWaiverRequest> FeeWaiverRequests => Set<FeeWaiverRequest>();
     public DbSet<DirectLoanOperation> DirectLoanOperations => Set<DirectLoanOperation>();
     public DbSet<DirectLoanOperationItem> DirectLoanOperationItems => Set<DirectLoanOperationItem>();
     public DbSet<LoanContactHistory> LoanContactHistories => Set<LoanContactHistory>();
@@ -344,11 +345,33 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
             entity.HasIndex(fee => fee.BookLoanId).IsUnique().HasFilter("[BookLoanId] IS NOT NULL");
             entity.Property(fee => fee.Amount).HasColumnType("decimal(18,2)");
             entity.Property(fee => fee.PaidAmount).HasColumnType("decimal(18,2)").HasDefaultValue(0m);
+            entity.Property(fee => fee.WaivedAmount).HasColumnType("decimal(18,2)").HasDefaultValue(0m);
             entity.Property(fee => fee.Status).HasMaxLength(50);
             entity.Property(fee => fee.Description).HasMaxLength(500);
             entity.Property(fee => fee.CreatedAtUtc).HasColumnType("datetime2");
-            entity.HasOne<ReaderAccount>().WithMany().HasForeignKey(fee => fee.ReaderAccountId)
+            entity.HasOne(fee => fee.ReaderAccount).WithMany().HasForeignKey(fee => fee.ReaderAccountId)
                 .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<FeeWaiverRequest>(entity =>
+        {
+            entity.HasIndex(request => new { request.Status, request.RequestedAtUtc });
+            entity.HasIndex(request => new { request.ReaderFeeId, request.Status });
+            entity.Property(request => request.OriginalFeeAmount).HasColumnType("decimal(18,2)");
+            entity.Property(request => request.FeeBalanceAtRequest).HasColumnType("decimal(18,2)");
+            entity.Property(request => request.ReaderBalanceAtRequest).HasColumnType("decimal(18,2)");
+            entity.Property(request => request.RequestedAmount).HasColumnType("decimal(18,2)");
+            entity.Property(request => request.Reason).HasMaxLength(1000).IsRequired();
+            entity.Property(request => request.Status).HasMaxLength(20).IsRequired();
+            entity.Property(request => request.ReviewNote).HasMaxLength(1000);
+            entity.Property(request => request.RequestedAtUtc).HasColumnType("datetime2");
+            entity.Property(request => request.ReviewedAtUtc).HasColumnType("datetime2");
+            entity.HasOne(request => request.ReaderFee).WithMany()
+                .HasForeignKey(request => request.ReaderFeeId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(request => request.RequestedByAdminAccount).WithMany()
+                .HasForeignKey(request => request.RequestedByAdminAccountId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(request => request.ReviewedByAdminAccount).WithMany()
+                .HasForeignKey(request => request.ReviewedByAdminAccountId).OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<LoanContactHistory>(entity =>

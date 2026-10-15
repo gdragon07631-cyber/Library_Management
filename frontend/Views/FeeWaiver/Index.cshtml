@@ -1,0 +1,77 @@
+@model FeeWaiverLibrarianIndexViewModel
+@{
+    ViewData["Title"] = "Đề nghị miễn giảm";
+}
+<div class="container-fluid py-4 px-4">
+    <div class="mb-4">
+        <h1 class="h3 text-primary fw-bold">Đề nghị miễn giảm khoản phải thu</h1>
+        <p class="text-muted mb-0">Gửi đề nghị để Quản lý thư viện xem xét. Số dư chỉ thay đổi sau khi đề nghị được duyệt.</p>
+    </div>
+    @if (TempData["SuccessMessage"] is string success) { <div class="alert alert-success">@success</div> }
+    @if (TempData["ErrorMessage"] is string error) { <div class="alert alert-danger">@error</div> }
+    <div asp-validation-summary="All" class="text-danger mb-3"></div>
+
+    <section class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white"><h2 class="h5 mb-0">Khoản phải thu còn số dư</h2></div>
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light"><tr><th>Khoản thu / phiếu</th><th>Bạn đọc</th><th>Phí gốc</th><th>Đã nộp</th><th>Đã miễn</th><th>Còn lại khoản thu</th><th>Dư nợ bạn đọc</th><th>Đề nghị</th></tr></thead>
+                <tbody>
+                @if (Model.EligibleReceivables.Count == 0)
+                {
+                    <tr><td colspan="8" class="text-center text-muted py-4">Không có khoản phải thu đủ điều kiện đề nghị.</td></tr>
+                }
+                @foreach (var fee in Model.EligibleReceivables)
+                {
+                    <tr>
+                        <td><strong>#@fee.Id</strong><div class="small text-muted">@(fee.LoanId is null ? "Khoản thu khác" : $"Phiếu mượn #{fee.LoanId}") · @fee.BookTitle</div></td>
+                        <td>@fee.ReaderName<div class="small text-muted">@fee.ReaderCode</div></td>
+                        <td>@fee.OriginalFeeAmount.ToString("N0") đ</td><td>@fee.PaidAmount.ToString("N0") đ</td><td>@fee.WaivedAmount.ToString("N0") đ</td>
+                        <td><strong>@fee.FeeRemaining.ToString("N0") đ</strong></td><td>@fee.ReaderOutstandingBalance.ToString("N0") đ</td>
+                        <td style="min-width: 19rem">
+                            <form asp-action="Create" method="post" class="d-grid gap-2">
+                                @Html.AntiForgeryToken()
+                                <input type="hidden" name="ReaderFeeId" value="@fee.Id" />
+                                <input class="form-control" type="number" name="RequestedAmount" min="0.01" max="@fee.FeeRemaining" step="0.01" value="@(Model.NewRequest.ReaderFeeId == fee.Id && Model.NewRequest.RequestedAmount > 0 ? Model.NewRequest.RequestedAmount.ToString(System.Globalization.CultureInfo.InvariantCulture) : "")" placeholder="Số tiền đề nghị" required />
+                                <textarea class="form-control" name="Reason" rows="2" maxlength="1000" placeholder="Lý do đề nghị" required>@(Model.NewRequest.ReaderFeeId == fee.Id ? Model.NewRequest.Reason : "")</textarea>
+                                <button class="btn btn-outline-primary" type="submit">Gửi đề nghị</button>
+                            </form>
+                        </td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <section class="card border-0 shadow-sm">
+        <div class="card-header bg-white"><h2 class="h5 mb-0">Đề nghị do tôi tạo</h2></div>
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light"><tr><th>Thời điểm</th><th>Khoản thu / bạn đọc</th><th>Phí gốc</th><th>Đề nghị</th><th>Lý do</th><th>Trạng thái</th><th>Người xử lý</th></tr></thead>
+                <tbody>
+                @if (Model.Requests.Count == 0) { <tr><td colspan="7" class="text-center text-muted py-4">Chưa có đề nghị nào.</td></tr> }
+                @foreach (var request in Model.Requests)
+                {
+                    <tr>
+                        <td>@request.RequestedAtUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</td>
+                        <td>Khoản #@request.ReaderFeeId · @request.ReaderName<div class="small text-muted">@(request.LoanId is null ? "" : $"Phiếu #{request.LoanId}")</div></td>
+                        <td>@request.OriginalFeeAmount.ToString("N0") đ</td><td>@request.RequestedAmount.ToString("N0") đ</td>
+                        <td>@request.Reason</td><td>@StatusText(request.Status)</td>
+                        <td>@(request.ReviewedBy ?? "Chưa xử lý")@if (request.ReviewNote is not null) { <div class="small text-muted">@request.ReviewNote</div> }</td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    </section>
+</div>
+@functions {
+    private static string StatusText(string status) => status switch
+    {
+        FeeWaiverRequestStatus.Pending => "Chờ duyệt",
+        FeeWaiverRequestStatus.Approved => "Đã duyệt",
+        FeeWaiverRequestStatus.Rejected => "Đã từ chối",
+        _ => status
+    };
+}

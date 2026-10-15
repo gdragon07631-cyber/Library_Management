@@ -1,0 +1,67 @@
+@model FeeWaiverHistoryViewModel
+@{
+    ViewData["Title"] = $"Đề nghị miễn giảm #{Model.Id}";
+    var isPending = Model.Status == FeeWaiverRequestStatus.Pending;
+}
+<div class="container py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div><h1 class="h3 text-primary fw-bold mb-1">Đề nghị miễn giảm #@Model.Id</h1><span class="badge text-bg-secondary">@StatusText(Model.Status)</span></div>
+        <a class="btn btn-outline-secondary" asp-action="Index">Danh sách chờ duyệt</a>
+    </div>
+    @if (TempData["SuccessMessage"] is string success) { <div class="alert alert-success">@success</div> }
+    @if (TempData["ErrorMessage"] is string error) { <div class="alert alert-danger">@error</div> }
+    <section class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white"><h2 class="h5 mb-0">Thông tin khoản thu và đề nghị</h2></div>
+        <div class="card-body">
+            <dl class="row mb-0">
+                <dt class="col-sm-4">Khoản phải thu / phiếu mượn</dt><dd class="col-sm-8">#@Model.ReaderFeeId · @(Model.LoanId is null ? "Khoản thu khác" : $"Phiếu #{Model.LoanId}")</dd>
+                <dt class="col-sm-4">Bạn đọc</dt><dd class="col-sm-8">@Model.ReaderName (@Model.ReaderCode)</dd>
+                <dt class="col-sm-4">Sách / bản sao</dt><dd class="col-sm-8">@(Model.BookTitle ?? "—") · @(Model.CopyCode ?? "—")</dd>
+                <dt class="col-sm-4">Phí gốc đã ghi nhận</dt><dd class="col-sm-8">@Model.OriginalFeeAmount.ToString("N0") đ</dd>
+                <dt class="col-sm-4">Số dư khoản thu lúc đề nghị</dt><dd class="col-sm-8">@Model.FeeBalanceAtRequest.ToString("N0") đ</dd>
+                <dt class="col-sm-4">Số dư bạn đọc lúc đề nghị</dt><dd class="col-sm-8">@Model.ReaderBalanceAtRequest.ToString("N0") đ</dd>
+                <dt class="col-sm-4">Số tiền đề nghị miễn</dt><dd class="col-sm-8"><strong>@Model.RequestedAmount.ToString("N0") đ</strong></dd>
+                <dt class="col-sm-4">Lý do</dt><dd class="col-sm-8">@Model.Reason</dd>
+                <dt class="col-sm-4">Người đề nghị / thời điểm</dt><dd class="col-sm-8">@Model.RequestedBy · @Model.RequestedAtUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss")</dd>
+                <dt class="col-sm-4">Số dư hiện tại khoản thu</dt><dd class="col-sm-8">@Model.FeeRemaining.ToString("N0") đ</dd>
+                <dt class="col-sm-4">Dư nợ bạn đọc hiện tại</dt><dd class="col-sm-8">@Model.ReaderOutstandingBalance.ToString("N0") đ</dd>
+                @if (Model.ReviewedAtUtc.HasValue)
+                {
+                    <dt class="col-sm-4">Kết quả xử lý</dt><dd class="col-sm-8">@StatusText(Model.Status) · @Model.ReviewedBy · @Model.ReviewedAtUtc.Value.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss")</dd>
+                    <dt class="col-sm-4">Ghi chú xử lý</dt><dd class="col-sm-8">@(Model.ReviewNote ?? "—")</dd>
+                    <dt class="col-sm-4">Đã miễn giảm lũy kế</dt><dd class="col-sm-8">@Model.WaivedAmount.ToString("N0") đ</dd>
+                }
+            </dl>
+        </div>
+    </section>
+    @if (isPending)
+    {
+        <section class="card border-0 shadow-sm">
+            <div class="card-header bg-white"><h2 class="h5 mb-0">Xử lý đề nghị</h2></div>
+            <div class="card-body">
+                <p class="text-muted">Duyệt sẽ áp dụng đúng số tiền đã đề nghị. Ghi chú từ chối không bắt buộc.</p>
+                <form asp-action="Approve" asp-route-id="@Model.Id" method="post" class="mb-3">
+                    @Html.AntiForgeryToken()
+                    <label class="form-label" for="approveNote">Ghi chú duyệt (không bắt buộc)</label>
+                    <textarea class="form-control mb-2" id="approveNote" name="ReviewNote" maxlength="1000" rows="2"></textarea>
+                    <button class="btn btn-success" type="submit">Duyệt @Model.RequestedAmount.ToString("N0") đ</button>
+                </form>
+                <form asp-action="Reject" asp-route-id="@Model.Id" method="post">
+                    @Html.AntiForgeryToken()
+                    <label class="form-label" for="rejectNote">Lý do từ chối (không bắt buộc)</label>
+                    <textarea class="form-control mb-2" id="rejectNote" name="ReviewNote" maxlength="1000" rows="2"></textarea>
+                    <button class="btn btn-outline-danger" type="submit">Từ chối đề nghị</button>
+                </form>
+            </div>
+        </section>
+    }
+</div>
+@functions {
+    private static string StatusText(string status) => status switch
+    {
+        FeeWaiverRequestStatus.Pending => "Chờ duyệt",
+        FeeWaiverRequestStatus.Approved => "Đã duyệt",
+        FeeWaiverRequestStatus.Rejected => "Đã từ chối",
+        _ => status
+    };
+}

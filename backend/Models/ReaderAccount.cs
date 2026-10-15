@@ -11,11 +11,13 @@ public sealed class ReaderFee
     public long? BookLoanId { get; set; }
     public decimal Amount { get; set; }
     public decimal PaidAmount { get; set; }
+    public decimal WaivedAmount { get; set; }
     public bool IsPaid { get; set; }
     public string? Status { get; set; }
     public string? Description { get; set; }
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
     public BookLoan? BookLoan { get; set; }
+    public ReaderAccount? ReaderAccount { get; set; }
 
     public decimal RemainingAmount
     {
@@ -23,7 +25,7 @@ public sealed class ReaderFee
         {
             if (IsPaid || string.Equals(Status, "Đã thanh toán", StringComparison.OrdinalIgnoreCase) || string.Equals(Status, "Da thanh toan", StringComparison.OrdinalIgnoreCase))
                 return 0m;
-            var remaining = Amount - PaidAmount;
+            var remaining = Amount - PaidAmount - WaivedAmount;
             return remaining > 0m ? remaining : 0m;
         }
     }

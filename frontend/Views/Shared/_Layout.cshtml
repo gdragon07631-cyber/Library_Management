@@ -74,7 +74,14 @@
             {
                 <a class="side-link @Active("AuditLog")" aria-current="@Current("AuditLog")" asp-controller="AuditLog" asp-action="Index"><span>☰</span> Nhật ký hoạt động</a>
             }
-            <div class="sidebar-bottom"><span class="status-dot"></span> Hệ thống đang hoạt động</div>
+            @if (role == AccountRoles.LibraryManager)
+            {
+                <a class="side-link @Active("FeeWaiverReview")" aria-current="@Current("FeeWaiverReview")" asp-controller="FeeWaiverReview" asp-action="Index"><span>✓</span> Duyệt miễn giảm</a>
+            }
+            @if (isLibrarian)
+            {
+                <a class="side-link @Active("FeeWaiver")" aria-current="@Current("FeeWaiver")" asp-controller="FeeWaiver" asp-action="Index"><span>↗</span> Đề nghị miễn giảm</a>
+            }            <div class="sidebar-bottom"><span class="status-dot"></span> Hệ thống đang hoạt động</div>
         </aside>
 
         <div class="main-shell">
