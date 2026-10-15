@@ -39,6 +39,7 @@ builder.Services.AddScoped<ICompensationService, CompensationService>();
 builder.Services.AddScoped<DirectLoanService>();
 builder.Services.AddScoped<OverdueReaderExportService>();
 builder.Services.AddScoped<ILoanContactHistoryService, LoanContactHistoryService>();
+builder.Services.AddScoped<ILoanDueReminderService, LoanDueReminderService>();
 builder.Services.AddScoped<IBookLoanDetailsService, BookLoanDetailsService>();
 builder.Services.AddScoped<ILoanLookupService, LoanLookupService>();
 builder.Services.AddScoped<IAuditLogService, AuditLogService>();
@@ -56,6 +57,7 @@ builder.Services.AddScoped<IReaderAccountAdminService, ReaderAccountAdminService
 builder.Services.AddSingleton<IPermissionMatrixService, PermissionMatrixService>();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddHostedService<HoldPickupExpiryScheduledWorker>();
+builder.Services.AddHostedService<LoanDueReminderWorker>();
 builder.Services.Configure<BookCopyLabelPrintOptions>(builder.Configuration.GetSection("BookCopyLabels"));
 builder.Services.AddDataProtection()
     .PersistKeysToFileSystem(new DirectoryInfo(Path.Combine(builder.Environment.ContentRootPath, "Data", "Keys")));
