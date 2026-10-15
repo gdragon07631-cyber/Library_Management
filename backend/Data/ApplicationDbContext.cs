@@ -25,6 +25,7 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     public DbSet<BookHold> BookHolds => Set<BookHold>();
     public DbSet<HoldPickupExpiryRun> HoldPickupExpiryRuns => Set<HoldPickupExpiryRun>();
     public DbSet<BookLoan> BookLoans => Set<BookLoan>();
+    public DbSet<OverdueReminderLog> OverdueReminderLogs => Set<OverdueReminderLog>();
     public DbSet<ReaderFee> ReaderFees => Set<ReaderFee>();
     public DbSet<FeeWaiverRequest> FeeWaiverRequests => Set<FeeWaiverRequest>();
     public DbSet<DirectLoanOperation> DirectLoanOperations => Set<DirectLoanOperation>();
@@ -337,6 +338,15 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
                 .HasForeignKey(loan => loan.CreatedByAdminAccountId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne(loan => loan.OverdueReceivable).WithOne(fee => fee.BookLoan)
                 .HasForeignKey<ReaderFee>(fee => fee.BookLoanId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<OverdueReminderLog>(entity =>
+        {
+            entity.HasIndex(log => new { log.BookLoanId, log.MilestoneDays }).IsUnique();
+            entity.Property(log => log.BusinessDate).HasColumnType("date");
+            entity.Property(log => log.SentAtUtc).HasColumnType("datetime2");
+            entity.Property(log => log.Status).HasMaxLength(20).IsRequired();
+            entity.Property(log => log.ErrorMessage).HasMaxLength(500);
         });
 
         modelBuilder.Entity<ReaderFee>(entity =>
