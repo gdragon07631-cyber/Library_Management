@@ -29,6 +29,15 @@
                     </div>
                     <span asp-validation-for="LoanDays" class="text-danger"></span>
                 </div>
+                <div class="mb-3">
+                    <label asp-for="DailyOverdueFee" class="form-label fw-semibold"></label>
+                    <div class="input-group">
+                        <input asp-for="DailyOverdueFee" class="form-control" type="number" min="0" max="1000000000" step="0.01" />
+                        <span class="input-group-text">VNĐ/ngày</span>
+                    </div>
+                    <span asp-validation-for="DailyOverdueFee" class="text-danger"></span>
+                    <div class="form-text">Phí dự kiến được làm tròn đến 1.000 VNĐ gần nhất; đúng điểm giữa làm tròn lên.</div>
+                </div>
                 @if (Model.UpdatedAtUtc is DateTime updatedAt)
                 {
                     <p class="text-muted small">Cập nhật lần cuối: @DateTime.SpecifyKind(updatedAt, DateTimeKind.Utc).ToLocalTime().ToString("dd/MM/yyyy HH:mm")</p>

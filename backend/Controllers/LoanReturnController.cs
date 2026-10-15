@@ -12,7 +12,7 @@ public sealed class LoanReturnController(IBookLoanService loans) : Controller
     public IActionResult Index() => View();
 
     [HttpGet("api/loan-returns/lookup")]
-    public async Task<IActionResult> Lookup([FromQuery] string? barcode, CancellationToken ct = default)
+    public async Task<IActionResult> Lookup([FromQuery] string? barcode, [FromQuery] DateOnly? returnDate, CancellationToken ct = default)
     {
         var code = barcode?.Trim();
         if (string.IsNullOrWhiteSpace(code))
@@ -22,7 +22,8 @@ public sealed class LoanReturnController(IBookLoanService loans) : Controller
 
         try
         {
-            var outcome = await loans.LookupByCopyCodeAsync(code, DateOnly.FromDateTime(DateTime.Today), ct);
+            var effectiveReturnDate = returnDate ?? LibraryCalendarDate.Today();
+            var outcome = await loans.LookupByCopyCodeAsync(code, effectiveReturnDate, ct);
             return outcome.Status switch
             {
                 BookCopyLoanLookupStatus.CopyNotFound => NotFound(new
@@ -36,7 +37,8 @@ public sealed class LoanReturnController(IBookLoanService loans) : Controller
                 BookCopyLoanLookupStatus.Borrowed => Ok(new
                 {
                     status = "borrowed", outcome.LoanId, outcome.CopyCode, outcome.ReaderName,
-                    outcome.BookTitle, outcome.DueDate, outcome.OverdueDays
+                    outcome.BookTitle, outcome.DueDate, outcome.OverdueDays,
+                    returnDate = effectiveReturnDate, outcome.DailyOverdueFee, outcome.EstimatedOverdueFee
                 }),
                 BookCopyLoanLookupStatus.UnassignedOpenLoan => Conflict(new
                 {
@@ -50,6 +52,10 @@ public sealed class LoanReturnController(IBookLoanService loans) : Controller
             };
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+        catch (InvalidOperationException exception)
+        {
+            return Conflict(new { status = "scheduleNotConfigured", message = exception.Message });
+        }
         catch
         {
             return StatusCode(StatusCodes.Status500InternalServerError,
@@ -62,7 +68,8 @@ public sealed class LoanReturnController(IBookLoanService loans) : Controller
     {
         try
         {
-            var outcome = await loans.ReturnAsync(id, DateTime.UtcNow, ct);
+            var returnedAtUtc = DateTime.UtcNow;
+            var outcome = await loans.ReturnAsync(id, returnedAtUtc, ct);
             if (!outcome.IsSuccess)
             {
                 var status = outcome.IsNotFound ? StatusCodes.Status404NotFound : StatusCodes.Status409Conflict;
@@ -79,6 +86,10 @@ public sealed class LoanReturnController(IBookLoanService loans) : Controller
                 readerName = outcome.Loan.ReaderAccount?.FullName,
                 returnedAtUtc = outcome.Loan.ReturnedAtUtc,
                 loanStatus = "Đã trả",
+                dueDate = outcome.Loan.DueDate,
+                returnDate = LibraryCalendarDate.DateFromUtc(returnedAtUtc),
+                overdueDays = outcome.OverdueDays,
+                overdueFee = outcome.Loan.OverdueFee,
                 copyStatus = outcome.CopyStatus,
                 hasWaitingHold = outcome.AssignedHold is not null,
                 reservedFor = outcome.AssignedHold is null ? null : new

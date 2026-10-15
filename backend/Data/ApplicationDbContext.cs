@@ -438,10 +438,12 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
         {
             entity.Property(policy => policy.Id).ValueGeneratedNever();
             entity.Property(policy => policy.UpdatedAtUtc).HasColumnType("datetime2");
+            entity.Property(policy => policy.DailyOverdueFee).HasColumnType("decimal(18,2)");
             entity.HasData(new LoanPolicy
             {
                 Id = LoanPolicy.SingletonId,
                 LoanDays = LoanPolicy.DefaultLoanDays,
+                DailyOverdueFee = 2_000m,
                 UpdatedAtUtc = new DateTime(2026, 9, 29, 0, 0, 0, DateTimeKind.Utc)
             });
         });

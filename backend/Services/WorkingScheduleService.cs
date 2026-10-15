@@ -128,6 +128,28 @@ public sealed class WorkingScheduleService(ApplicationDbContext db) : IWorkingSc
         return openDates;
     }
 
+    public async Task<IReadOnlySet<DateOnly>> GetConfiguredOpenDatesAsync(
+        DateOnly fromInclusive, DateOnly toInclusive, CancellationToken cancellationToken = default)
+    {
+        if (fromInclusive > toInclusive) return new HashSet<DateOnly>();
+
+        var schedules = await db.WeeklyWorkingSchedules.AsNoTracking().ToListAsync(cancellationToken);
+        var days = Enum.GetValues<DayOfWeek>();
+        if (schedules.Count != days.Length || days.Any(day => schedules.Count(item => item.DayOfWeek == day) != 1))
+            throw new InvalidOperationException("Lịch mở cửa chưa được khai báo đủ bảy ngày; chưa thể tính ngày trễ theo lịch thư viện.");
+
+        var openByDay = schedules.ToDictionary(item => item.DayOfWeek, item => item.IsOpen);
+        var closures = await db.HolidayClosures.AsNoTracking()
+            .Where(item => item.HolidayDate >= fromInclusive && item.HolidayDate <= toInclusive)
+            .Select(item => item.HolidayDate)
+            .ToHashSetAsync(cancellationToken);
+
+        var openDates = new HashSet<DateOnly>();
+        for (var date = fromInclusive; date <= toInclusive; date = date.AddDays(1))
+            if (openByDay[date.DayOfWeek] && !closures.Contains(date)) openDates.Add(date);
+        return openDates;
+    }
+
     public async Task<DateOnly> AdjustLoanDueDateAsync(DateOnly proposedDate, CancellationToken cancellationToken = default)
     {
         // This path deliberately reads the configured calendar without EnsureSevenDaysAsync:

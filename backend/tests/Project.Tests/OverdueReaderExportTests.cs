@@ -511,7 +511,7 @@ public sealed class OverdueReaderExportTests : IDisposable
         Assert.Null(result.Content);
         Assert.Empty(await db.AuditLogs.ToListAsync());
         var filter = Assert.Single(typeof(OverdueReaderExportController).GetCustomAttributes(typeof(StaffOnlyAttribute), true).Cast<StaffOnlyAttribute>());
-        Assert.Equal([AccountRoles.LibraryManager, AccountRoles.SystemAdmin].Order(), filter.Roles.Order());
+        Assert.Equal(new[] { AccountRoles.LibraryManager, AccountRoles.SystemAdmin }.Order(), filter.Roles.Order());
     }
 
     [Theory]

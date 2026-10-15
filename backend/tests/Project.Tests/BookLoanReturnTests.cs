@@ -18,10 +18,19 @@ public sealed class BookLoanReturnTests
         await using var db = CreateInMemoryDb();
         var (loan, copy, otherCopy) = await SeedLoanAsync(db, dueDateOffset);
         var returnedAt = DateTime.UtcNow;
+        var actualReturnDate = LibraryCalendarDate.DateFromUtc(returnedAt);
+        var calculation = OverdueFeeCalculator.Calculate(loan.DueDate, actualReturnDate, 2_000m,
+            Enumerable.Range(1, Math.Max(0, actualReturnDate.DayNumber - loan.DueDate.DayNumber))
+                .Select(day => loan.DueDate.AddDays(day)).ToHashSet());
+        var preview = await CreateService(db).LookupByCopyCodeAsync(copy.CopyCode, LibraryCalendarDate.DateFromUtc(returnedAt));
+        Assert.Equal(BookCopyLoanLookupStatus.Borrowed, preview.Status);
+        Assert.Equal(calculation.OverdueDays, preview.OverdueDays);
+        Assert.Equal(calculation.EstimatedFee, preview.EstimatedOverdueFee);
         var result = await CreateService(db).ReturnAsync(loan.Id, returnedAt);
 
         Assert.True(result.IsSuccess);
         Assert.Equal(returnedAt, (await db.BookLoans.AsNoTracking().SingleAsync()).ReturnedAtUtc);
+        Assert.Equal(calculation.EstimatedFee, (await db.BookLoans.AsNoTracking().SingleAsync()).OverdueFee);
         Assert.Equal(BookCopyStatuses.Available, (await db.BookCopies.AsNoTracking().SingleAsync(item => item.Id == copy.Id)).Status);
         Assert.Equal(BookCopyStatuses.Borrowed, (await db.BookCopies.AsNoTracking().SingleAsync(item => item.Id == otherCopy.Id)).Status);
         Assert.Equal(BookCopyLoanLookupStatus.NotBorrowed,
@@ -227,6 +236,10 @@ public sealed class BookLoanReturnTests
     private static async Task<(BookLoan Loan, BookCopy Copy, BookCopy OtherCopy)> SeedLoanAsync(
         ApplicationDbContext db, int dueDateOffset)
     {
+        if (!await db.LoanPolicies.AnyAsync())
+            db.LoanPolicies.Add(new LoanPolicy { Id = LoanPolicy.SingletonId, DailyOverdueFee = 2_000m });
+        if (!await db.WeeklyWorkingSchedules.AnyAsync())
+            db.WeeklyWorkingSchedules.AddRange(Enum.GetValues<DayOfWeek>().Select(day => new WeeklyWorkingSchedule { DayOfWeek = day, IsOpen = true }));
         var book = new Book { Id = 1, Title = "Return test book", AuthorId = 1 };
         var reader = new ReaderAccount
         {

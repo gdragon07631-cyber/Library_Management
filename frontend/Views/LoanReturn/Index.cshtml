@@ -1,5 +1,6 @@
 @{
     ViewData["Title"] = "Nhận trả sách";
+    var returnDate = Project.Services.LibraryCalendarDate.Today().ToString("yyyy-MM-dd");
 }
 <div class="container-fluid py-4 px-4">
     <div class="mb-4">
@@ -13,6 +14,11 @@
         <div class="card-body">
             <form id="copyLoanLookupForm" data-lookup-url="@Url.Action("Lookup", "LoanReturn")" data-return-url="/api/loan-returns">
                 @Html.AntiForgeryToken()
+                <div class="mb-3" style="max-width: 18rem">
+                    <label for="returnDatePreview" class="form-label fw-semibold">Ngày trả thử</label>
+                    <input id="returnDatePreview" type="date" class="form-control" value="@returnDate" />
+                    <div class="form-text">Dùng để xem trước. Khi xác nhận, hệ thống ghi nhận ngày thực tế tại thời điểm nhận trả.</div>
+                </div>
                 <label for="copyLoanBarcode" class="form-label fw-semibold">Mã vạch bản sao</label>
                 <div class="input-group">
                     <input id="copyLoanBarcode" class="form-control" maxlength="50" autocomplete="off" autofocus placeholder="Quét hoặc nhập mã vạch" />

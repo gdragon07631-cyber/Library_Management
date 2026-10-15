@@ -57,6 +57,10 @@ public class BookIncidentSlice3Tests : IDisposable
         string copyStatus = BookCopyStatus.OnLoan,
         string physicalCondition = BookCopyCondition.Good)
     {
+        if (!await _db.LoanPolicies.AnyAsync())
+            _db.LoanPolicies.Add(new LoanPolicy { Id = LoanPolicy.SingletonId, DailyOverdueFee = 2_000m });
+        if (!await _db.WeeklyWorkingSchedules.AnyAsync())
+            _db.WeeklyWorkingSchedules.AddRange(Enum.GetValues<DayOfWeek>().Select(day => new WeeklyWorkingSchedule { DayOfWeek = day, IsOpen = true }));
         var author = new Author { Name = "Tác giả " + Guid.NewGuid().ToString("N")[..6] };
         var category = new Category { Name = "Thể loại " + Guid.NewGuid().ToString("N")[..6] };
         _db.Authors.Add(author);

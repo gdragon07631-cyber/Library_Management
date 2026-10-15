@@ -194,13 +194,16 @@ public sealed class AuditLogTests : IDisposable
         var controller = new LoanPolicyController(db, auditLogService);
         Attach(controller, await CreateStaffCookieAsync(admin));
 
-        Assert.IsType<RedirectToActionResult>(await controller.Index(new LoanPolicyViewModel { LoanDays = 21 }));
+        Assert.IsType<RedirectToActionResult>(await controller.Index(new LoanPolicyViewModel { LoanDays = 21, DailyOverdueFee = 2_500m }));
 
-        Assert.Equal(21, (await db.LoanPolicies.AsNoTracking().SingleAsync()).LoanDays);
+        var savedPolicy = await db.LoanPolicies.AsNoTracking().SingleAsync();
+        Assert.Equal(21, savedPolicy.LoanDays);
+        Assert.Equal(2_500m, savedPolicy.DailyOverdueFee);
         var log = await SingleLogAsync();
         Assert.Equal(AdminEmail, log.Actor);
         Assert.Equal(AuditActions.UpdateLoanPolicy, log.Action);
-        Assert.Equal("Chính sách mượn: số ngày mượn 14 → 21", log.Target);
+        Assert.Contains("số ngày mượn 14 → 21", log.Target);
+        Assert.Contains("phí trễ hạn/ngày", log.Target);
         Assert.Equal(ClientIp, log.IpAddress);
     }
 

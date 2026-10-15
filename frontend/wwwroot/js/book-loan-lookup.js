@@ -3,6 +3,7 @@
     if (!form) return;
 
     const input = document.getElementById("copyLoanBarcode");
+    const returnDateInput = document.getElementById("returnDatePreview");
     const lookupButton = document.getElementById("copyLoanLookupButton");
     const result = document.getElementById("copyLoanLookupResult");
     const lookupLabel = lookupButton.querySelector(".lookup-button-label");
@@ -134,10 +135,14 @@
         title.textContent = "Đang có phiếu mượn mở";
         card.append(title);
         detail(card, "Mã vạch bản sao", loan.copyCode || barcode);
+        detail(card, "Mã phiếu mượn", String(loan.loanId));
         detail(card, "Tên sách", loan.bookTitle || "Không có dữ liệu");
         detail(card, "Bạn đọc", loan.readerName || "Không có dữ liệu");
         detail(card, "Hạn trả", formatDate(loan.dueDate));
-        detail(card, "Số ngày trễ", String(Math.max(0, Number(loan.overdueDays) || 0)));
+        detail(card, "Số ngày trễ theo lịch mở cửa", String(Math.max(0, Number(loan.overdueDays) || 0)));
+        detail(card, "Ngày trả thực tế (xem trước)", formatDate(loan.returnDate));
+        detail(card, "Mức phí mỗi ngày", `${new Intl.NumberFormat("vi-VN").format(Number(loan.dailyOverdueFee) || 0)} VNĐ`);
+        detail(card, "Tổng phí trễ hạn dự kiến", `${new Intl.NumberFormat("vi-VN").format(Number(loan.estimatedOverdueFee) || 0)} VNĐ`);
 
         const returnButton = document.createElement("button");
         returnButton.type = "button";
@@ -201,6 +206,8 @@
             detail(returned, "Tên sách", entry.bookTitle);
             detail(returned, "Bạn đọc", entry.readerName);
             detail(returned, "Ngày trả", formatTimestamp(entry.returnedAtUtc));
+            detail(returned, "Số ngày trễ theo lịch mở cửa", String(payload.overdueDays ?? 0));
+            detail(returned, "Phí trễ hạn đã ghi nhận", `${new Intl.NumberFormat("vi-VN").format(Number(payload.overdueFee) || 0)} VNĐ`);
             detail(returned, "Trạng thái phiếu mượn", payload.loanStatus || "Đã trả");
             detail(returned, "Trạng thái bản sao", entry.copyStatus);
             if (payload.hasWaitingHold && entry.reservedFor) {
@@ -245,6 +252,7 @@
         try {
             const url = new URL(form.dataset.lookupUrl, window.location.origin);
             url.searchParams.set("barcode", barcode);
+            if (returnDateInput?.value) url.searchParams.set("returnDate", returnDateInput.value);
             const response = await fetch(url, { headers: { Accept: "application/json" } });
             const payload = await response.json().catch(() => ({}));
             if (payload.status === "notFound") {
@@ -264,6 +272,10 @@
             lookupLoading.classList.add("d-none");
             input.focus();
         }
+    });
+
+    returnDateInput?.addEventListener("change", () => {
+        if (input.value.trim()) form.requestSubmit();
     });
 
     finishButton.addEventListener("click", () => {

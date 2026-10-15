@@ -22,6 +22,7 @@ public sealed class LoanPolicyController(
         return View(new LoanPolicyViewModel
         {
             LoanDays = policy?.LoanDays ?? LoanPolicy.DefaultLoanDays,
+            DailyOverdueFee = policy?.DailyOverdueFee ?? 2_000m,
             UpdatedAtUtc = policy?.UpdatedAtUtc,
             CardTypePolicies = await GetCardTypePoliciesAsync(cancellationToken)
         });
@@ -40,6 +41,7 @@ public sealed class LoanPolicyController(
         if (!ModelState.IsValid)
         {
             model.UpdatedAtUtc = policy?.UpdatedAtUtc;
+            model.DailyOverdueFee = policy?.DailyOverdueFee ?? 2_000m;
             model.CardTypePolicies = await GetCardTypePoliciesAsync(cancellationToken);
             return View(model);
         }
@@ -51,19 +53,22 @@ public sealed class LoanPolicyController(
         }
 
         var previousLoanDays = policy.LoanDays;
-        if (policy.LoanDays == model.LoanDays && dbContext.Entry(policy).State != EntityState.Added)
+        var previousDailyOverdueFee = policy.DailyOverdueFee;
+        if (policy.LoanDays == model.LoanDays && policy.DailyOverdueFee == model.DailyOverdueFee
+            && dbContext.Entry(policy).State != EntityState.Added)
         {
             TempData["SuccessMessage"] = "Chính sách mượn không thay đổi.";
             return RedirectToAction(nameof(Index));
         }
 
         policy.LoanDays = model.LoanDays;
+        policy.DailyOverdueFee = model.DailyOverdueFee;
         policy.UpdatedAtUtc = DateTime.UtcNow;
         await dbContext.SaveChangesAsync(cancellationToken);
         await auditLogService.WriteAsync(
             admin.Email,
             AuditActions.UpdateLoanPolicy,
-            $"Chính sách mượn: số ngày mượn {previousLoanDays} → {policy.LoanDays}",
+            $"Chính sách mượn: số ngày mượn {previousLoanDays} → {policy.LoanDays}; phí trễ hạn/ngày {previousDailyOverdueFee:N2} → {policy.DailyOverdueFee:N2} VNĐ",
             AuditLogService.ClientIp(HttpContext),
             cancellationToken);
 

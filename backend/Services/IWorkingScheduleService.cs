@@ -17,5 +17,7 @@ public interface IWorkingScheduleService
     Task<HolidayClosureOutcome> DeleteHolidayClosureAsync(int id, CancellationToken cancellationToken = default);
     Task<LibraryOpeningStatus> GetStatusForDateAsync(DateOnly date, CancellationToken cancellationToken = default);
     Task<IReadOnlySet<DateOnly>> GetOpenDatesAsync(DateOnly fromInclusive, DateOnly toInclusive, CancellationToken cancellationToken = default);
+    /// <summary>Reads the configured calendar without creating defaults; used for fee calculation.</summary>
+    Task<IReadOnlySet<DateOnly>> GetConfiguredOpenDatesAsync(DateOnly fromInclusive, DateOnly toInclusive, CancellationToken cancellationToken = default);
     Task<DateOnly> AdjustLoanDueDateAsync(DateOnly proposedDate, CancellationToken cancellationToken = default);
 }

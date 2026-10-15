@@ -685,6 +685,9 @@ namespace Project.Migrations
                     b.Property<int>("LoanDays")
                         .HasColumnType("int");
 
+                    b.Property<decimal>("DailyOverdueFee")
+                        .HasColumnType("decimal(18,2)");
+
                     b.Property<DateTime>("UpdatedAtUtc")
                         .HasColumnType("datetime2");
 
@@ -696,6 +699,7 @@ namespace Project.Migrations
                         new
                         {
                             Id = 1,
+                            DailyOverdueFee = 2000m,
                             LoanDays = 14,
                             UpdatedAtUtc = new DateTime(2026, 9, 29, 0, 0, 0, 0, DateTimeKind.Utc)
                         });
