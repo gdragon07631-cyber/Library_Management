@@ -15,6 +15,7 @@ public sealed class ReaderRegistrationService(
 {
     // Retained for source compatibility; there is no active-hold count limit.
     public const int MaximumActiveBookHolds = 3;
+    public const int PickupDays = 2;
     /// <summary>Số ngày bạn đọc được đôn lên có để nhận sách; hạn là 17:00 ngày mở cửa tương ứng.</summary>
     public static readonly TimeOnly PickupDeadlineTime = new(17, 0);
 

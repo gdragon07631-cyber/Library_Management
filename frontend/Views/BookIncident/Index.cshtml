@@ -1,0 +1,410 @@
+@model Project.Models.BookIncidentIndexViewModel
+@{
+    ViewData["Title"] = "Ghi nhận sách mất hoặc hỏng nặng";
+}
+
+<div class="container-fluid py-4 px-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h1 class="h3 mb-1 text-primary fw-bold">Ghi nhận sách mất hoặc hỏng nặng</h1>
+            <p class="text-muted mb-0">Chọn phiếu mượn đang mở và bản sao sách gặp sự cố để loại khỏi kho thư viện.</p>
+        </div>
+        <div>
+            <a asp-controller="Loan" asp-action="Index" class="btn btn-outline-secondary me-2">
+                <span>⇄</span> Quản lý mượn trả
+            </a>
+            <a asp-controller="LoanReturn" asp-action="Index" class="btn btn-outline-secondary">
+                <span>↩</span> Nhận trả sách
+            </a>
+        </div>
+    </div>
+
+    @if (TempData["SuccessMessage"] is string successMessage)
+    {
+        <div class="alert alert-success alert-dismissible fade show shadow-sm" role="alert">
+            <span class="me-2">✓</span> @successMessage
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Đóng"></button>
+        </div>
+    }
+
+    @if (TempData["ErrorMessage"] is string errorMessage)
+    {
+        <div class="alert alert-danger alert-dismissible fade show shadow-sm" role="alert">
+            <span class="me-2">⚠</span> @errorMessage
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Đóng"></button>
+        </div>
+    }
+
+    <div class="row g-4 mb-4">
+        <!-- FORM GHI NHẬN SỰ CỐ -->
+        <div class="col-lg-5">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-header bg-white py-3 border-bottom">
+                    <h2 class="h5 mb-0 fw-bold text-dark">Phiếu ghi nhận sự cố</h2>
+                </div>
+                <div class="card-body p-4">
+                    <form asp-action="Record" method="post" enctype="multipart/form-data" id="recordIncidentForm">
+                        @Html.AntiForgeryToken()
+
+                        <!-- Chọn Phiếu mượn đang mở -->
+                        <div class="mb-3">
+                            <label asp-for="FormModel.LoanId" class="form-label fw-semibold">
+                                Chọn phiếu mượn đang mở <span class="text-danger">*</span>
+                            </label>
+                            <select asp-for="FormModel.LoanId" id="loanSelect" class="form-select" required>
+                                <option value="">-- Chọn phiếu mượn --</option>
+                                @foreach (var loan in Model.OpenLoans)
+                                {
+                                    var isSelected = Model.SelectedLoanId == loan.LoanId;
+                                    <option value="@loan.LoanId" selected="@isSelected"
+                                            data-book="@loan.BookTitle"
+                                            data-reader="@loan.ReaderName"
+                                            data-card="@loan.CardCode"
+                                            data-loandate="@loan.LoanDate.ToString("dd/MM/yyyy")"
+                                            data-duedate="@loan.DueDate.ToString("dd/MM/yyyy")"
+                                            data-copyid="@loan.BookCopyId"
+                                            data-barcode="@loan.CopyBarcode">
+                                        #@loan.LoanId - @loan.ReaderName (@loan.CardCode) - @loan.BookTitle
+                                    </option>
+                                }
+                            </select>
+                            <span asp-validation-for="FormModel.LoanId" class="text-danger small"></span>
+                        </div>
+
+                        <!-- Thông tin phiếu mượn đã chọn -->
+                        <div id="loanDetailsBox" class="alert alert-light border mb-3 @(Model.SelectedLoanId.HasValue ? "" : "d-none")">
+                            <h6 class="fw-bold mb-2 text-primary">Chi tiết phiếu mượn</h6>
+                            <div class="small">
+                                <div><strong>Bạn đọc:</strong> <span id="detailReader">-</span></div>
+                                <div><strong>Mã thẻ:</strong> <span id="detailCard">-</span></div>
+                                <div><strong>Tên sách:</strong> <span id="detailBook">-</span></div>
+                                <div><strong>Ngày mượn:</strong> <span id="detailLoanDate">-</span></div>
+                                <div><strong>Hạn trả:</strong> <span id="detailDueDate">-</span></div>
+                            </div>
+                        </div>
+
+                        <!-- Chọn Bản sao sách -->
+                        <div class="mb-3">
+                            <label asp-for="FormModel.BookCopyId" class="form-label fw-semibold">
+                                Bản sao sách gặp sự cố <span class="text-danger">*</span>
+                            </label>
+                            <select asp-for="FormModel.BookCopyId" id="copySelect" class="form-select" required>
+                                <option value="">-- Chọn bản sao --</option>
+                                @foreach (var copy in Model.SelectedLoanCopies)
+                                {
+                                    var isSelected = Model.FormModel.BookCopyId == copy.CopyId;
+                                    <option value="@copy.CopyId" selected="@isSelected">
+                                        @copy.CopyBarcode (Kệ: @copy.ShelfName - Tình trạng: @copy.PhysicalCondition)
+                                    </option>
+                                }
+                            </select>
+                            <span asp-validation-for="FormModel.BookCopyId" class="text-danger small"></span>
+                            <div class="form-text">Chỉ bản sao thuộc phiếu mượn được chọn mới được phép ghi nhận.</div>
+                        </div>
+
+                        <!-- Chọn Tình trạng sự cố -->
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold">
+                                Tình trạng sự cố <span class="text-danger">*</span>
+                            </label>
+                            <div class="d-flex gap-4">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" asp-for="FormModel.IncidentType" id="typeLost" value="@Project.Models.BookIncidentType.Lost" checked />
+                                    <label class="form-check-label fw-semibold text-danger" for="typeLost">
+                                        <span>✗</span> Mất
+                                    </label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" asp-for="FormModel.IncidentType" id="typeDamaged" value="@Project.Models.BookIncidentType.Damaged" />
+                                    <label class="form-check-label fw-semibold text-warning" for="typeDamaged">
+                                        <span>⚠</span> Hỏng nặng
+                                    </label>
+                                </div>
+                            </div>
+                            <span asp-validation-for="FormModel.IncidentType" class="text-danger small"></span>
+                        </div>
+
+                        <!-- Nhập Mô tả tình trạng -->
+                        <div class="mb-3">
+                            <label asp-for="FormModel.Description" class="form-label fw-semibold">
+                                Mô tả tình trạng cụ thể <span class="text-danger">*</span>
+                            </label>
+                            <textarea asp-for="FormModel.Description" id="incidentDescription" class="form-control" rows="3"
+                                      placeholder="Ví dụ: Bạn đọc báo làm rơi mất sách trên xe buýt; hoặc sách bị rách nát hoàn toàn, ướt sũng..." required maxlength="1000"></textarea>
+                            <span asp-validation-for="FormModel.Description" class="text-danger small"></span>
+                            <div class="form-text">Mô tả chi tiết nguyên nhân, hiện trạng hư hỏng hoặc hoàn cảnh thất lạc.</div>
+                        </div>
+
+                        <!-- Đính kèm Ảnh chụp (tùy chọn) -->
+                        <div class="mb-4">
+                            <label asp-for="FormModel.Photo" class="form-label fw-semibold">
+                                Ảnh chụp hiện trạng <span class="text-muted fw-normal">(Tùy chọn)</span>
+                            </label>
+                            <input type="file" asp-for="FormModel.Photo" id="incidentPhoto" class="form-control" accept=".jpg,.jpeg,.png,.webp" />
+                            <div class="form-text">Chấp nhận JPG, PNG hoặc WEBP (tối đa 5MB).</div>
+                            <div id="photoPreviewContainer" class="mt-2 d-none">
+                                <img id="photoPreview" src="#" alt="Xem trước ảnh chụp" class="img-thumbnail" style="max-height: 150px;" />
+                            </div>
+                        </div>
+
+                        <!-- Hành động submit -->
+                        <div class="d-grid gap-2">
+                            <button type="submit" class="btn btn-danger py-2 fw-semibold" id="btnSubmitIncident">
+                                <span>✔</span> Xác nhận ghi nhận sự cố
+                            </button>
+                            <a asp-action="Index" class="btn btn-outline-secondary">Làm mới</a>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- DANH SÁCH PHIẾU MƯỢN ĐANG MỞ -->
+        <div class="col-lg-7">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-header bg-white py-3 border-bottom d-flex justify-content-between align-items-center">
+                    <h2 class="h5 mb-0 fw-bold text-dark">Danh sách phiếu mượn đang mở</h2>
+                    <span class="badge bg-primary rounded-pill">@Model.OpenLoans.Count phiếu</span>
+                </div>
+                <div class="table-responsive" style="max-height: 520px; overflow-y: auto;">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead class="table-light sticky-top">
+                            <tr>
+                                <th>Mã phiếu</th>
+                                <th>Bạn đọc</th>
+                                <th>Đầu sách</th>
+                                <th>Mã bản sao</th>
+                                <th>Hạn trả</th>
+                                <th class="text-end">Thao tác</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @if (Model.OpenLoans.Count == 0)
+                            {
+                                <tr>
+                                    <td colspan="6" class="text-center text-muted py-4">Hiện không có phiếu mượn nào đang mở.</td>
+                                </tr>
+                            }
+                            else
+                            {
+                                @foreach (var loan in Model.OpenLoans)
+                                {
+                                    <tr class="@(Model.SelectedLoanId == loan.LoanId ? "table-active" : "")">
+                                        <td class="fw-bold">#@loan.LoanId</td>
+                                        <td>
+                                            <div class="fw-semibold">@loan.ReaderName</div>
+                                            <small class="text-muted">@(loan.CardCode ?? "Chưa có thẻ")</small>
+                                        </td>
+                                        <td>
+                                            <div class="text-truncate" style="max-width: 200px;" title="@loan.BookTitle">
+                                                @loan.BookTitle
+                                            </div>
+                                        </td>
+                                        <td>
+                                            @if (!string.IsNullOrEmpty(loan.CopyBarcode))
+                                            {
+                                                <span class="badge bg-light text-dark border">@loan.CopyBarcode</span>
+                                            }
+                                            else
+                                            {
+                                                <span class="text-muted fst-italic">Chưa gán</span>
+                                            }
+                                        </td>
+                                        <td>
+                                            <span class="@(loan.DueDate < DateOnly.FromDateTime(DateTime.Today) ? "text-danger fw-bold" : "")">
+                                                @loan.DueDate.ToString("dd/MM/yyyy")
+                                            </span>
+                                        </td>
+                                        <td class="text-end">
+                                            <button type="button" class="btn btn-sm btn-outline-danger btn-select-loan"
+                                                    data-loan-id="@loan.LoanId">
+                                                Chọn ghi nhận
+                                            </button>
+                                        </td>
+                                    </tr>
+                                }
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- DANH SÁCH SỰ CỐ VỪA GHI NHẬN -->
+    <div class="card border-0 shadow-sm mt-4">
+        <div class="card-header bg-white py-3 border-bottom d-flex justify-content-between align-items-center">
+            <h2 class="h5 mb-0 fw-bold text-dark">Sự cố sách đã ghi nhận gần đây</h2>
+            <span class="text-muted small">Bản sao đã chuyển trạng thái sang <strong>Đã loại khỏi kho</strong></span>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Mã sự cố</th>
+                        <th>Loại sự cố</th>
+                        <th>Bản sao sách</th>
+                        <th>Phiếu mượn</th>
+                        <th>Bạn đọc</th>
+                        <th>Mô tả</th>
+                        <th>Ảnh</th>
+                        <th>Người ghi nhận</th>
+                        <th>Thời gian</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (Model.RecentIncidents.Count == 0)
+                    {
+                        <tr>
+                            <td colspan="9" class="text-center text-muted py-4">Chưa có sự cố nào được ghi nhận.</td>
+                        </tr>
+                    }
+                    else
+                    {
+                        @foreach (var inc in Model.RecentIncidents)
+                        {
+                            <tr>
+                                <td class="fw-bold">#@inc.Id</td>
+                                <td>
+                                    @if (inc.IncidentType == Project.Models.BookIncidentType.Lost)
+                                    {
+                                        <span class="badge bg-danger">Mất</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="badge bg-warning text-dark">Hỏng nặng</span>
+                                    }
+                                </td>
+                                <td>
+                                    <div class="fw-semibold">@(inc.BookCopy?.Book?.Title ?? "Chưa rõ")</div>
+                                    <small class="text-muted">Mã: @(inc.BookCopy?.CopyCode ?? "-")</small>
+                                </td>
+                                <td>#@inc.BookLoanId</td>
+                                <td>@(inc.BookLoan?.ReaderAccount?.FullName ?? "-")</td>
+                                <td>
+                                    <div style="max-width: 250px;" class="text-break">@inc.Description</div>
+                                </td>
+                                <td>
+                                    @if (!string.IsNullOrEmpty(inc.PhotoPath))
+                                    {
+                                        <a href="@inc.PhotoPath" target="_blank" class="btn btn-sm btn-outline-info">
+                                            Xem ảnh
+                                        </a>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-muted small">Không</span>
+                                    }
+                                </td>
+                                <td><small>@inc.ReportedBy</small></td>
+                                <td><small class="text-muted">@inc.CreatedAtUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</small></td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            const loanSelect = document.getElementById('loanSelect');
+            const copySelect = document.getElementById('copySelect');
+            const loanDetailsBox = document.getElementById('loanDetailsBox');
+            const detailReader = document.getElementById('detailReader');
+            const detailCard = document.getElementById('detailCard');
+            const detailBook = document.getElementById('detailBook');
+            const detailLoanDate = document.getElementById('detailLoanDate');
+            const detailDueDate = document.getElementById('detailDueDate');
+            const photoInput = document.getElementById('incidentPhoto');
+            const photoPreview = document.getElementById('photoPreview');
+            const photoPreviewContainer = document.getElementById('photoPreviewContainer');
+
+            // Quick select buttons from table
+            document.querySelectorAll('.btn-select-loan').forEach(function (button) {
+                button.addEventListener('click', function () {
+                    const loanId = this.getAttribute('data-loan-id');
+                    if (loanSelect) {
+                        loanSelect.value = loanId;
+                        loanSelect.dispatchEvent(new Event('change'));
+                        loanSelect.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }
+                });
+            });
+
+            // Photo preview handler
+            if (photoInput) {
+                photoInput.addEventListener('change', function () {
+                    const file = this.files[0];
+                    if (file) {
+                        const reader = new FileReader();
+                        reader.onload = function (e) {
+                            photoPreview.src = e.target.result;
+                            photoPreviewContainer.classList.remove('d-none');
+                        };
+                        reader.readAsDataURL(file);
+                    } else {
+                        photoPreviewContainer.classList.add('d-none');
+                    }
+                });
+            }
+
+            // Loan dropdown change handler
+            if (loanSelect) {
+                loanSelect.addEventListener('change', async function () {
+                    const selectedOption = loanSelect.options[loanSelect.selectedIndex];
+                    const loanId = loanSelect.value;
+
+                    if (!loanId) {
+                        loanDetailsBox.classList.add('d-none');
+                        copySelect.innerHTML = '<option value="">-- Chọn bản sao --</option>';
+                        return;
+                    }
+
+                    // Update detail box
+                    detailReader.textContent = selectedOption.getAttribute('data-reader') || '-';
+                    detailCard.textContent = selectedOption.getAttribute('data-card') || '-';
+                    detailBook.textContent = selectedOption.getAttribute('data-book') || '-';
+                    detailLoanDate.textContent = selectedOption.getAttribute('data-loandate') || '-';
+                    detailDueDate.textContent = selectedOption.getAttribute('data-duedate') || '-';
+                    loanDetailsBox.classList.remove('d-none');
+
+                    // Fetch copies for this loan via API
+                    try {
+                        const response = await fetch(`/api/book-incidents/loans/${loanId}/copies`);
+                        if (response.ok) {
+                            const copies = await response.json();
+                            copySelect.innerHTML = '<option value="">-- Chọn bản sao --</option>';
+                            copies.forEach(copy => {
+                                const option = document.createElement('option');
+                                option.value = copy.copyId;
+                                option.textContent = `${copy.copyBarcode} (Kệ: ${copy.shelfName} - Tình trạng: ${copy.physicalCondition})`;
+                                copySelect.appendChild(option);
+                            });
+                            if (copies.length === 1) {
+                                copySelect.value = copies[0].copyId;
+                            }
+                        } else {
+                            copySelect.innerHTML = '<option value="">-- Không tìm thấy bản sao --</option>';
+                        }
+                    } catch (err) {
+                        console.error('Error fetching copies:', err);
+                    }
+                });
+
+                // Trigger if already selected on page load
+                if (loanSelect.value) {
+                    const selectedOption = loanSelect.options[loanSelect.selectedIndex];
+                    detailReader.textContent = selectedOption.getAttribute('data-reader') || '-';
+                    detailCard.textContent = selectedOption.getAttribute('data-card') || '-';
+                    detailBook.textContent = selectedOption.getAttribute('data-book') || '-';
+                    detailLoanDate.textContent = selectedOption.getAttribute('data-loandate') || '-';
+                    detailDueDate.textContent = selectedOption.getAttribute('data-duedate') || '-';
+                }
+            }
+        });
+    </script>
+}
+

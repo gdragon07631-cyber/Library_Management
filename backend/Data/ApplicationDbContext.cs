@@ -37,6 +37,7 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
     public DbSet<LoanPolicy> LoanPolicies => Set<LoanPolicy>();
     public DbSet<StaffPasswordSetupToken> StaffPasswordSetupTokens => Set<StaffPasswordSetupToken>();
+    public DbSet<BookIncident> BookIncidents => Set<BookIncident>();
 
     public const string AuditLogReadOnlyTrigger = "TR_AuditLogs_ReadOnly";
 
@@ -430,6 +431,25 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
                 LoanDays = LoanPolicy.DefaultLoanDays,
                 UpdatedAtUtc = new DateTime(2026, 9, 29, 0, 0, 0, DateTimeKind.Utc)
             });
+        });
+
+        modelBuilder.Entity<BookIncident>(entity =>
+        {
+            entity.HasIndex(i => i.BookLoanId);
+            entity.HasIndex(i => i.BookCopyId);
+            entity.Property(i => i.IncidentType).HasMaxLength(50).IsRequired();
+            entity.Property(i => i.Description).HasMaxLength(1000).IsRequired();
+            entity.Property(i => i.PhotoPath).HasMaxLength(500);
+            entity.Property(i => i.ReportedBy).HasMaxLength(256).IsRequired();
+            entity.Property(i => i.CreatedAtUtc).HasColumnType("datetime2");
+            entity.HasOne(i => i.BookLoan)
+                .WithMany()
+                .HasForeignKey(i => i.BookLoanId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(i => i.BookCopy)
+                .WithMany()
+                .HasForeignKey(i => i.BookCopyId)
+                .OnDelete(DeleteBehavior.Restrict);
         });
     }
 }
