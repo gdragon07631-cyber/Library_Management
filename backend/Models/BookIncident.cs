@@ -38,6 +38,8 @@ public sealed class BookIncident
     public string ReportedBy { get; set; } = string.Empty;
 
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
+
+    public BookIncidentCompensation? Compensation { get; set; }
 }
 
 public sealed class RecordIncidentRequest
@@ -57,9 +59,22 @@ public sealed class RecordIncidentOutcome
     public string? ErrorMessage { get; init; }
     public BookIncident? Incident { get; init; }
     public BookCopy? UpdatedCopy { get; init; }
+    public BookIncidentCompensation? Compensation { get; init; }
+    public string? CompensationMessage { get; init; }
 
-    public static RecordIncidentOutcome Success(BookIncident incident, BookCopy copy) =>
-        new() { IsSuccess = true, Incident = incident, UpdatedCopy = copy };
+    public static RecordIncidentOutcome Success(
+        BookIncident incident,
+        BookCopy copy,
+        BookIncidentCompensation? compensation = null,
+        string? compensationMessage = null) =>
+        new()
+        {
+            IsSuccess = true,
+            Incident = incident,
+            UpdatedCopy = copy,
+            Compensation = compensation,
+            CompensationMessage = compensationMessage
+        };
 
     public static RecordIncidentOutcome Failed(string message) =>
         new() { IsSuccess = false, ErrorMessage = message };
@@ -102,7 +117,8 @@ public sealed record BookCopyIncidentItemViewModel(
     string ShelfName,
     string PhysicalCondition,
     string Status,
-    string BookTitle);
+    string BookTitle,
+    decimal? CoverPrice = null);
 
 public sealed class BookIncidentIndexViewModel
 {
@@ -111,5 +127,7 @@ public sealed class BookIncidentIndexViewModel
     public IReadOnlyList<BookCopyIncidentItemViewModel> SelectedLoanCopies { get; set; } = [];
     public IReadOnlyList<BookIncident> RecentIncidents { get; set; } = [];
     public RecordBookIncidentViewModel FormModel { get; set; } = new();
+    public CompensationPolicy? Policy { get; set; }
+    public AdjustCompensationViewModel AdjustModel { get; set; } = new();
 }
 

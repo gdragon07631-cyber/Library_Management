@@ -67,7 +67,8 @@ public sealed class BookIncidentService(ApplicationDbContext db) : IBookIncident
                 copy.Shelf?.Name ?? "Chưa xếp kệ",
                 copy.PhysicalCondition,
                 copy.Status,
-                copy.Book?.Title ?? "Chưa rõ tiêu đề")
+                copy.Book?.Title ?? "Chưa rõ tiêu đề",
+                copy.CoverPrice)
         ];
     }
 
@@ -209,11 +210,51 @@ public sealed class BookIncidentService(ApplicationDbContext db) : IBookIncident
             };
             db.BookIncidents.Add(incident);
 
+            // Tự động tính khoản bồi thường nếu có đủ giá bìa và hệ số bồi thường
+            BookIncidentCompensation? compensation = null;
+            string? compensationMessage = null;
+
+            if (!copy.CoverPrice.HasValue || copy.CoverPrice.Value <= 0)
+            {
+                compensationMessage = "Bản sao chưa có giá bìa hợp lệ nên chưa thể tự động tính khoản bồi thường ban đầu.";
+            }
+            else
+            {
+                var policy = await db.CompensationPolicies
+                    .AsNoTracking()
+                    .SingleOrDefaultAsync(p => p.Id == CompensationPolicy.SingletonId, cancellationToken);
+
+                if (policy is null || policy.DefaultRate <= 0)
+                {
+                    compensationMessage = "Hệ thống chưa thiết lập hệ số bồi thường nên chưa thể tự động tính khoản bồi thường ban đầu.";
+                }
+                else
+                {
+                    var appliedRate = policy.GetRateFor(normalizedType);
+                    if (appliedRate > 0)
+                    {
+                        var initialAmount = decimal.Round(copy.CoverPrice.Value * appliedRate, 2);
+                        compensation = new BookIncidentCompensation
+                        {
+                            BookIncident = incident,
+                            RecordedCoverPrice = copy.CoverPrice.Value,
+                            AppliedRate = appliedRate,
+                            InitialAmount = initialAmount,
+                            CurrentAmount = initialAmount,
+                            IsAdjusted = false,
+                            CreatedAtUtc = DateTime.UtcNow
+                        };
+                        db.BookIncidentCompensations.Add(compensation);
+                    }
+                }
+            }
+
             // Ghi nhật ký hệ thống (AuditLog)
             db.AuditLogs.Add(AuditLogService.Create(
                 staffActor,
                 "RecordBookIncident",
-                $"Ghi nhận sách {normalizedType} – phiếu #{loan.Id}, bản sao {copy.CopyCode}: {normalizedDescription}",
+                $"Ghi nhận sách {normalizedType} – phiếu #{loan.Id}, bản sao {copy.CopyCode}: {normalizedDescription}" +
+                (compensation != null ? $"; Khoản bồi thường: {compensation.InitialAmount:N0}đ (Hệ số: {compensation.AppliedRate})" : ""),
                 request.IpAddress ?? "127.0.0.1"));
 
             await db.SaveChangesAsync(cancellationToken);
@@ -221,7 +262,7 @@ public sealed class BookIncidentService(ApplicationDbContext db) : IBookIncident
             if (transaction != null)
                 await transaction.CommitAsync(cancellationToken);
 
-            return RecordIncidentOutcome.Success(incident, copy);
+            return RecordIncidentOutcome.Success(incident, copy, compensation, compensationMessage);
         }
         catch (Exception ex)
         {
@@ -238,6 +279,7 @@ public sealed class BookIncidentService(ApplicationDbContext db) : IBookIncident
             .AsNoTracking()
             .Include(i => i.BookLoan).ThenInclude(l => l!.ReaderAccount)
             .Include(i => i.BookCopy).ThenInclude(c => c!.Book)
+            .Include(i => i.Compensation).ThenInclude(c => c!.AdjustmentHistories)
             .OrderByDescending(i => i.CreatedAtUtc)
             .Take(count)
             .ToListAsync(cancellationToken);

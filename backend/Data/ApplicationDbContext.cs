@@ -38,6 +38,9 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     public DbSet<LoanPolicy> LoanPolicies => Set<LoanPolicy>();
     public DbSet<StaffPasswordSetupToken> StaffPasswordSetupTokens => Set<StaffPasswordSetupToken>();
     public DbSet<BookIncident> BookIncidents => Set<BookIncident>();
+    public DbSet<CompensationPolicy> CompensationPolicies => Set<CompensationPolicy>();
+    public DbSet<BookIncidentCompensation> BookIncidentCompensations => Set<BookIncidentCompensation>();
+    public DbSet<CompensationAdjustmentHistory> CompensationAdjustmentHistories => Set<CompensationAdjustmentHistory>();
 
     public const string AuditLogReadOnlyTrigger = "TR_AuditLogs_ReadOnly";
 
@@ -450,6 +453,47 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
                 .WithMany()
                 .HasForeignKey(i => i.BookCopyId)
                 .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<CompensationPolicy>(entity =>
+        {
+            entity.Property(p => p.Id).ValueGeneratedNever();
+            entity.Property(p => p.DefaultRate).HasColumnType("decimal(6,2)").HasDefaultValue(CompensationPolicy.DefaultMultiplier);
+            entity.Property(p => p.LostRate).HasColumnType("decimal(6,2)");
+            entity.Property(p => p.DamagedRate).HasColumnType("decimal(6,2)");
+            entity.Property(p => p.UpdatedAtUtc).HasColumnType("datetime2");
+            entity.Property(p => p.UpdatedBy).HasMaxLength(256);
+        });
+
+        modelBuilder.Entity<BookIncidentCompensation>(entity =>
+        {
+            entity.HasIndex(c => c.BookIncidentId).IsUnique();
+            entity.Property(c => c.RecordedCoverPrice).HasColumnType("decimal(18,2)");
+            entity.Property(c => c.AppliedRate).HasColumnType("decimal(6,2)");
+            entity.Property(c => c.InitialAmount).HasColumnType("decimal(18,2)").IsRequired();
+            entity.Property(c => c.CurrentAmount).HasColumnType("decimal(18,2)").IsRequired();
+            entity.Property(c => c.AdjustmentReason).HasMaxLength(1000);
+            entity.Property(c => c.AdjustedBy).HasMaxLength(256);
+            entity.Property(c => c.AdjustedAtUtc).HasColumnType("datetime2");
+            entity.Property(c => c.CreatedAtUtc).HasColumnType("datetime2");
+            entity.HasOne(c => c.BookIncident)
+                .WithOne(i => i.Compensation)
+                .HasForeignKey<BookIncidentCompensation>(c => c.BookIncidentId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<CompensationAdjustmentHistory>(entity =>
+        {
+            entity.HasIndex(h => new { h.BookIncidentCompensationId, h.AdjustedAtUtc });
+            entity.Property(h => h.FromAmount).HasColumnType("decimal(18,2)").IsRequired();
+            entity.Property(h => h.ToAmount).HasColumnType("decimal(18,2)").IsRequired();
+            entity.Property(h => h.Reason).HasMaxLength(1000).IsRequired();
+            entity.Property(h => h.AdjustedBy).HasMaxLength(256).IsRequired();
+            entity.Property(h => h.AdjustedAtUtc).HasColumnType("datetime2");
+            entity.HasOne(h => h.Compensation)
+                .WithMany(c => c.AdjustmentHistories)
+                .HasForeignKey(h => h.BookIncidentCompensationId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
     }
 }

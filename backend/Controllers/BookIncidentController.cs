@@ -8,7 +8,8 @@ namespace Project.Controllers;
 [StaffOnly(AccountRoles.Librarian, AccountRoles.LibraryManager, AccountRoles.SystemAdmin)]
 public sealed class BookIncidentController(
     IBookIncidentService incidentService,
-    IAuditLogService auditLogService) : Controller
+    IAuditLogService auditLogService,
+    ICompensationService? compensationService = null) : Controller
 {
     [HttpGet]
     public async Task<IActionResult> Index([FromQuery] long? loanId = null, CancellationToken ct = default)
@@ -53,7 +54,7 @@ public sealed class BookIncidentController(
             return View(nameof(Index), indexModel);
         }
 
-        var staffEmail = await GetSignedInStaffEmailAsync(ct);
+        var (_, staffEmail) = await GetSignedInStaffInfoAsync(ct);
         var ipAddress = HttpContext?.Connection?.RemoteIpAddress?.ToString() ?? "127.0.0.1";
 
         var request = new RecordIncidentRequest
@@ -76,8 +77,17 @@ public sealed class BookIncidentController(
             return View(nameof(Index), indexModel);
         }
 
-        TempData["SuccessMessage"] =
-            $"Ghi nhận sự cố sách {model.IncidentType} thành công. Bản sao đã được chuyển sang trạng thái Đã loại khỏi kho.";
+        var successMsg = $"Ghi nhận sự cố sách {model.IncidentType} thành công. Bản sao đã được chuyển sang trạng thái Đã loại khỏi kho.";
+        if (outcome.Compensation != null)
+        {
+            successMsg += $" Tiền bồi thường ban đầu: {outcome.Compensation.InitialAmount:N0}đ (Hệ số: {outcome.Compensation.AppliedRate}).";
+        }
+        else if (!string.IsNullOrWhiteSpace(outcome.CompensationMessage))
+        {
+            successMsg += $" ({outcome.CompensationMessage})";
+        }
+
+        TempData["SuccessMessage"] = successMsg;
         return RedirectToAction(nameof(Index));
     }
 
@@ -100,7 +110,7 @@ public sealed class BookIncidentController(
             return BadRequest(new { success = false, message = error });
         }
 
-        var staffEmail = await GetSignedInStaffEmailAsync(ct);
+        var (_, staffEmail) = await GetSignedInStaffInfoAsync(ct);
         var ipAddress = HttpContext?.Connection?.RemoteIpAddress?.ToString() ?? "127.0.0.1";
 
         var request = new RecordIncidentRequest
@@ -126,7 +136,90 @@ public sealed class BookIncidentController(
             message = $"Ghi nhận sự cố sách {model.IncidentType} thành công. Bản sao đã được chuyển sang trạng thái Đã loại khỏi kho.",
             incidentId = outcome.Incident!.Id,
             copyStatus = outcome.UpdatedCopy!.Status,
-            copyCondition = outcome.UpdatedCopy!.PhysicalCondition
+            copyCondition = outcome.UpdatedCopy!.PhysicalCondition,
+            compensation = outcome.Compensation != null ? new
+            {
+                initialAmount = outcome.Compensation.InitialAmount,
+                currentAmount = outcome.Compensation.CurrentAmount,
+                appliedRate = outcome.Compensation.AppliedRate,
+                recordedCoverPrice = outcome.Compensation.RecordedCoverPrice
+            } : null,
+            compensationMessage = outcome.CompensationMessage
+        });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> AdjustCompensation(AdjustCompensationViewModel model, CancellationToken ct = default)
+    {
+        if (compensationService == null)
+        {
+            TempData["ErrorMessage"] = "Dịch vụ bồi thường chưa khả dụng.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        if (!ModelState.IsValid)
+        {
+            TempData["ErrorMessage"] = ModelState.Values
+                .SelectMany(v => v.Errors)
+                .Select(e => e.ErrorMessage)
+                .FirstOrDefault(msg => !string.IsNullOrWhiteSpace(msg))
+                ?? "Dữ liệu điều chỉnh bồi thường không hợp lệ.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        var (role, email) = await GetSignedInStaffInfoAsync(ct);
+        var outcome = await compensationService.AdjustCompensationAsync(
+            new AdjustCompensationRequest
+            {
+                IncidentId = model.IncidentId,
+                NewAmount = model.NewAmount,
+                Reason = model.Reason
+            },
+            role,
+            email,
+            ct);
+
+        if (!outcome.IsSuccess)
+        {
+            TempData["ErrorMessage"] = outcome.ErrorMessage;
+        }
+        else
+        {
+            TempData["SuccessMessage"] =
+                $"Điều chỉnh tiền bồi thường sự cố #{model.IncidentId} thành {model.NewAmount:N0}đ thành công.";
+        }
+
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost("api/book-incidents/{incidentId:long}/compensation/adjust")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> AdjustCompensationApi(
+        long incidentId,
+        [FromBody] AdjustCompensationRequest request,
+        CancellationToken ct = default)
+    {
+        if (compensationService == null)
+            return StatusCode(StatusCodes.Status500InternalServerError, new { success = false, message = "Dịch vụ bồi thường chưa khả dụng." });
+
+        request.IncidentId = incidentId;
+        var (role, email) = await GetSignedInStaffInfoAsync(ct);
+        var outcome = await compensationService.AdjustCompensationAsync(request, role, email, ct);
+
+        if (!outcome.IsSuccess)
+        {
+            return BadRequest(new { success = false, message = outcome.ErrorMessage });
+        }
+
+        return Ok(new
+        {
+            success = true,
+            message = $"Điều chỉnh số tiền bồi thường thành {outcome.Compensation!.CurrentAmount:N0}đ thành công.",
+            currentAmount = outcome.Compensation.CurrentAmount,
+            initialAmount = outcome.Compensation.InitialAmount,
+            isAdjusted = outcome.Compensation.IsAdjusted,
+            adjustmentReason = outcome.Compensation.AdjustmentReason
         });
     }
 
@@ -141,6 +234,7 @@ public sealed class BookIncidentController(
         }
 
         var recentIncidents = await incidentService.GetRecentIncidentsAsync(20, ct);
+        var policy = compensationService != null ? await compensationService.GetPolicyAsync(ct) : null;
 
         return new BookIncidentIndexViewModel
         {
@@ -148,6 +242,7 @@ public sealed class BookIncidentController(
             SelectedLoanId = selectedLoanId,
             SelectedLoanCopies = selectedLoanCopies,
             RecentIncidents = recentIncidents,
+            Policy = policy,
             FormModel = new RecordBookIncidentViewModel
             {
                 LoanId = selectedLoanId ?? 0,
@@ -156,17 +251,25 @@ public sealed class BookIncidentController(
         };
     }
 
-    private async Task<string> GetSignedInStaffEmailAsync(CancellationToken ct)
+    private async Task<(string Role, string Email)> GetSignedInStaffInfoAsync(CancellationToken ct)
     {
         try
         {
             if (Request?.Cookies != null)
             {
                 var staff = await auditLogService.GetSignedInStaffAsync(Request, ct);
-                if (!string.IsNullOrWhiteSpace(staff?.Email)) return staff.Email;
+                if (staff != null) return (staff.Role, staff.Email);
             }
         }
         catch { /* ignore */ }
-        return "Thủ thư";
+
+        if (User?.Identity?.IsAuthenticated == true)
+        {
+            var role = User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value ?? AccountRoles.Librarian;
+            var email = User.Identity.Name ?? User.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value ?? "Thủ thư";
+            return (role, email);
+        }
+
+        return (AccountRoles.Librarian, "Thủ thư");
     }
 }

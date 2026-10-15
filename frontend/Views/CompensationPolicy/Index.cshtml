@@ -1,0 +1,126 @@
+@model Project.Models.CompensationPolicyViewModel
+@{
+    ViewData["Title"] = "Chính sách hệ số bồi thường";
+}
+
+<div class="container-fluid py-4 px-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h1 class="h3 mb-1 text-primary fw-bold">Chính sách hệ số bồi thường</h1>
+            <p class="text-muted mb-0">Khai báo và cập nhật hệ số nhân áp dụng cho giá bìa sách khi tính tiền bồi thường sự cố Mất hoặc Hỏng nặng.</p>
+        </div>
+        <div>
+            <a asp-controller="BookIncident" asp-action="Index" class="btn btn-outline-secondary">
+                <span>⚠</span> Ghi nhận sự cố sách
+            </a>
+        </div>
+    </div>
+
+    @if (TempData["SuccessMessage"] is string successMessage)
+    {
+        <div class="alert alert-success alert-dismissible fade show shadow-sm" role="alert">
+            <span class="me-2">✓</span> @successMessage
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Đóng"></button>
+        </div>
+    }
+
+    @if (TempData["ErrorMessage"] is string errorMessage)
+    {
+        <div class="alert alert-danger alert-dismissible fade show shadow-sm" role="alert">
+            <span class="me-2">⚠</span> @errorMessage
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Đóng"></button>
+        </div>
+    }
+
+    <div class="row g-4">
+        <div class="col-lg-6">
+            <div class="card border-0 shadow-sm">
+                <div class="card-header bg-white py-3 border-bottom">
+                    <h2 class="h5 mb-0 fw-bold text-dark">Khai báo hệ số bồi thường</h2>
+                </div>
+                <div class="card-body p-4">
+                    <form asp-action="Update" method="post">
+                        @Html.AntiForgeryToken()
+
+                        <div class="mb-3">
+                            <label asp-for="DefaultRate" class="form-label fw-semibold">
+                                Hệ số bồi thường chung <span class="text-danger">*</span>
+                            </label>
+                            <input asp-for="DefaultRate" class="form-control" type="number" step="0.01" min="0.01" max="100" required />
+                            <span asp-validation-for="DefaultRate" class="text-danger small"></span>
+                            <div class="form-text">Áp dụng cho mọi sự cố khi không có hệ số riêng (ví dụ 1.0 = 100% giá bìa, 1.5 = 150% giá bìa).</div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label asp-for="LostRate" class="form-label fw-semibold">
+                                Hệ số khi Mất sách <span class="text-muted fw-normal">(Tùy chọn)</span>
+                            </label>
+                            <input asp-for="LostRate" class="form-control" type="number" step="0.01" min="0.01" max="100" placeholder="Để trống để dùng hệ số chung" />
+                            <span asp-validation-for="LostRate" class="text-danger small"></span>
+                            <div class="form-text">Nếu nhập, hệ thống sẽ ưu tiên dùng hệ số này khi sự cố là "Mất".</div>
+                        </div>
+
+                        <div class="mb-4">
+                            <label asp-for="DamagedRate" class="form-label fw-semibold">
+                                Hệ số khi Hỏng nặng <span class="text-muted fw-normal">(Tùy chọn)</span>
+                            </label>
+                            <input asp-for="DamagedRate" class="form-control" type="number" step="0.01" min="0.01" max="100" placeholder="Để trống để dùng hệ số chung" />
+                            <span asp-validation-for="DamagedRate" class="text-danger small"></span>
+                            <div class="form-text">Nếu nhập, hệ thống sẽ ưu tiên dùng hệ số này khi sự cố là "Hỏng nặng".</div>
+                        </div>
+
+                        <div class="d-flex justify-content-between align-items-center">
+                            <button type="submit" class="btn btn-primary px-4 fw-semibold">
+                                Lưu thay đổi hệ số
+                            </button>
+                            @if (Model.UpdatedAtUtc.HasValue)
+                            {
+                                <small class="text-muted">
+                                    Cập nhật lần cuối: @Model.UpdatedAtUtc.Value.ToLocalTime().ToString("dd/MM/yyyy HH:mm")
+                                    @(string.IsNullOrWhiteSpace(Model.UpdatedBy) ? "" : $"bởi {Model.UpdatedBy}")
+                                </small>
+                            }
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-6">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-header bg-white py-3 border-bottom">
+                    <h2 class="h5 mb-0 fw-bold text-dark">Quy tắc tính khoản bồi thường</h2>
+                </div>
+                <div class="card-body p-4">
+                    <ul class="list-group list-group-flush mb-3">
+                        <li class="list-group-item px-0">
+                            <strong>1. Công thức tính ban đầu:</strong>
+                            <div class="text-muted mt-1">
+                                <code>Tiền bồi thường ban đầu = Giá bìa × Hệ số bồi thường</code>
+                            </div>
+                        </li>
+                        <li class="list-group-item px-0">
+                            <strong>2. Cố định theo thời điểm:</strong>
+                            <div class="text-muted mt-1">
+                                Giá bìa và hệ số áp dụng được lưu lại làm căn cứ tại thời điểm ghi nhận sự cố. Việc thay đổi giá bìa hoặc hệ số sau này sẽ không làm thay đổi các khoản bồi thường đã lưu.
+                            </div>
+                        </li>
+                        <li class="list-group-item px-0">
+                            <strong>3. Trường hợp chưa có giá bìa:</strong>
+                            <div class="text-muted mt-1">
+                                Nếu bản sao chưa có giá bìa, hệ thống ghi nhận sự cố nhưng không tự động gán giá trị 0 hoặc tự ý tính tiền sai. Thủ thư có thể sử dụng chức năng điều chỉnh để thiết lập mức bồi thường cụ thể kèm lý do.
+                            </div>
+                        </li>
+                        <li class="list-group-item px-0">
+                            <strong>4. Quyền điều chỉnh:</strong>
+                            <div class="text-muted mt-1">
+                                Thủ thư có thể điều chỉnh số tiền bồi thường khi có thỏa thuận với bạn đọc hoặc xem xét tình huống thực tế, nhưng bắt buộc phải nhập lý do điều chỉnh rõ ràng.
+                            </div>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+

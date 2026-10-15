@@ -10,6 +10,9 @@
             <p class="text-muted mb-0">Chọn phiếu mượn đang mở và bản sao sách gặp sự cố để loại khỏi kho thư viện.</p>
         </div>
         <div>
+            <a asp-controller="CompensationPolicy" asp-action="Index" class="btn btn-outline-primary me-2">
+                <span>⚙</span> Cấu hình hệ số bồi thường
+            </a>
             <a asp-controller="Loan" asp-action="Index" class="btn btn-outline-secondary me-2">
                 <span>⇄</span> Quản lý mượn trả
             </a>
@@ -93,13 +96,23 @@
                                 @foreach (var copy in Model.SelectedLoanCopies)
                                 {
                                     var isSelected = Model.FormModel.BookCopyId == copy.CopyId;
-                                    <option value="@copy.CopyId" selected="@isSelected">
-                                        @copy.CopyBarcode (Kệ: @copy.ShelfName - Tình trạng: @copy.PhysicalCondition)
+                                    <option value="@copy.CopyId" selected="@isSelected"
+                                            data-coverprice="@(copy.CoverPrice?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "")">
+                                        @copy.CopyBarcode (Kệ: @copy.ShelfName - Tình trạng: @copy.PhysicalCondition) - Giá bìa: @(copy.CoverPrice.HasValue ? copy.CoverPrice.Value.ToString("N0") + " VNĐ" : "Chưa có")
                                     </option>
                                 }
                             </select>
                             <span asp-validation-for="FormModel.BookCopyId" class="text-danger small"></span>
                             <div class="form-text">Chỉ bản sao thuộc phiếu mượn được chọn mới được phép ghi nhận.</div>
+                        </div>
+
+                        <!-- Ước tính khoản bồi thường (Lát 2) -->
+                        <div id="compensationPreviewBox" class="alert alert-info border mb-3 d-none">
+                            <div class="d-flex justify-content-between align-items-center mb-1">
+                                <strong class="text-primary">Khoản bồi thường dự kiến (Lát 2)</strong>
+                                <span class="badge bg-primary" id="policyRateBadge">Hệ số: 1.0x</span>
+                            </div>
+                            <div class="small" id="compensationPreviewText">-</div>
                         </div>
 
                         <!-- Chọn Tình trạng sự cố -->
@@ -246,17 +259,18 @@
                         <th>Bản sao sách</th>
                         <th>Phiếu mượn</th>
                         <th>Bạn đọc</th>
-                        <th>Mô tả</th>
-                        <th>Ảnh</th>
+                        <th>Khoản bồi thường</th>
+                        <th>Mô tả & Ảnh</th>
                         <th>Người ghi nhận</th>
                         <th>Thời gian</th>
+                        <th class="text-end">Thao tác</th>
                     </tr>
                 </thead>
                 <tbody>
                     @if (Model.RecentIncidents.Count == 0)
                     {
                         <tr>
-                            <td colspan="9" class="text-center text-muted py-4">Chưa có sự cố nào được ghi nhận.</td>
+                            <td colspan="10" class="text-center text-muted py-4">Chưa có sự cố nào được ghi nhận.</td>
                         </tr>
                     }
                     else
@@ -282,27 +296,113 @@
                                 <td>#@inc.BookLoanId</td>
                                 <td>@(inc.BookLoan?.ReaderAccount?.FullName ?? "-")</td>
                                 <td>
-                                    <div style="max-width: 250px;" class="text-break">@inc.Description</div>
-                                </td>
-                                <td>
-                                    @if (!string.IsNullOrEmpty(inc.PhotoPath))
+                                    @if (inc.Compensation != null)
                                     {
-                                        <a href="@inc.PhotoPath" target="_blank" class="btn btn-sm btn-outline-info">
-                                            Xem ảnh
-                                        </a>
+                                        <div>
+                                            <span class="fw-bold fs-6 text-danger">@inc.Compensation.CurrentAmount.ToString("N0") VNĐ</span>
+                                            @if (inc.Compensation.IsAdjusted)
+                                            {
+                                                <span class="badge bg-warning text-dark ms-1">Đã điều chỉnh</span>
+                                            }
+                                        </div>
+                                        <div class="text-muted small" style="font-size: 0.8rem;">
+                                            Giá bìa: @((inc.Compensation.RecordedCoverPrice ?? 0).ToString("N0")) VNĐ x @((inc.Compensation.AppliedRate ?? 1).ToString("0.##"))
+                                        </div>
+                                        @if (inc.Compensation.IsAdjusted)
+                                        {
+                                            <div class="small text-muted" style="font-size: 0.78rem;">
+                                                Gốc: @inc.Compensation.InitialAmount.ToString("N0") VNĐ
+                                                <br />
+                                                <em>Lý do: @inc.Compensation.AdjustmentReason</em>
+                                            </div>
+                                        }
                                     }
                                     else
                                     {
-                                        <span class="text-muted small">Không</span>
+                                        <span class="text-muted fst-italic small">Không có khoản bồi thường (Thiếu giá bìa/hệ số)</span>
                                     }
                                 </td>
-                                <td><small>@inc.ReportedBy</small></td>
+                                <td>
+                                    <div style="max-width: 220px;" class="text-break small mb-1">@inc.Description</div>
+                                    @if (!string.IsNullOrEmpty(inc.PhotoPath))
+                                    {
+                                        <a href="@inc.PhotoPath" target="_blank" class="btn btn-xs btn-outline-info py-0 px-1" style="font-size: 0.75rem;">
+                                            Xem ảnh
+                                        </a>
+                                    }
+                                </td>
+                                <td>
+                                    <small class="d-block">@inc.ReportedBy</small>
+                                    @if (inc.Compensation?.IsAdjusted == true && !string.IsNullOrEmpty(inc.Compensation.AdjustedBy))
+                                    {
+                                        <small class="text-muted d-block" style="font-size: 0.75rem;">Sửa bởi: @inc.Compensation.AdjustedBy</small>
+                                    }
+                                </td>
                                 <td><small class="text-muted">@inc.CreatedAtUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</small></td>
+                                <td class="text-end">
+                                    @if (inc.Compensation != null)
+                                    {
+                                        <button type="button" class="btn btn-sm btn-outline-primary btn-adjust-compensation"
+                                                data-incident-id="@inc.Id"
+                                                data-summary="#@inc.Id - @(inc.BookCopy?.Book?.Title ?? "")"
+                                                data-cover-price="@((inc.Compensation.RecordedCoverPrice ?? 0).ToString("N0")) VNĐ"
+                                                data-rate="@((inc.Compensation.AppliedRate ?? 1).ToString("0.##"))"
+                                                data-initial-amount="@inc.Compensation.InitialAmount.ToString("N0") VNĐ"
+                                                data-current-amount="@inc.Compensation.CurrentAmount.ToString("N0") VNĐ"
+                                                data-current-val="@inc.Compensation.CurrentAmount.ToString(System.Globalization.CultureInfo.InvariantCulture)"
+                                                data-reason="@(inc.Compensation.AdjustmentReason ?? "")">
+                                            Điều chỉnh
+                                        </button>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-muted small">-</span>
+                                    }
+                                </td>
                             </tr>
                         }
                     }
                 </tbody>
             </table>
+        </div>
+    </div>
+    <!-- MODAL ĐIỀU CHỈNH KHOẢN BỒI THƯỜNG (LÁT 2) -->
+    <div class="modal fade" id="adjustCompensationModal" tabindex="-1" aria-labelledby="adjustCompensationModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <form asp-action="AdjustCompensation" method="post" id="adjustCompensationForm">
+                    @Html.AntiForgeryToken()
+                    <input type="hidden" name="IncidentId" id="modalIncidentId" value="" />
+                    <div class="modal-header">
+                        <h5 class="modal-title fw-bold" id="adjustCompensationModalLabel">Điều chỉnh khoản bồi thường</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Đóng"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="mb-3">
+                            <div class="p-3 bg-light rounded border">
+                                <div><strong>Sự cố:</strong> <span id="modalIncidentSummary">-</span></div>
+                                <div><strong>Giá bìa ghi nhận:</strong> <span id="modalCoverPrice">-</span></div>
+                                <div><strong>Hệ số áp dụng:</strong> <span id="modalRate">-</span></div>
+                                <div><strong>Số tiền ban đầu:</strong> <span id="modalInitialAmount" class="fw-semibold text-secondary">-</span></div>
+                                <div><strong>Số tiền hiện tại:</strong> <span id="modalCurrentAmount" class="fw-bold text-danger">-</span></div>
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="modalNewAmount" class="form-label fw-semibold">Số tiền bồi thường mới (VNĐ) <span class="text-danger">*</span></label>
+                            <input type="number" step="0.01" min="0" class="form-control" id="modalNewAmount" name="NewAmount" required />
+                            <div class="form-text">Số tiền bồi thường sau điều chỉnh phải ≥ 0.</div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="modalReason" class="form-label fw-semibold">Lý do điều chỉnh <span class="text-danger">*</span></label>
+                            <textarea class="form-control" id="modalReason" name="Reason" rows="3" required maxlength="1000" placeholder="Nhập lý do điều chỉnh bắt buộc (ví dụ: Giảm bồi thường cho bạn đọc có hoàn cảnh khó khăn; sách đã qua sử dụng lâu năm...)"></textarea>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Hủy</button>
+                        <button type="submit" class="btn btn-primary fw-semibold" id="btnConfirmAdjust">Lưu điều chỉnh</button>
+                    </div>
+                </form>
+            </div>
         </div>
     </div>
 </div>
@@ -321,6 +421,46 @@
             const photoInput = document.getElementById('incidentPhoto');
             const photoPreview = document.getElementById('photoPreview');
             const photoPreviewContainer = document.getElementById('photoPreviewContainer');
+
+            const compensationPreviewBox = document.getElementById('compensationPreviewBox');
+            const policyRateBadge = document.getElementById('policyRateBadge');
+            const compensationPreviewText = document.getElementById('compensationPreviewText');
+
+            const policyLostRate = @(Model.Policy?.LostRateOrDefault.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "1.0");
+            const policyDamagedRate = @(Model.Policy?.DamagedRateOrDefault.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "1.0");
+
+            function updateCompensationPreview() {
+                if (!compensationPreviewBox || !copySelect) return;
+                const selectedCopyOption = copySelect.options[copySelect.selectedIndex];
+                if (!selectedCopyOption || !selectedCopyOption.value) {
+                    compensationPreviewBox.classList.add('d-none');
+                    return;
+                }
+
+                const rawPrice = selectedCopyOption.getAttribute('data-coverprice');
+                const coverPrice = rawPrice ? parseFloat(rawPrice) : null;
+                const incidentTypeInput = document.querySelector('input[name="FormModel.IncidentType"]:checked');
+                const isLost = !incidentTypeInput || incidentTypeInput.value === 'Lost' || incidentTypeInput.value === '1';
+                const appliedRate = isLost ? policyLostRate : policyDamagedRate;
+
+                if (policyRateBadge) {
+                    policyRateBadge.textContent = `Hệ số (${isLost ? 'Mất' : 'Hỏng nặng'}): ${appliedRate}x`;
+                }
+
+                if (coverPrice && coverPrice > 0) {
+                    const estimatedAmount = Math.round((coverPrice * appliedRate) * 100) / 100;
+                    compensationPreviewText.innerHTML = `
+                        Giá bìa: <strong>${new Intl.NumberFormat('vi-VN').format(coverPrice)} VNĐ</strong> × Hệ số <strong>${appliedRate}x</strong> =
+                        Khoản bồi thường: <strong class="text-danger fs-6">${new Intl.NumberFormat('vi-VN').format(estimatedAmount)} VNĐ</strong>
+                    `;
+                    compensationPreviewBox.classList.remove('d-none');
+                } else {
+                    compensationPreviewText.innerHTML = `
+                        <span class="text-muted fst-italic">Bản sao này chưa có thông tin giá bìa hợp lệ. Sự cố vẫn sẽ được ghi nhận và loại khỏi kho, nhưng hệ thống sẽ không tự động tính khoản bồi thường.</span>
+                    `;
+                    compensationPreviewBox.classList.remove('d-none');
+                }
+            }
 
             // Quick select buttons from table
             document.querySelectorAll('.btn-select-loan').forEach(function (button) {
@@ -360,6 +500,7 @@
                     if (!loanId) {
                         loanDetailsBox.classList.add('d-none');
                         copySelect.innerHTML = '<option value="">-- Chọn bản sao --</option>';
+                        updateCompensationPreview();
                         return;
                     }
 
@@ -380,14 +521,18 @@
                             copies.forEach(copy => {
                                 const option = document.createElement('option');
                                 option.value = copy.copyId;
-                                option.textContent = `${copy.copyBarcode} (Kệ: ${copy.shelfName} - Tình trạng: ${copy.physicalCondition})`;
+                                option.setAttribute('data-coverprice', copy.coverPrice != null ? copy.coverPrice : '');
+                                const priceText = copy.coverPrice != null ? `${new Intl.NumberFormat('vi-VN').format(copy.coverPrice)} VNĐ` : 'Chưa có';
+                                option.textContent = `${copy.copyBarcode} (Kệ: ${copy.shelfName} - Tình trạng: ${copy.physicalCondition}) - Giá bìa: ${priceText}`;
                                 copySelect.appendChild(option);
                             });
                             if (copies.length === 1) {
                                 copySelect.value = copies[0].copyId;
                             }
+                            updateCompensationPreview();
                         } else {
                             copySelect.innerHTML = '<option value="">-- Không tìm thấy bản sao --</option>';
+                            updateCompensationPreview();
                         }
                     } catch (err) {
                         console.error('Error fetching copies:', err);
@@ -402,8 +547,52 @@
                     detailBook.textContent = selectedOption.getAttribute('data-book') || '-';
                     detailLoanDate.textContent = selectedOption.getAttribute('data-loandate') || '-';
                     detailDueDate.textContent = selectedOption.getAttribute('data-duedate') || '-';
+                    updateCompensationPreview();
                 }
             }
+
+            if (copySelect) {
+                copySelect.addEventListener('change', updateCompensationPreview);
+            }
+
+            document.querySelectorAll('input[name="FormModel.IncidentType"]').forEach(function (radio) {
+                radio.addEventListener('change', updateCompensationPreview);
+            });
+
+            // Adjust Compensation Modal Handling
+            const adjustModalEl = document.getElementById('adjustCompensationModal');
+            let adjustModal = null;
+            if (adjustModalEl && typeof bootstrap !== 'undefined') {
+                adjustModal = new bootstrap.Modal(adjustModalEl);
+            }
+
+            document.querySelectorAll('.btn-adjust-compensation').forEach(function (button) {
+                button.addEventListener('click', function () {
+                    const incidentId = this.getAttribute('data-incident-id');
+                    const summary = this.getAttribute('data-summary');
+                    const coverPrice = this.getAttribute('data-cover-price');
+                    const rate = this.getAttribute('data-rate');
+                    const initialAmount = this.getAttribute('data-initial-amount');
+                    const currentAmount = this.getAttribute('data-current-amount');
+                    const currentVal = this.getAttribute('data-current-val');
+                    const reason = this.getAttribute('data-reason');
+
+                    document.getElementById('modalIncidentId').value = incidentId;
+                    document.getElementById('modalIncidentSummary').textContent = summary || `#${incidentId}`;
+                    document.getElementById('modalCoverPrice').textContent = coverPrice || '-';
+                    document.getElementById('modalRate').textContent = rate ? `${rate}x` : '-';
+                    document.getElementById('modalInitialAmount').textContent = initialAmount || '-';
+                    document.getElementById('modalCurrentAmount').textContent = currentAmount || '-';
+                    document.getElementById('modalNewAmount').value = currentVal || '';
+                    document.getElementById('modalReason').value = '';
+
+                    if (adjustModal) {
+                        adjustModal.show();
+                    } else if (typeof bootstrap !== 'undefined') {
+                        new bootstrap.Modal(adjustModalEl).show();
+                    }
+                });
+            });
         });
     </script>
 }
