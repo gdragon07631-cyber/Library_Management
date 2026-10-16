@@ -12,8 +12,11 @@ public sealed class LoanPolicy
 
     public int LoanDays { get; set; } = DefaultLoanDays;
 
-    /// <summary>Phí trễ hạn theo ngày do Quản lý cấu hình (VNĐ).</summary>
-    public decimal DailyOverdueFee { get; set; } = 2_000m;
+    /// <summary>
+    /// Phí trễ hạn theo ngày do Quản lý cấu hình (VNĐ).
+    /// <c>null</c> nghĩa là Quản lý chưa khai báo; hệ thống không tự áp mức phí mặc định (PO xác nhận).
+    /// </summary>
+    public decimal? DailyOverdueFee { get; set; }
 
     public DateTime UpdatedAtUtc { get; set; }
 }
@@ -28,7 +31,7 @@ public sealed class LoanPolicyViewModel
     [Required(ErrorMessage = "Vui lòng nhập mức phí trễ hạn mỗi ngày.")]
     [Range(typeof(decimal), "0", "1000000000", ErrorMessage = "Mức phí phải từ 0 đến 1.000.000.000 VNĐ/ngày.")]
     [Display(Name = "Phí trễ hạn mỗi ngày")]
-    public decimal DailyOverdueFee { get; set; } = 2_000m;
+    public decimal? DailyOverdueFee { get; set; }
 
     public DateTime? UpdatedAtUtc { get; set; }
 

@@ -22,7 +22,7 @@ public sealed class LoanPolicyController(
         return View(new LoanPolicyViewModel
         {
             LoanDays = policy?.LoanDays ?? LoanPolicy.DefaultLoanDays,
-            DailyOverdueFee = policy?.DailyOverdueFee ?? 2_000m,
+            DailyOverdueFee = policy?.DailyOverdueFee,
             UpdatedAtUtc = policy?.UpdatedAtUtc,
             CardTypePolicies = await GetCardTypePoliciesAsync(cancellationToken)
         });
@@ -38,10 +38,12 @@ public sealed class LoanPolicyController(
 
         var policy = await dbContext.LoanPolicies
             .SingleOrDefaultAsync(item => item.Id == LoanPolicy.SingletonId, cancellationToken);
+        if (model.DailyOverdueFee is null && ModelState.IsValid)
+            ModelState.AddModelError(nameof(model.DailyOverdueFee), "Vui lòng nhập mức phí trễ hạn mỗi ngày.");
         if (!ModelState.IsValid)
         {
             model.UpdatedAtUtc = policy?.UpdatedAtUtc;
-            model.DailyOverdueFee = policy?.DailyOverdueFee ?? 2_000m;
+            model.DailyOverdueFee = policy?.DailyOverdueFee;
             model.CardTypePolicies = await GetCardTypePoliciesAsync(cancellationToken);
             return View(model);
         }
@@ -68,7 +70,7 @@ public sealed class LoanPolicyController(
         await auditLogService.WriteAsync(
             admin.Email,
             AuditActions.UpdateLoanPolicy,
-            $"Chính sách mượn: số ngày mượn {previousLoanDays} → {policy.LoanDays}; phí trễ hạn/ngày {previousDailyOverdueFee:N2} → {policy.DailyOverdueFee:N2} VNĐ",
+            $"Chính sách mượn: số ngày mượn {previousLoanDays} → {policy.LoanDays}; phí trễ hạn/ngày {previousDailyOverdueFee?.ToString("N2") ?? "chưa khai báo"} → {policy.DailyOverdueFee:N2} VNĐ",
             AuditLogService.ClientIp(HttpContext),
             cancellationToken);
 

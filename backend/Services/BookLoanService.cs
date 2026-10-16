@@ -283,12 +283,12 @@ public sealed class BookLoanService(ApplicationDbContext db, IWorkingScheduleSer
 
             var inMemoryFeePolicy = await db.LoanPolicies.AsNoTracking()
                 .SingleOrDefaultAsync(policy => policy.Id == LoanPolicy.SingletonId, cancellationToken);
-            if (inMemoryFeePolicy is null || inMemoryFeePolicy.DailyOverdueFee < 0)
+            if (inMemoryFeePolicy?.DailyOverdueFee is not { } inMemoryDailyRate || inMemoryDailyRate < 0)
                 return new(false, "Chưa cấu hình chính sách phí trễ hạn; chưa thể nhận trả.");
 
             var returnDate = LibraryCalendarDate.DateFromUtc(returnedAt);
             OverdueFeeCalculation inMemoryFeeCalculation;
-            try { inMemoryFeeCalculation = await CalculateOverdueFeeAsync(loan.DueDate, returnDate, inMemoryFeePolicy.DailyOverdueFee, cancellationToken); }
+            try { inMemoryFeeCalculation = await CalculateOverdueFeeAsync(loan.DueDate, returnDate, inMemoryDailyRate, cancellationToken); }
             catch (InvalidOperationException exception) { return new(false, exception.Message, loan); }
 
             var assignedHold = await FindNextPendingHoldAsync(loan.BookCopy.BookId, cancellationToken);
@@ -339,12 +339,12 @@ public sealed class BookLoanService(ApplicationDbContext db, IWorkingScheduleSer
 
         var feePolicy = await db.LoanPolicies.AsNoTracking()
             .SingleOrDefaultAsync(policy => policy.Id == LoanPolicy.SingletonId, cancellationToken);
-        if (feePolicy is null || feePolicy.DailyOverdueFee < 0)
+        if (feePolicy?.DailyOverdueFee is not { } dailyRate || dailyRate < 0)
             return new(false, "Chưa cấu hình chính sách phí trễ hạn; chưa thể nhận trả.");
 
         var actualReturnDate = LibraryCalendarDate.DateFromUtc(returnedAt);
         OverdueFeeCalculation feeCalculation;
-        try { feeCalculation = await CalculateOverdueFeeAsync(currentLoan.DueDate, actualReturnDate, feePolicy.DailyOverdueFee, cancellationToken); }
+        try { feeCalculation = await CalculateOverdueFeeAsync(currentLoan.DueDate, actualReturnDate, dailyRate, cancellationToken); }
         catch (InvalidOperationException exception) { return new(false, exception.Message, currentLoan); }
         var overdueFee = feeCalculation.EstimatedFee;
         currentLoan.OverdueFee = overdueFee;
@@ -495,7 +495,7 @@ public sealed class BookLoanService(ApplicationDbContext db, IWorkingScheduleSer
         var loan = openLoans[0];
         var dailyRate = await db.LoanPolicies.AsNoTracking()
             .Where(policy => policy.Id == LoanPolicy.SingletonId)
-            .Select(policy => (decimal?)policy.DailyOverdueFee).SingleOrDefaultAsync(cancellationToken);
+            .Select(policy => policy.DailyOverdueFee).SingleOrDefaultAsync(cancellationToken);
         if (dailyRate is null || dailyRate < 0)
             throw new InvalidOperationException("Chưa cấu hình chính sách phí trễ hạn.");
         var fee = await CalculateOverdueFeeAsync(loan.DueDate, today, dailyRate.Value, cancellationToken);
