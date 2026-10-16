@@ -44,6 +44,15 @@ public interface IReaderAccountAdminService
         int lockedByAdminAccountId,
         CancellationToken cancellationToken = default);
 
+    /// <summary>Mở khoá thẻ bạn đọc và lưu nhật ký mở khoá cùng với cập nhật trạng thái thẻ.</summary>
+    Task<ReaderAccountAdminResult> SetCardUnlockedAsync(
+        int readerId,
+        string? reason,
+        int unlockedByAdminAccountId,
+        string actorEmail,
+        string? ipAddress,
+        CancellationToken cancellationToken = default);
+
     /// <summary>Đăng xuất bạn đọc khỏi mọi thiết bị (ví dụ khi nghi bị lộ mật khẩu).</summary>
     Task<ReaderAccountAdminResult> RevokeSessionsAsync(int id, CancellationToken cancellationToken = default);
 }

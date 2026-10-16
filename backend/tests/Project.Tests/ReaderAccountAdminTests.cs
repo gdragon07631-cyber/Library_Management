@@ -260,6 +260,38 @@ public sealed class ReaderAccountAdminTests : IDisposable
     }
 
     [Fact]
+    public async Task CardUnlockingResetsCardStateAndWritesAuditLog()
+    {
+        var reader = await AddReaderAsync("card@example.com", code: "R-CARD");
+        db.LibraryCards.Add(new LibraryCard
+        {
+            ReaderAccountId = reader.Id,
+            CardCode = "CARD-001",
+            LibraryCardType = new LibraryCardType { Name = "Thẻ sinh viên" },
+            IssuedOn = new DateOnly(2026, 1, 1),
+            ExpiresOn = new DateOnly(2027, 1, 1),
+            Status = "Đang hoạt động",
+            LockReason = "Vi phạm",
+            LockedAtUtc = DateTime.UtcNow,
+            LockExpiresAtUtc = DateTime.UtcNow.AddDays(7),
+            IsLockUntilManualUnlock = false
+        });
+        await db.SaveChangesAsync();
+
+        var result = await service.SetCardUnlockedAsync(reader.Id, "Xem xét xong", 1, "admin@library.test", "203.0.113.5");
+
+        Assert.True(result.IsSuccess);
+        db.ChangeTracker.Clear();
+        var card = await db.LibraryCards.SingleAsync();
+        Assert.Equal("Đang hoạt động", card.Status);
+        Assert.Null(card.LockReason);
+        Assert.Null(card.LockedAtUtc);
+        Assert.Null(card.LockExpiresAtUtc);
+        Assert.False(card.IsLockUntilManualUnlock);
+        Assert.Contains(await db.AuditLogs.AsNoTracking().Select(log => log.Action).ToListAsync(), action => action == AuditActions.UnlockCard);
+    }
+
+    [Fact]
     public async Task SystemAdminActionsAreRecordedInActivityLog()
     {
         var reader = await AddReaderAsync("a@example.com", code: "R-1");

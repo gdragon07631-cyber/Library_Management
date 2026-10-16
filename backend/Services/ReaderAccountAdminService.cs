@@ -196,6 +196,64 @@ public sealed class ReaderAccountAdminService(ApplicationDbContext dbContext) : 
         return new(ReaderAccountAdminStatus.Success, Reader: reader);
     }
 
+    public async Task<ReaderAccountAdminResult> SetCardUnlockedAsync(
+        int readerId,
+        string? reason,
+        int unlockedByAdminAccountId,
+        string actorEmail,
+        string? ipAddress,
+        CancellationToken cancellationToken = default)
+    {
+        var trimmedReason = reason?.Trim();
+        if (string.IsNullOrWhiteSpace(trimmedReason))
+            return new(ReaderAccountAdminStatus.MissingReason, "Vui lòng nhập lý do mở khoá thẻ.");
+        if (trimmedReason.Length > 1000)
+            return new(ReaderAccountAdminStatus.MissingReason, "Lý do mở khoá thẻ không được vượt quá 1000 ký tự.");
+
+        var reader = await dbContext.ReaderAccounts
+            .Include(item => item.LibraryCard)
+            .SingleOrDefaultAsync(item => item.Id == readerId, cancellationToken);
+        if (reader is null)
+            return new(ReaderAccountAdminStatus.NotFound, "Không tìm thấy bạn đọc.");
+
+        var card = reader.LibraryCard;
+        if (card is null)
+            return new(ReaderAccountAdminStatus.NotFound, "Bạn đọc chưa được cấp thẻ. Không thể mở khoá thẻ.");
+
+        if (!LibraryCardStatusHelper.IsCardLocked(card, DateTime.UtcNow))
+            return new(ReaderAccountAdminStatus.NoChange, "Thẻ đang hoạt động, không cần mở khoá thêm.", reader);
+
+        var previousReason = string.IsNullOrWhiteSpace(card.LockReason) ? "Không có lý do cụ thể." : card.LockReason.Trim();
+        var now = DateTime.UtcNow;
+
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        try
+        {
+            card.Status = "Đang hoạt động";
+            card.LockReason = null;
+            card.LockedAtUtc = null;
+            card.LockExpiresAtUtc = null;
+            card.IsLockUntilManualUnlock = false;
+            card.LockedByAdminAccountId = null;
+            reader.UpdatedAtUtc = now;
+
+            dbContext.AuditLogs.Add(AuditLogService.Create(
+                actorEmail,
+                AuditActions.UnlockCard,
+                $"Thẻ bạn đọc #{reader.Id} ({reader.Email}) – mã thẻ {card.CardCode} – lý do khóa trước đó: {previousReason} – lý do mở khóa: {trimmedReason}",
+                ipAddress));
+
+            await dbContext.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            return new(ReaderAccountAdminStatus.Success, Reader: reader);
+        }
+        catch
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            throw;
+        }
+    }
+
     public async Task<ReaderAccountAdminResult> RevokeSessionsAsync(int id, CancellationToken cancellationToken = default)
     {
         var reader = await dbContext.ReaderAccounts.SingleOrDefaultAsync(item => item.Id == id, cancellationToken);

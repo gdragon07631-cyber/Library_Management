@@ -19,11 +19,13 @@ public static class AuditActions
     public const string CancelHold = "Hủy đặt giữ";
     public const string BlockLoan = "Chặn mượn sách";
     public const string OverrideBlockLoan = "Bỏ qua chặn mượn sách";
+    public const string LockCard = "Khóa thẻ";
+    public const string UnlockCard = "Mở khóa thẻ";
 
     public static readonly IReadOnlyList<string> All =
     [
         Login, LoginFailed, Logout, CreateAccount, UpdateAccount, ChangePassword, ResetPassword,
-        IssueCard, CreateLoan, RenewLoan, PlaceHold, CancelHold, UpdateLoanPolicy
+        IssueCard, LockCard, UnlockCard, CreateLoan, RenewLoan, PlaceHold, CancelHold, UpdateLoanPolicy
     ];
 
     /// <summary>Màu nhãn trên trang nhật ký để phân biệt nhanh từng nhóm hành động.</summary>
@@ -33,6 +35,8 @@ public static class AuditActions
         OverrideBlockLoan => "bg-warning-subtle text-warning-emphasis",
         Login or Logout => "bg-secondary-subtle text-secondary-emphasis",
         ChangePassword or ResetPassword => "bg-warning-subtle text-warning-emphasis",
+        LockCard or BlockLoan => "bg-danger-subtle text-danger-emphasis",
+        UnlockCard => "bg-success-subtle text-success-emphasis",
         CreateLoan or RenewLoan => "bg-success-subtle text-success-emphasis",
         PlaceHold or CancelHold => "bg-info-subtle text-info-emphasis",
         _ => "bg-primary-subtle text-primary-emphasis"

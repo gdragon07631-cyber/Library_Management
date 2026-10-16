@@ -149,11 +149,58 @@ public sealed class ReaderAccountController(
             return View(nameof(Details), details);
         }
 
-        await WriteLogAsync(admin.Email, AuditActions.UpdateAccount, details.Reader,
-            $"khoá thẻ {card.CardCode}, lý do: {reason.Trim()}{(useManualUnlock ? ", đến khi mở khoá thủ công" : $", hết hạn {lockExpiresAtUtc:dd/MM/yyyy HH:mm}")}", cancellationToken);
+        await WriteLogAsync(admin.Email, AuditActions.LockCard, details.Reader,
+            $"khóa thẻ {card.CardCode}, lý do: {reason.Trim()}{(useManualUnlock ? ", đến khi mở khoá thủ công" : $", hết hạn {lockExpiresAtUtc:dd/MM/yyyy HH:mm}")}", cancellationToken);
         TempData["SuccessMessage"] = useManualUnlock
             ? $"Đã khoá thẻ {card.CardCode}. Thẻ sẽ tiếp tục bị khoá đến khi được mở thủ công."
             : $"Đã khoá thẻ {card.CardCode}. Thẻ sẽ bị khoá tới {lockExpiresAtUtc:dd/MM/yyyy HH:mm}.";
+        return RedirectToAction(nameof(Details), new { id });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> SetCardUnlocked(int id, string? reason, CancellationToken cancellationToken = default)
+    {
+        var (admin, denied) = await RequireSystemAdminAsync(cancellationToken);
+        if (denied is not null) return denied;
+
+        var details = await readerAccountService.GetDetailsAsync(id, cancellationToken);
+        if (details is null) return NotFound("Không tìm thấy tài khoản bạn đọc.");
+
+        var card = details.Reader.LibraryCard;
+        if (card is null)
+        {
+            TempData["ErrorMessage"] = "Bạn đọc chưa được cấp thẻ thư viện để mở khoá.";
+            return RedirectToAction(nameof(Details), new { id });
+        }
+
+        if (string.IsNullOrWhiteSpace(reason))
+        {
+            TempData["ErrorMessage"] = "Vui lòng nhập lý do mở khoá thẻ.";
+            return RedirectToAction(nameof(Details), new { id });
+        }
+
+        if (!LibraryCardStatusHelper.IsCardLocked(card, DateTime.UtcNow))
+        {
+            TempData["ErrorMessage"] = "Thẻ đang hoạt động, không cần mở khoá thêm.";
+            return RedirectToAction(nameof(Details), new { id });
+        }
+
+        var result = await readerAccountService.SetCardUnlockedAsync(
+            id,
+            reason,
+            admin!.Id,
+            admin.Email,
+            AuditLogService.ClientIp(HttpContext),
+            cancellationToken);
+
+        if (!result.IsSuccess)
+        {
+            TempData["ErrorMessage"] = result.ErrorMessage ?? "Không thể mở khoá thẻ.";
+            return RedirectToAction(nameof(Details), new { id });
+        }
+
+        TempData["SuccessMessage"] = $"Đã mở khoá thẻ {card.CardCode}. Thẻ quay lại trạng thái hoạt động.";
         return RedirectToAction(nameof(Details), new { id });
     }
 
