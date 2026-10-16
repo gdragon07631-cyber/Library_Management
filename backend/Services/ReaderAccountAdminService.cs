@@ -144,6 +144,58 @@ public sealed class ReaderAccountAdminService(ApplicationDbContext dbContext) : 
         return new(ReaderAccountAdminStatus.Success, Reader: reader);
     }
 
+    public async Task<ReaderAccountAdminResult> SetCardLockedAsync(
+        int readerId,
+        string? reason,
+        DateTime? lockExpiresAtUtc,
+        bool manualUnlock,
+        int lockedByAdminAccountId,
+        CancellationToken cancellationToken = default)
+    {
+        var trimmedReason = reason?.Trim();
+        if (string.IsNullOrWhiteSpace(trimmedReason))
+            return new(ReaderAccountAdminStatus.MissingReason, "Vui lòng nhập lý do khoá thẻ.");
+        if (trimmedReason.Length > 1000)
+            return new(ReaderAccountAdminStatus.MissingReason, "Lý do khoá thẻ không được vượt quá 1000 ký tự.");
+
+        var reader = await dbContext.ReaderAccounts
+            .Include(item => item.LibraryCard)
+            .SingleOrDefaultAsync(item => item.Id == readerId, cancellationToken);
+        if (reader is null) return new(ReaderAccountAdminStatus.NotFound, "Không tìm thấy bạn đọc.");
+        if (reader.LibraryCard is null)
+            return new(ReaderAccountAdminStatus.NotFound, "Bạn đọc chưa được cấp thẻ. Không thể khoá thẻ.");
+
+        var card = reader.LibraryCard;
+        var lockStartedAtUtc = DateTime.UtcNow;
+        if (manualUnlock)
+        {
+            if (LibraryCardStatusHelper.IsCardLocked(card, lockStartedAtUtc))
+                return new(ReaderAccountAdminStatus.NoChange, "Thẻ đang bị khoá từ trước.", reader);
+        }
+        else if (lockExpiresAtUtc is null)
+        {
+            return new(ReaderAccountAdminStatus.MissingReason, "Vui lòng chọn thời hạn khoá hoặc chọn hình thức khoá đến khi mở thủ công.");
+        }
+        else if (lockExpiresAtUtc.Value <= lockStartedAtUtc)
+        {
+            return new(ReaderAccountAdminStatus.MissingReason, "Thời hạn khoá phải sau thời điểm bắt đầu khoá.");
+        }
+
+        if (LibraryCardStatusHelper.IsCardLocked(card, lockStartedAtUtc))
+            return new(ReaderAccountAdminStatus.NoChange, "Thẻ đang bị khoá từ trước.", reader);
+
+        card.Status = "Đang bị khoá";
+        card.LockReason = trimmedReason;
+        card.LockedAtUtc = lockStartedAtUtc;
+        card.LockExpiresAtUtc = manualUnlock ? null : lockExpiresAtUtc;
+        card.IsLockUntilManualUnlock = manualUnlock;
+        card.LockedByAdminAccountId = lockedByAdminAccountId;
+        reader.UpdatedAtUtc = DateTime.UtcNow;
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return new(ReaderAccountAdminStatus.Success, Reader: reader);
+    }
+
     public async Task<ReaderAccountAdminResult> RevokeSessionsAsync(int id, CancellationToken cancellationToken = default)
     {
         var reader = await dbContext.ReaderAccounts.SingleOrDefaultAsync(item => item.Id == id, cancellationToken);

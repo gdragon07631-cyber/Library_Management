@@ -35,6 +35,15 @@ public interface IReaderAccountAdminService
     /// <summary>Khoá (bắt buộc có lý do, thu hồi mọi phiên đăng nhập) hoặc mở khoá tài khoản bạn đọc.</summary>
     Task<ReaderAccountAdminResult> SetLockedAsync(int id, bool locked, string? reason, CancellationToken cancellationToken = default);
 
+    /// <summary>Khoá thẻ bạn đọc theo thời hạn hoặc cho đến khi mở khoá thủ công.</summary>
+    Task<ReaderAccountAdminResult> SetCardLockedAsync(
+        int readerId,
+        string? reason,
+        DateTime? lockExpiresAtUtc,
+        bool manualUnlock,
+        int lockedByAdminAccountId,
+        CancellationToken cancellationToken = default);
+
     /// <summary>Đăng xuất bạn đọc khỏi mọi thiết bị (ví dụ khi nghi bị lộ mật khẩu).</summary>
     Task<ReaderAccountAdminResult> RevokeSessionsAsync(int id, CancellationToken cancellationToken = default);
 }

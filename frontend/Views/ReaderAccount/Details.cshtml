@@ -158,6 +158,22 @@
                             <dt class="col-5">Hiệu lực</dt><dd class="col-7">@card.IssuedOn.ToString("dd/MM/yyyy") – @card.ExpiresOn.ToString("dd/MM/yyyy")</dd>
                             <dt class="col-5">Trạng thái</dt><dd class="col-7">@card.Status</dd>
                         </dl>
+
+                        @if (LibraryCardStatusHelper.IsCardLocked(card, DateTime.UtcNow))
+                        {
+                            <div class="alert alert-danger small mt-3 mb-0" role="alert">
+                                <strong>Đang bị khoá.</strong> Lý do: @card.LockReason<br />
+                                @(card.IsLockUntilManualUnlock || !card.LockExpiresAtUtc.HasValue
+                                    ? "Tới khi được mở khoá thủ công."
+                                    : $"Hạn khoá: {card.LockExpiresAtUtc:dd/MM/yyyy HH:mm}.")
+                            </div>
+                        }
+                        else
+                        {
+                            <button type="button" class="btn btn-outline-danger mt-3" data-bs-toggle="modal" data-bs-target="#cardLockModal">
+                                Khoá thẻ
+                            </button>
+                        }
                     }
                     else
                     {
@@ -230,6 +246,66 @@
     </div>
 </div>
 
+@if (reader.LibraryCard is { } lockCard && !LibraryCardStatusHelper.IsCardLocked(lockCard, DateTime.UtcNow))
+{
+    <div class="modal fade" id="cardLockModal" tabindex="-1" aria-labelledby="cardLockModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <form asp-action="SetCardLocked" asp-route-id="@reader.Id" method="post">
+                    @Html.AntiForgeryToken()
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="cardLockModalLabel">Khoá thẻ</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Đóng"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="mb-3">
+                            <label for="cardLockReason" class="form-label">Lý do khoá</label>
+                            <textarea id="cardLockReason" name="reason" class="form-control" rows="3" required maxlength="1000"></textarea>
+                            @Html.ValidationMessage("reason")
+                        </div>
+                        <div class="mb-3">
+                            <label for="cardLockType" class="form-label">Hình thức khoá</label>
+                            <select id="cardLockType" name="lockType" class="form-select">
+                                <option value="temporary">Có thời hạn</option>
+                                <option value="manual">Đến khi mở thủ công</option>
+                            </select>
+                        </div>
+                        <div id="cardLockExpiryGroup" class="mb-0">
+                            <label for="cardLockExpiry" class="form-label">Ngày và giờ hết hạn</label>
+                            <input id="cardLockExpiry" name="lockExpiresAtUtc" type="datetime-local" class="form-control" />
+                            @Html.ValidationMessage("lockExpiresAtUtc")
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Huỷ</button>
+                        <button type="submit" class="btn btn-danger">Xác nhận khoá</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+}
+
 @section Scripts {
     <partial name="_ValidationScriptsPartial" />
+    <script>
+        (function () {
+            const modal = document.getElementById('cardLockModal');
+            if (!modal) return;
+            const typeSelect = document.getElementById('cardLockType');
+            const expiryGroup = document.getElementById('cardLockExpiryGroup');
+            const expiryInput = document.getElementById('cardLockExpiry');
+            const sync = () => {
+                const isManual = typeSelect.value === 'manual';
+                expiryInput.disabled = isManual;
+                expiryInput.required = !isManual;
+                expiryGroup.style.display = isManual ? 'none' : 'block';
+                if (isManual) {
+                    expiryInput.value = '';
+                }
+            };
+            typeSelect.addEventListener('change', sync);
+            sync();
+        })();
+    </script>
 }

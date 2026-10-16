@@ -32,12 +32,13 @@ public sealed partial class DirectLoanService(ApplicationDbContext db, IBookLoan
                 model.CurrentLoans = existing.Count(l => !l.IsReturned);
                 model.RemainingLoans = Math.Max(0, model.MaxBooks - model.CurrentLoans);
                 model.OutstandingDebt = reader.TotalDebt;
-                if (reader.IsLocked || card.IsLocked || card.Status.Contains("khóa", StringComparison.OrdinalIgnoreCase)
+                if (reader.IsLocked || LibraryCardStatusHelper.IsCardLocked(card, DateTime.UtcNow) || card.Status.Contains("khóa", StringComparison.OrdinalIgnoreCase)
                     || card.Status.Contains("khoá", StringComparison.OrdinalIgnoreCase))
                 {
-                    model.ReaderError = card.IsLocked || card.Status.Contains("khóa", StringComparison.OrdinalIgnoreCase)
+                    model.ReaderError = LibraryCardStatusHelper.IsCardLocked(card, DateTime.UtcNow)
+                        || card.Status.Contains("khóa", StringComparison.OrdinalIgnoreCase)
                         || card.Status.Contains("khoá", StringComparison.OrdinalIgnoreCase)
-                        ? "Thẻ bạn đọc đang bị khóa."
+                        ? LibraryCardStatusHelper.GetLockMessage(card, DateTime.UtcNow) ?? "Thẻ bạn đọc đang bị khóa."
                         : "Tài khoản bạn đọc đang bị khóa.";
                     model.CanOverrideBlock = true;
                 }

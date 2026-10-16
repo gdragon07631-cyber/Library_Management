@@ -12,7 +12,7 @@ public sealed class ReaderRegistrationController(
     IDataProtectionProvider dataProtectionProvider,
     IAuditLogService auditLogService,
     IReaderEmailVerificationService emailVerificationService,
-    IHoldPickupConfirmationService holdPickupConfirmationService) : Controller
+    IHoldPickupConfirmationService? holdPickupConfirmationService = null) : Controller
 {
     [HttpGet]
     public async Task<IActionResult> Register(CancellationToken cancellationToken = default) =>
@@ -629,6 +629,12 @@ public sealed class ReaderRegistrationController(
         if (string.IsNullOrWhiteSpace(cardCode))
         {
             TempData["ErrorMessage"] = "Tài khoản chưa có mã thẻ thư viện hợp lệ.";
+            return RedirectToAction(nameof(MyHolds));
+        }
+
+        if (holdPickupConfirmationService is null)
+        {
+            TempData["ErrorMessage"] = "Dịch vụ xác nhận nhận sách chưa được cấu hình.";
             return RedirectToAction(nameof(MyHolds));
         }
 

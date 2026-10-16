@@ -22,11 +22,62 @@ public sealed class LibraryCard
     [Required, MaxLength(50)]
     public string Status { get; set; } = "Đang hoạt động";
 
+    [MaxLength(1000)]
+    public string? LockReason { get; set; }
+
+    public DateTime? LockedAtUtc { get; set; }
+
+    public DateTime? LockExpiresAtUtc { get; set; }
+
+    public bool IsLockUntilManualUnlock { get; set; }
+
+    public int? LockedByAdminAccountId { get; set; }
+    public AdminAccount? LockedByAdminAccount { get; set; }
+
     [NotMapped]
     public bool IsLocked
     {
-        get => _isLocked || (!string.IsNullOrEmpty(Status) && (Status.Contains("khóa", StringComparison.OrdinalIgnoreCase) || Status.Contains("khoá", StringComparison.OrdinalIgnoreCase)));
+        get => _isLocked || LibraryCardStatusHelper.IsCardLocked(this, DateTime.UtcNow);
         set => _isLocked = value;
     }
+
     private bool _isLocked;
+}
+
+public static class LibraryCardStatusHelper
+{
+    public static bool IsCardLocked(LibraryCard? card, DateTime? referenceUtc = null)
+    {
+        if (card is null) return false;
+
+        var reference = referenceUtc ?? DateTime.UtcNow;
+        if (card.Status is not null && (card.Status.Contains("khóa", StringComparison.OrdinalIgnoreCase)
+            || card.Status.Contains("khoá", StringComparison.OrdinalIgnoreCase)))
+            return true;
+
+        if (card.LockedAtUtc is not null)
+        {
+            if (card.IsLockUntilManualUnlock || !card.LockExpiresAtUtc.HasValue)
+                return true;
+            if (card.LockExpiresAtUtc.Value > reference)
+                return true;
+        }
+
+        return false;
+    }
+
+    public static string GetLockMessage(LibraryCard? card, DateTime? referenceUtc = null)
+    {
+        if (!IsCardLocked(card, referenceUtc)) return string.Empty;
+        if (card is null) return "Thẻ bạn đọc đang bị khoá.";
+
+        var reason = string.IsNullOrWhiteSpace(card.LockReason)
+            ? "Không có lý do cụ thể."
+            : card.LockReason.Trim();
+
+        if (card.IsLockUntilManualUnlock || !card.LockExpiresAtUtc.HasValue)
+            return $"Thẻ bạn đọc đang bị khoá. Lý do: {reason}. Tới khi được mở khoá thủ công.";
+
+        return $"Thẻ bạn đọc đang bị khoá. Lý do: {reason}. Hạn khoá: {card.LockExpiresAtUtc.Value:dd/MM/yyyy HH:mm}.";
+    }
 }
