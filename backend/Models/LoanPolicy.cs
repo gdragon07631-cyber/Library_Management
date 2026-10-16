@@ -7,10 +7,13 @@ public sealed class LoanPolicy
 {
     public const int SingletonId = 1;
     public const int DefaultLoanDays = 14;
+    public const decimal DefaultDebtLockThreshold = 500000m;
 
     public int Id { get; set; }
 
     public int LoanDays { get; set; } = DefaultLoanDays;
+
+    public decimal DebtLockThreshold { get; set; } = DefaultDebtLockThreshold;
 
     public DateTime UpdatedAtUtc { get; set; }
 }
@@ -22,9 +25,27 @@ public sealed class LoanPolicyViewModel
     [Display(Name = "Số ngày mượn tối đa")]
     public int LoanDays { get; set; }
 
+    [Range(0, double.MaxValue, ErrorMessage = "Ngưỡng nợ phí phải là số không âm.")]
+    [Display(Name = "Ngưỡng nợ phí đề xuất khoá thẻ")]
+    public decimal DebtLockThreshold { get; set; } = LoanPolicy.DefaultDebtLockThreshold;
+
     public DateTime? UpdatedAtUtc { get; set; }
 
     public IReadOnlyList<CardTypeLoanDaysViewModel> CardTypePolicies { get; set; } = [];
+
+    public IReadOnlyList<LockProposalViewModel> LockProposals { get; set; } = [];
+}
+
+public sealed class LockProposalViewModel
+{
+    public int ReaderAccountId { get; set; }
+    public string ReaderName { get; set; } = string.Empty;
+    public string? CardCode { get; set; }
+    public int MaxOverdueDays { get; set; }
+    public decimal OutstandingDebt { get; set; }
+    public decimal DebtThreshold { get; set; }
+    public string Status { get; set; } = string.Empty;
+    public IReadOnlyList<string> Reasons { get; set; } = [];
 }
 
 public sealed class CardTypeLoanDaysViewModel
