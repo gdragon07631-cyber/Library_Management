@@ -39,6 +39,9 @@ public sealed class ReaderAccount
 
     public int SessionVersion { get; set; }
 
+    // Present in the database model snapshot and used by loan renewal policy.
+    public decimal OutstandingBalance { get; set; }
+
     public LibraryCard? LibraryCard { get; set; }
     public ICollection<BookHold> BookHolds { get; set; } = [];
     public ICollection<ReaderPasswordHistory> PasswordHistories { get; set; } = [];
