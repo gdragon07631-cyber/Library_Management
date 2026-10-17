@@ -1,0 +1,67 @@
+@model Project.Models.LoanReportViewModel
+@{
+    ViewData["Title"] = "Báo cáo mượn trả";
+}
+<div class="container py-4">
+    <div class="mb-4">
+        <h1 class="h3 mb-1 text-primary fw-bold">Báo cáo mượn, trả và quá hạn</h1>
+        <p class="text-muted mb-0">Thống kê lượt mượn, lượt trả và tình hình phiếu hiện tại.</p>
+    </div>
+    <div class="alert alert-warning" role="note"><strong>Bản thực hành:</strong> các chỉ số dưới đây dùng dữ liệu minh họa, không lấy từ database.</div>
+
+    <form id="reportFilter" class="card card-body shadow-sm border-0 mb-4" novalidate>
+        <div class="row g-3 align-items-end">
+            <div class="col-sm-5 col-md-4"><label for="startDate" class="form-label">Từ ngày</label><input id="startDate" class="form-control" type="date" value="@Model.StartDate.ToString("yyyy-MM-dd")" required /></div>
+            <div class="col-sm-5 col-md-4"><label for="endDate" class="form-label">Đến ngày</label><input id="endDate" class="form-control" type="date" value="@Model.EndDate.ToString("yyyy-MM-dd")" required /></div>
+            <div class="col-sm-2"><button class="btn btn-primary w-100" type="submit">Xem báo cáo</button></div>
+        </div>
+    </form>
+    <div id="reportMessage" class="alert d-none" role="status" aria-live="polite"></div>
+    <div class="row g-3" id="reportCards" aria-live="polite">
+        <div class="col-md-6 col-xl"><div class="card h-100 shadow-sm border-0"><div class="card-body"><div class="text-muted small">Tổng lượt mượn</div><div class="display-6 fw-semibold" data-metric="totalLoans">@Model.TotalLoans</div></div></div></div>
+        <div class="col-md-6 col-xl"><div class="card h-100 shadow-sm border-0"><div class="card-body"><div class="text-muted small">Tổng lượt trả</div><div class="display-6 fw-semibold" data-metric="totalReturns">@Model.TotalReturns</div></div></div></div>
+        <div class="col-md-6 col-xl"><div class="card h-100 shadow-sm border-0"><div class="card-body"><div class="text-muted small">Phiếu đang mở</div><div class="display-6 fw-semibold" data-metric="openLoans">@Model.OpenLoans</div></div></div></div>
+        <div class="col-md-6 col-xl"><div class="card h-100 shadow-sm border-0"><div class="card-body"><div class="text-muted small">Phiếu quá hạn</div><div class="display-6 fw-semibold" data-metric="overdueLoans">@Model.OverdueLoans</div></div></div></div>
+        <div class="col-md-6 col-xl"><div class="card h-100 shadow-sm border-0"><div class="card-body"><div class="text-muted small">Tỷ lệ quá hạn</div><div class="display-6 fw-semibold"><span data-metric="overdueRate">@Model.OverdueRate.ToString("0.##")</span>%</div></div></div></div>
+    </div>
+</div>
+@section Scripts {
+<script>
+(() => {
+    const form = document.getElementById('reportFilter');
+    const message = document.getElementById('reportMessage');
+    const start = document.getElementById('startDate');
+    const end = document.getElementById('endDate');
+    const showMessage = (text, kind) => {
+        message.textContent = text;
+        message.className = `alert alert-${kind}`;
+    };
+    form.addEventListener('submit', async event => {
+        event.preventDefault();
+        if (!start.value || !end.value || start.value > end.value) {
+            showMessage('Vui lòng chọn khoảng ngày hợp lệ; ngày bắt đầu không được sau ngày kết thúc.', 'danger');
+            return;
+        }
+        const button = form.querySelector('button[type="submit"]');
+        button.disabled = true;
+        showMessage('Đang tải báo cáo…', 'info');
+        try {
+            const query = new URLSearchParams({ startDate: start.value, endDate: end.value });
+            const response = await fetch(`/api/reports/loans?${query}`, { headers: { 'Accept': 'application/json' } });
+            const result = await response.json();
+            if (!response.ok) throw new Error(result.message || 'Không thể tải báo cáo.');
+            for (const key of ['totalLoans', 'totalReturns', 'openLoans', 'overdueLoans', 'overdueRate']) {
+                document.querySelector(`[data-metric="${key}"]`).textContent = key === 'overdueRate'
+                    ? Number(result[key]).toLocaleString('vi-VN', { maximumFractionDigits: 2 })
+                    : result[key];
+            }
+            showMessage(result.hasActivityInRange ? 'Đã cập nhật báo cáo theo khoảng ngày đã chọn.' : 'Không có dữ liệu phù hợp trong khoảng ngày này; các chỉ số phát sinh bằng 0.', 'success');
+        } catch (error) {
+            showMessage(error.message || 'Có lỗi khi tải báo cáo. Vui lòng thử lại.', 'danger');
+        } finally {
+            button.disabled = false;
+        }
+    });
+})();
+</script>
+}
