@@ -249,10 +249,15 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
             entity.HasIndex(card => card.ReaderAccountId).IsUnique();
             entity.Property(card => card.CardCode).HasMaxLength(32).IsRequired();
             entity.Property(card => card.Status).HasMaxLength(50).HasDefaultValue("Đang hoạt động").IsRequired();
+            entity.Property(card => card.LockReason).HasMaxLength(1000);
+            entity.Property(card => card.LockedAtUtc).HasColumnType("datetime2");
+            entity.Property(card => card.LockExpiresAtUtc).HasColumnType("datetime2");
             entity.HasOne(card => card.ReaderAccount).WithOne(reader => reader.LibraryCard)
                 .HasForeignKey<LibraryCard>(card => card.ReaderAccountId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne(card => card.LibraryCardType).WithMany(type => type.LibraryCards)
                 .HasForeignKey(card => card.LibraryCardTypeId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(card => card.LockedByAdminAccount).WithMany()
+                .HasForeignKey(card => card.LockedByAdminAccountId).OnDelete(DeleteBehavior.SetNull);
         });
 
         modelBuilder.Entity<BookHold>(entity =>

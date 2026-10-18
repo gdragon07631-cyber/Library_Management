@@ -108,6 +108,104 @@ public sealed class ReaderAccountController(
 
     [HttpPost]
     [ValidateAntiForgeryToken]
+    public async Task<IActionResult> SetCardLocked(int id, string? reason, string lockType, DateTime? lockExpiresAtUtc, CancellationToken cancellationToken = default)
+    {
+        var (admin, denied) = await RequireSystemAdminAsync(cancellationToken);
+        if (denied is not null) return denied;
+
+        var details = await readerAccountService.GetDetailsAsync(id, cancellationToken);
+        if (details is null) return NotFound("Không tìm thấy tài khoản bạn đọc.");
+
+        var card = details.Reader.LibraryCard;
+        if (card is null)
+        {
+            TempData["ErrorMessage"] = "Bạn đọc chưa được cấp thẻ thư viện để khoá.";
+            return RedirectToAction(nameof(Details), new { id });
+        }
+
+        var useManualUnlock = string.Equals(lockType, "manual", StringComparison.OrdinalIgnoreCase);
+        if (string.IsNullOrWhiteSpace(reason))
+        {
+            ModelState.AddModelError(nameof(reason), "Vui lòng nhập lý do khoá thẻ.");
+            return View(nameof(Details), details);
+        }
+
+        if (!useManualUnlock && !lockExpiresAtUtc.HasValue)
+        {
+            ModelState.AddModelError(nameof(lockExpiresAtUtc), "Vui lòng chọn ngày và giờ hết hạn khoá.");
+            return View(nameof(Details), details);
+        }
+
+        if (!useManualUnlock && lockExpiresAtUtc.HasValue && lockExpiresAtUtc.Value <= DateTime.UtcNow)
+        {
+            ModelState.AddModelError(nameof(lockExpiresAtUtc), "Thời hạn khoá phải sau thời điểm bắt đầu khoá.");
+            return View(nameof(Details), details);
+        }
+
+        var result = await readerAccountService.SetCardLockedAsync(id, reason, useManualUnlock ? null : lockExpiresAtUtc, useManualUnlock, admin!.Id, cancellationToken);
+        if (!result.IsSuccess)
+        {
+            ModelState.AddModelError(string.Empty, result.ErrorMessage ?? "Không thể khoá thẻ.");
+            return View(nameof(Details), details);
+        }
+
+        await WriteLogAsync(admin.Email, AuditActions.LockCard, details.Reader,
+            $"khóa thẻ {card.CardCode}, lý do: {reason.Trim()}{(useManualUnlock ? ", đến khi mở khoá thủ công" : $", hết hạn {lockExpiresAtUtc:dd/MM/yyyy HH:mm}")}", cancellationToken);
+        TempData["SuccessMessage"] = useManualUnlock
+            ? $"Đã khoá thẻ {card.CardCode}. Thẻ sẽ tiếp tục bị khoá đến khi được mở thủ công."
+            : $"Đã khoá thẻ {card.CardCode}. Thẻ sẽ bị khoá tới {lockExpiresAtUtc:dd/MM/yyyy HH:mm}.";
+        return RedirectToAction(nameof(Details), new { id });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> SetCardUnlocked(int id, string? reason, CancellationToken cancellationToken = default)
+    {
+        var (admin, denied) = await RequireSystemAdminAsync(cancellationToken);
+        if (denied is not null) return denied;
+
+        var details = await readerAccountService.GetDetailsAsync(id, cancellationToken);
+        if (details is null) return NotFound("Không tìm thấy tài khoản bạn đọc.");
+
+        var card = details.Reader.LibraryCard;
+        if (card is null)
+        {
+            TempData["ErrorMessage"] = "Bạn đọc chưa được cấp thẻ thư viện để mở khoá.";
+            return RedirectToAction(nameof(Details), new { id });
+        }
+
+        if (string.IsNullOrWhiteSpace(reason))
+        {
+            TempData["ErrorMessage"] = "Vui lòng nhập lý do mở khoá thẻ.";
+            return RedirectToAction(nameof(Details), new { id });
+        }
+
+        if (!LibraryCardStatusHelper.IsCardLocked(card, DateTime.UtcNow))
+        {
+            TempData["ErrorMessage"] = "Thẻ đang hoạt động, không cần mở khoá thêm.";
+            return RedirectToAction(nameof(Details), new { id });
+        }
+
+        var result = await readerAccountService.SetCardUnlockedAsync(
+            id,
+            reason,
+            admin!.Id,
+            admin.Email,
+            AuditLogService.ClientIp(HttpContext),
+            cancellationToken);
+
+        if (!result.IsSuccess)
+        {
+            TempData["ErrorMessage"] = result.ErrorMessage ?? "Không thể mở khoá thẻ.";
+            return RedirectToAction(nameof(Details), new { id });
+        }
+
+        TempData["SuccessMessage"] = $"Đã mở khoá thẻ {card.CardCode}. Thẻ quay lại trạng thái hoạt động.";
+        return RedirectToAction(nameof(Details), new { id });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> RevokeSessions(int id, CancellationToken cancellationToken = default)
     {
         var (admin, denied) = await RequireSystemAdminAsync(cancellationToken);

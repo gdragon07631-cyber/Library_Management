@@ -15,7 +15,11 @@ public sealed class ReaderRegistrationService(
 {
     // Retained for source compatibility; there is no active-hold count limit.
     public const int MaximumActiveBookHolds = 3;
+<<<<<<< HEAD
     public const int PickupDays = 2;
+=======
+    public const int PickupDays = 3;
+>>>>>>> origin/featture/S4-04/mo_khoa_the_ban_doc_va_ghi_nhat_ky_mo_khoa
     /// <summary>Số ngày bạn đọc được đôn lên có để nhận sách; hạn là 17:00 ngày mở cửa tương ứng.</summary>
     public static readonly TimeOnly PickupDeadlineTime = new(17, 0);
 
@@ -229,7 +233,11 @@ public sealed class ReaderRegistrationService(
         }
 
         var card = reader.LibraryCard;
-        if (card == null || !string.Equals(card.Status, "Đang hoạt động", StringComparison.OrdinalIgnoreCase))
+        if (card == null)
+            return DocumentHoldOutcome.Rejected("Thẻ bạn đọc chưa được cấp hoặc không còn hiệu lực.");
+        if (LibraryCardStatusHelper.IsCardLocked(card, DateTime.UtcNow))
+            return DocumentHoldOutcome.Rejected(LibraryCardStatusHelper.GetLockMessage(card, DateTime.UtcNow));
+        if (!string.Equals(card.Status, "Đang hoạt động", StringComparison.OrdinalIgnoreCase))
             return DocumentHoldOutcome.Rejected("Thẻ bạn đọc chưa được cấp hoặc không còn hiệu lực.");
         var today = HoldPickupExpirySchedule.GetBusinessDate(DateTime.UtcNow);
         if (card.ExpiresOn < today)

@@ -9,6 +9,12 @@
     var isPending = string.Equals(Model.Status, "Chờ duyệt", StringComparison.OrdinalIgnoreCase);
     var isRejected = string.Equals(Model.Status, "Từ chối", StringComparison.OrdinalIgnoreCase);
     var isActive = string.Equals(Model.Status, "Đang hoạt động", StringComparison.OrdinalIgnoreCase);
+    var card = Model.LibraryCard;
+    var isCardLocked = card is not null && LibraryCardStatusHelper.IsCardLocked(card);
+    var cardLockMessage = card is null ? string.Empty : LibraryCardStatusHelper.GetLockMessage(card);
+    var cardLockStartUtc = card?.LockedAtUtc?.ToLocalTime();
+    var cardLockExpiresUtc = card?.LockExpiresAtUtc?.ToLocalTime();
+    var cardIsManualUnlock = card is not null && (card.IsLockUntilManualUnlock || !card.LockExpiresAtUtc.HasValue);
 }
 
 <section class="rd-hero">
@@ -99,8 +105,43 @@ else if (isRejected)
                     <dl class="rd-info-list">
                         <div><dt>Loại thẻ</dt><dd>@Model.CardType</dd></div>
                         <div><dt>Ngày hết hạn thẻ</dt><dd>@Model.CardExpiresOn?.ToString("dd/MM/yyyy")</dd></div>
-                        <div><dt>Trạng thái thẻ</dt><dd>@Model.CardStatus</dd></div>
+                        <div><dt>Trạng thái thẻ</dt><dd>@(Model.CardStatus ?? "Đang hoạt động")</dd></div>
                     </dl>
+                </div>
+            </div>
+
+            <div class="rd-card mb-4">
+                <div class="rd-card-body py-3">
+                    <h2 class="rd-card-title"><span class="rd-icon-chip is-gold"><i class="bi bi-shield-lock"></i></span><span>Thông tin khoá thẻ</span></h2>
+                    @if (isCardLocked)
+                    {
+                        <div class="alert alert-danger mb-3" role="alert">
+                            <strong>Đang bị khoá.</strong>
+                            @if (!string.IsNullOrWhiteSpace(cardLockMessage))
+                            {
+                                <div class="mt-2">@cardLockMessage</div>
+                            }
+                        </div>
+                        <dl class="rd-info-list mb-0">
+                            <div><dt>Lý do khoá</dt><dd>@(!string.IsNullOrWhiteSpace(card?.LockReason) ? card.LockReason : "Không có lý do cụ thể.")</dd></div>
+                            <div><dt>Thời điểm bắt đầu</dt><dd>@(cardLockStartUtc?.ToString("dd/MM/yyyy HH:mm") ?? "Không có thông tin")</dd></div>
+                            @if (cardIsManualUnlock)
+                            {
+                                <div><dt>Thời hạn</dt><dd>Khoá đến khi được mở khoá thủ công.</dd></div>
+                            }
+                            else
+                            {
+                                <div><dt>Thời hạn</dt><dd>@(cardLockExpiresUtc?.ToString("dd/MM/yyyy HH:mm") ?? "Không có thông tin")</dd></div>
+                            }
+                        </dl>
+                    }
+                    else
+                    {
+                        <div class="alert alert-success mb-0" role="alert">
+                            <strong>Đang hoạt động.</strong>
+                            <div class="mt-2">Thẻ bạn đọc hiện không bị khoá và có thể sử dụng các dịch vụ thư viện bình thường.</div>
+                        </div>
+                    }
                 </div>
             </div>
         }

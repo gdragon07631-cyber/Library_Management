@@ -232,7 +232,7 @@ public sealed class ReaderRegistrationController(
         CardCode = reader.LibraryCard?.CardCode,
         CardType = reader.LibraryCard?.LibraryCardType?.Name,
         CardExpiresOn = reader.LibraryCard?.ExpiresOn,
-        CardStatus = reader.LibraryCard?.Status,
+        CardStatus = ResolveCardStatus(reader.LibraryCard),
         LibraryCard = reader.LibraryCard
     };
 
@@ -246,9 +246,21 @@ public sealed class ReaderRegistrationController(
         model.CardCode = reader.LibraryCard?.CardCode;
         model.CardType = reader.LibraryCard?.LibraryCardType?.Name;
         model.CardExpiresOn = reader.LibraryCard?.ExpiresOn;
-        model.CardStatus = reader.LibraryCard?.Status;
+        model.CardStatus = ResolveCardStatus(reader.LibraryCard);
         model.LibraryCard = reader.LibraryCard;
         model.PendingEmail = reader.PendingEmail;
+    }
+
+    private static string ResolveCardStatus(LibraryCard? card)
+    {
+        if (card is null)
+        {
+            return "Chưa có thẻ";
+        }
+
+        return LibraryCardStatusHelper.IsCardLocked(card)
+            ? "Đang bị khoá"
+            : string.IsNullOrWhiteSpace(card.Status) ? "Đang hoạt động" : card.Status.Trim();
     }
 
     [HttpPost]
@@ -303,13 +315,27 @@ public sealed class ReaderRegistrationController(
         if (reader == null)
             return NotFound(new { message = "Không tìm thấy thông tin tài khoản Bạn đọc." });
 
+        var card = reader.LibraryCard;
         return Ok(new
         {
             id = reader.Id,
             fullName = reader.FullName,
             studentOrStaffCode = reader.StudentOrStaffCode,
             status = reader.Status,
-            rejectionReason = reader.RejectionReason
+            rejectionReason = reader.RejectionReason,
+            libraryCard = new
+            {
+                id = card?.Id,
+                code = card?.CardCode,
+                type = card?.LibraryCardType?.Name,
+                status = ResolveCardStatus(card),
+                isLocked = card is not null && LibraryCardStatusHelper.IsCardLocked(card),
+                lockReason = card?.LockReason,
+                lockedAtUtc = card?.LockedAtUtc,
+                lockExpiresAtUtc = card?.LockExpiresAtUtc,
+                isLockUntilManualUnlock = card?.IsLockUntilManualUnlock ?? false,
+                lockMessage = card is null ? null : LibraryCardStatusHelper.GetLockMessage(card)
+            }
         });
     }
 
@@ -632,9 +658,15 @@ public sealed class ReaderRegistrationController(
             return RedirectToAction(nameof(MyHolds));
         }
 
+<<<<<<< HEAD
         if (holdPickupConfirmationService == null)
         {
             TempData["ErrorMessage"] = "Dịch vụ xác nhận nhận sách tạm thời không khả dụng.";
+=======
+        if (holdPickupConfirmationService is null)
+        {
+            TempData["ErrorMessage"] = "Dịch vụ xác nhận nhận sách chưa được cấu hình.";
+>>>>>>> origin/featture/S4-04/mo_khoa_the_ban_doc_va_ghi_nhat_ky_mo_khoa
             return RedirectToAction(nameof(MyHolds));
         }
 

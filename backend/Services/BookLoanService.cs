@@ -126,9 +126,9 @@ public sealed class BookLoanService(ApplicationDbContext db, IWorkingScheduleSer
         var today = DateOnly.FromDateTime(DateTime.Today);
         var checkDate = loanDate != default ? loanDate : today;
 
+        var referenceUtc = DateTime.SpecifyKind(checkDate.ToDateTime(TimeOnly.MinValue), DateTimeKind.Utc);
         var isCardLocked = reader.IsLocked
-            || (reader.LibraryCard != null && string.Equals(reader.LibraryCard.Status, "Bị khoá", StringComparison.OrdinalIgnoreCase))
-            || (reader.LibraryCard != null && reader.LibraryCard.IsLocked)
+            || LibraryCardStatusHelper.IsCardLocked(reader.LibraryCard, referenceUtc)
             || reader.Status.Contains("khóa", StringComparison.OrdinalIgnoreCase)
             || reader.Status.Contains("khoá", StringComparison.OrdinalIgnoreCase);
 
@@ -153,7 +153,8 @@ public sealed class BookLoanService(ApplicationDbContext db, IWorkingScheduleSer
 
         if (isCardLocked)
         {
-            errors.Add("Thẻ bạn đọc đang bị khoá.");
+            var cardLockMessage = LibraryCardStatusHelper.GetLockMessage(reader.LibraryCard, referenceUtc);
+            errors.Add(string.IsNullOrWhiteSpace(cardLockMessage) ? "Thẻ bạn đọc đang bị khoá." : cardLockMessage);
         }
 
         if (isCardExpired)
@@ -530,7 +531,12 @@ public sealed class BookLoanService(ApplicationDbContext db, IWorkingScheduleSer
         if (loan == null) return new(false, "Không tìm thấy phiếu mượn.");
         if (loan.DueDate < today) return new(false, "Phiếu mượn đã quá hạn.");
         if (loan.IsReturned) return new(false, "Phiếu mượn đã đóng, không thể gia hạn.");
-        var cardType = loan.ReaderAccount?.LibraryCard?.LibraryCardType;
+        if (loan.ReaderAccount is null || loan.ReaderAccount.LibraryCard is null)
+            return new(false, "Bạn đọc chưa có thẻ thư viện hợp lệ.");
+        if (LibraryCardStatusHelper.IsCardLocked(loan.ReaderAccount.LibraryCard, DateTime.UtcNow))
+            return new(false, LibraryCardStatusHelper.GetLockMessage(loan.ReaderAccount.LibraryCard, DateTime.UtcNow));
+
+        var cardType = loan.ReaderAccount.LibraryCard.LibraryCardType;
         if (cardType == null) return new(false, "Bạn đọc chưa có loại thẻ hợp lệ.");
         if (loan.RenewalCount >= cardType.MaxRenewals)
             return new(false, "Bạn đã sử dụng hết số lần gia hạn cho phép của loại thẻ.");
@@ -627,9 +633,9 @@ public sealed class BookLoanService(ApplicationDbContext db, IWorkingScheduleSer
         }
 
         var checkDate = loanDate;
+        var referenceUtc = DateTime.SpecifyKind(checkDate.ToDateTime(TimeOnly.MinValue), DateTimeKind.Utc);
         var isCardLocked = reader.IsLocked
-            || (reader.LibraryCard != null && string.Equals(reader.LibraryCard.Status, "Bị khoá", StringComparison.OrdinalIgnoreCase))
-            || (reader.LibraryCard != null && reader.LibraryCard.IsLocked)
+            || LibraryCardStatusHelper.IsCardLocked(reader.LibraryCard, referenceUtc)
             || reader.Status.Contains("khóa", StringComparison.OrdinalIgnoreCase)
             || reader.Status.Contains("khoá", StringComparison.OrdinalIgnoreCase);
 
@@ -654,7 +660,8 @@ public sealed class BookLoanService(ApplicationDbContext db, IWorkingScheduleSer
 
         if (isCardLocked)
         {
-            errors.Add("Thẻ bạn đọc đang bị khoá.");
+            var cardLockMessage = LibraryCardStatusHelper.GetLockMessage(reader.LibraryCard, referenceUtc);
+            errors.Add(string.IsNullOrWhiteSpace(cardLockMessage) ? "Thẻ bạn đọc đang bị khoá." : cardLockMessage);
         }
 
         if (isCardExpired)

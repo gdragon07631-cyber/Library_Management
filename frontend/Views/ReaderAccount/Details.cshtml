@@ -158,6 +158,25 @@
                             <dt class="col-5">Hiệu lực</dt><dd class="col-7">@card.IssuedOn.ToString("dd/MM/yyyy") – @card.ExpiresOn.ToString("dd/MM/yyyy")</dd>
                             <dt class="col-5">Trạng thái</dt><dd class="col-7">@card.Status</dd>
                         </dl>
+
+                        @if (LibraryCardStatusHelper.IsCardLocked(card, DateTime.UtcNow))
+                        {
+                            <div class="alert alert-danger small mt-3 mb-0" role="alert">
+                                <strong>Đang bị khoá.</strong> Lý do: @card.LockReason<br />
+                                @(card.IsLockUntilManualUnlock || !card.LockExpiresAtUtc.HasValue
+                                    ? "Tới khi được mở khoá thủ công."
+                                    : $"Hạn khoá: {card.LockExpiresAtUtc:dd/MM/yyyy HH:mm}.")
+                            </div>
+                            <button type="button" class="btn btn-success mt-3" data-bs-toggle="modal" data-bs-target="#cardUnlockModal">
+                                Mở khoá thẻ
+                            </button>
+                        }
+                        else
+                        {
+                            <button type="button" class="btn btn-outline-danger mt-3" data-bs-toggle="modal" data-bs-target="#cardLockModal">
+                                Khoá thẻ
+                            </button>
+                        }
                     }
                     else
                     {
@@ -165,6 +184,64 @@
                     }
                 </div>
             </div>
+        </div>
+    </div>
+
+    <div class="card shadow-sm border-0 mt-4">
+        <div class="card-body">
+            <h2 class="h5 fw-bold mb-3">Lịch sử khoá / mở khoá thẻ</h2>
+            @{
+                var cardHistory = Model.History
+                    .Where(log => log.Action == AuditActions.LockCard || log.Action == AuditActions.UnlockCard)
+                    .OrderByDescending(log => log.OccurredAtUtc)
+                    .ToList();
+            }
+            @if (cardHistory.Count == 0)
+            {
+                <p class="text-muted mb-0">Chưa có nhật ký khoá hoặc mở khoá thẻ.</p>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle mb-0">
+                        <thead>
+                            <tr>
+                                <th>Thời điểm</th>
+                                <th>Mã thẻ</th>
+                                <th>Tên bạn đọc</th>
+                                <th>Sự kiện</th>
+                                <th>Người thực hiện</th>
+                                <th>Lý do khoá</th>
+                                <th>Lý do mở khoá</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var log in cardHistory)
+                            {
+                                var lockReasonText = log.Action == AuditActions.UnlockCard
+                                    ? (log.Target.Contains("lý do khóa trước đó:", StringComparison.OrdinalIgnoreCase)
+                                        ? log.Target.Substring(log.Target.IndexOf("lý do khóa trước đó:", StringComparison.OrdinalIgnoreCase) + "lý do khóa trước đó:".Length).Trim()
+                                        : "—")
+                                    : (log.Target.Contains("lý do khóa:", StringComparison.OrdinalIgnoreCase)
+                                        ? log.Target.Substring(log.Target.IndexOf("lý do khóa:", StringComparison.OrdinalIgnoreCase) + "lý do khóa:".Length).Trim()
+                                        : "—");
+                                var unlockReasonText = log.Action == AuditActions.UnlockCard && log.Target.Contains("lý do mở khóa:", StringComparison.OrdinalIgnoreCase)
+                                    ? log.Target.Substring(log.Target.IndexOf("lý do mở khóa:", StringComparison.OrdinalIgnoreCase) + "lý do mở khóa:".Length).Trim()
+                                    : "—";
+                                <tr>
+                                    <td class="text-nowrap">@Local(log.OccurredAtUtc)</td>
+                                    <td class="font-monospace">@(reader.LibraryCard?.CardCode ?? "—")</td>
+                                    <td>@reader.FullName</td>
+                                    <td>@log.Action</td>
+                                    <td>@log.Actor</td>
+                                    <td>@lockReasonText</td>
+                                    <td>@unlockReasonText</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
         </div>
     </div>
 
@@ -230,6 +307,100 @@
     </div>
 </div>
 
+@if (reader.LibraryCard is { } lockCard && !LibraryCardStatusHelper.IsCardLocked(lockCard, DateTime.UtcNow))
+{
+    <div class="modal fade" id="cardLockModal" tabindex="-1" aria-labelledby="cardLockModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <form asp-action="SetCardLocked" asp-route-id="@reader.Id" method="post">
+                    @Html.AntiForgeryToken()
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="cardLockModalLabel">Khoá thẻ</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Đóng"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="mb-3">
+                            <label for="cardLockReason" class="form-label">Lý do khoá</label>
+                            <textarea id="cardLockReason" name="reason" class="form-control" rows="3" required maxlength="1000"></textarea>
+                            @Html.ValidationMessage("reason")
+                        </div>
+                        <div class="mb-3">
+                            <label for="cardLockType" class="form-label">Hình thức khoá</label>
+                            <select id="cardLockType" name="lockType" class="form-select">
+                                <option value="temporary">Có thời hạn</option>
+                                <option value="manual">Đến khi mở thủ công</option>
+                            </select>
+                        </div>
+                        <div id="cardLockExpiryGroup" class="mb-0">
+                            <label for="cardLockExpiry" class="form-label">Ngày và giờ hết hạn</label>
+                            <input id="cardLockExpiry" name="lockExpiresAtUtc" type="datetime-local" class="form-control" />
+                            @Html.ValidationMessage("lockExpiresAtUtc")
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Huỷ</button>
+                        <button type="submit" class="btn btn-danger">Xác nhận khoá</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+}
+
+@if (reader.LibraryCard is { } unlockedCard && LibraryCardStatusHelper.IsCardLocked(unlockedCard, DateTime.UtcNow))
+{
+    <div class="modal fade" id="cardUnlockModal" tabindex="-1" aria-labelledby="cardUnlockModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <form asp-action="SetCardUnlocked" asp-route-id="@reader.Id" method="post">
+                    @Html.AntiForgeryToken()
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="cardUnlockModalLabel">Mở khoá thẻ</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Đóng"></button>
+                    </div>
+                    <div class="modal-body">
+                        <dl class="row small mb-3">
+                            <dt class="col-4">Mã thẻ</dt><dd class="col-8 font-monospace">@unlockedCard.CardCode</dd>
+                            <dt class="col-4">Bạn đọc</dt><dd class="col-8">@reader.FullName</dd>
+                            <dt class="col-4">Lý do khóa</dt><dd class="col-8">@(string.IsNullOrWhiteSpace(unlockedCard.LockReason) ? "Không có lý do cụ thể." : unlockedCard.LockReason)</dd>
+                        </dl>
+                        <div class="mb-0">
+                            <label for="cardUnlockReason" class="form-label">Lý do mở khoá</label>
+                            <textarea id="cardUnlockReason" name="reason" class="form-control" rows="3" required maxlength="1000"></textarea>
+                            @Html.ValidationMessage("reason")
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Huỷ</button>
+                        <button type="submit" class="btn btn-success">Xác nhận mở khoá</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+}
+
 @section Scripts {
     <partial name="_ValidationScriptsPartial" />
+    <script>
+        (function () {
+            const lockModal = document.getElementById('cardLockModal');
+            if (lockModal) {
+                const typeSelect = document.getElementById('cardLockType');
+                const expiryGroup = document.getElementById('cardLockExpiryGroup');
+                const expiryInput = document.getElementById('cardLockExpiry');
+                const sync = () => {
+                    const isManual = typeSelect.value === 'manual';
+                    expiryInput.disabled = isManual;
+                    expiryInput.required = !isManual;
+                    expiryGroup.style.display = isManual ? 'none' : 'block';
+                    if (isManual) {
+                        expiryInput.value = '';
+                    }
+                };
+                typeSelect.addEventListener('change', sync);
+                sync();
+            }
+        })();
+    </script>
 }
