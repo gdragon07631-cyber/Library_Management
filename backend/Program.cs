@@ -33,6 +33,7 @@ builder.Services.AddScoped<IWarehouseService, WarehouseService>();
 builder.Services.AddScoped<IShelfService, ShelfService>();
 builder.Services.AddScoped<IWorkingScheduleService, WorkingScheduleService>();
 builder.Services.AddScoped<IBookLoanService, BookLoanService>();
+builder.Services.AddScoped<ILibraryReportService, LibraryReportService>();
 builder.Services.AddScoped<IFeeWaiverService, FeeWaiverService>();
 builder.Services.AddScoped<IBookIncidentService, BookIncidentService>();
 builder.Services.AddScoped<ICompensationService, CompensationService>();

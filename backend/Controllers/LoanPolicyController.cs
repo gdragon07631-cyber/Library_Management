@@ -1,12 +1,14 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Project.Data;
+using Project.Filters;
 using Project.Models;
 using Project.Services;
 
 namespace Project.Controllers;
 
 /// <summary>Quản trị hệ thống xem và sửa chính sách mượn.</summary>
+[StaffOnly(AccountRoles.SystemAdmin, AccountRoles.LibraryManager)]
 public sealed class LoanPolicyController(
     ApplicationDbContext dbContext,
     IAuditLogService auditLogService) : Controller

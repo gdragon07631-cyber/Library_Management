@@ -1,12 +1,14 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Project.Data;
+using Project.Filters;
 using Project.Models;
 using Project.Services;
 
 namespace Project.Controllers;
 
 [Route("reports")]
+[StaffOnly(AccountRoles.SystemAdmin, AccountRoles.LibraryManager)]
 public sealed class ReportController(ILibraryReportService reports, ApplicationDbContext db) : Controller
 {
     [HttpGet("")]
