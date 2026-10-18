@@ -1,9 +1,14 @@
+<<<<<<< HEAD
 @model Project.Models.LoanReportViewModel
+=======
+@model Project.Models.LoanReportPageViewModel
+>>>>>>> origin/feature/S4-07/xem_10_dau_sach_co_hang_doi_dat_giu
 @{
     ViewData["Title"] = "Báo cáo mượn trả";
 }
 <div class="container py-4">
     <div class="mb-4">
+<<<<<<< HEAD
         <h1 class="h3 mb-1 text-primary fw-bold">Báo cáo mượn, trả và quá hạn</h1>
         <p class="text-muted mb-0">Thống kê lượt mượn, lượt trả và tình hình phiếu hiện tại.</p>
     </div>
@@ -13,10 +18,22 @@
         <div class="row g-3 align-items-end">
             <div class="col-sm-5 col-md-4"><label for="startDate" class="form-label">Từ ngày</label><input id="startDate" class="form-control" type="date" value="@Model.StartDate.ToString("yyyy-MM-dd")" required /></div>
             <div class="col-sm-5 col-md-4"><label for="endDate" class="form-label">Đến ngày</label><input id="endDate" class="form-control" type="date" value="@Model.EndDate.ToString("yyyy-MM-dd")" required /></div>
+=======
+        <h1 class="h3 mb-1 text-primary fw-bold">Báo cáo thư viện</h1>
+        <p class="text-muted mb-0">Tổng quan mượn trả, đầu sách được mượn nhiều và hàng đợi đặt giữ.</p>
+    </div>
+    <div class="alert alert-warning" role="note"><strong>Lưu ý thực hành:</strong> năm thẻ tổng quan dùng dữ liệu minh họa. Hai bảng xếp hạng bên dưới lấy dữ liệu thật từ database.</div>
+
+    <form id="reportFilter" class="card card-body shadow-sm border-0 mb-4" novalidate>
+        <div class="row g-3 align-items-end">
+            <div class="col-sm-5 col-md-4"><label for="startDate" class="form-label">Từ ngày</label><input id="startDate" class="form-control" type="date" value="@Model.Summary.StartDate.ToString("yyyy-MM-dd")" required /></div>
+            <div class="col-sm-5 col-md-4"><label for="endDate" class="form-label">Đến ngày</label><input id="endDate" class="form-control" type="date" value="@Model.Summary.EndDate.ToString("yyyy-MM-dd")" required /></div>
+>>>>>>> origin/feature/S4-07/xem_10_dau_sach_co_hang_doi_dat_giu
             <div class="col-sm-2"><button class="btn btn-primary w-100" type="submit">Xem báo cáo</button></div>
         </div>
     </form>
     <div id="reportMessage" class="alert d-none" role="status" aria-live="polite"></div>
+<<<<<<< HEAD
     <div class="row g-3" id="reportCards" aria-live="polite">
         <div class="col-md-6 col-xl"><div class="card h-100 shadow-sm border-0"><div class="card-body"><div class="text-muted small">Tổng lượt mượn</div><div class="display-6 fw-semibold" data-metric="totalLoans">@Model.TotalLoans</div></div></div></div>
         <div class="col-md-6 col-xl"><div class="card h-100 shadow-sm border-0"><div class="card-body"><div class="text-muted small">Tổng lượt trả</div><div class="display-6 fw-semibold" data-metric="totalReturns">@Model.TotalReturns</div></div></div></div>
@@ -24,6 +41,59 @@
         <div class="col-md-6 col-xl"><div class="card h-100 shadow-sm border-0"><div class="card-body"><div class="text-muted small">Phiếu quá hạn</div><div class="display-6 fw-semibold" data-metric="overdueLoans">@Model.OverdueLoans</div></div></div></div>
         <div class="col-md-6 col-xl"><div class="card h-100 shadow-sm border-0"><div class="card-body"><div class="text-muted small">Tỷ lệ quá hạn</div><div class="display-6 fw-semibold"><span data-metric="overdueRate">@Model.OverdueRate.ToString("0.##")</span>%</div></div></div></div>
     </div>
+=======
+
+    <div class="row g-3 mb-4" id="reportCards" aria-live="polite">
+        <div class="col-md-6 col-xl"><div class="card h-100 shadow-sm border-0"><div class="card-body"><div class="text-muted small">Tổng lượt mượn</div><div class="display-6 fw-semibold" data-metric="totalLoans">@Model.Summary.TotalLoans</div></div></div></div>
+        <div class="col-md-6 col-xl"><div class="card h-100 shadow-sm border-0"><div class="card-body"><div class="text-muted small">Tổng lượt trả</div><div class="display-6 fw-semibold" data-metric="totalReturns">@Model.Summary.TotalReturns</div></div></div></div>
+        <div class="col-md-6 col-xl"><div class="card h-100 shadow-sm border-0"><div class="card-body"><div class="text-muted small">Phiếu đang mở</div><div class="display-6 fw-semibold" data-metric="openLoans">@Model.Summary.OpenLoans</div></div></div></div>
+        <div class="col-md-6 col-xl"><div class="card h-100 shadow-sm border-0"><div class="card-body"><div class="text-muted small">Phiếu quá hạn</div><div class="display-6 fw-semibold" data-metric="overdueLoans">@Model.Summary.OverdueLoans</div></div></div></div>
+        <div class="col-md-6 col-xl"><div class="card h-100 shadow-sm border-0"><div class="card-body"><div class="text-muted small">Tỷ lệ quá hạn</div><div class="display-6 fw-semibold"><span data-metric="overdueRate">@Model.Summary.OverdueRate.ToString("0.##")</span>%</div></div></div></div>
+    </div>
+
+    <section class="card shadow-sm border-0 mb-4" aria-labelledby="loanRankingTitle">
+        <div class="card-header bg-white"><h2 id="loanRankingTitle" class="h5 mb-0">10 đầu sách được mượn nhiều nhất</h2></div>
+        <div class="table-responsive"><table class="table table-hover align-middle mb-0">
+            <thead class="table-light"><tr><th scope="col">Hạng</th><th scope="col">Tên đầu sách</th><th scope="col">Lượt mượn</th><th scope="col">Tổng bản sao vật lý</th></tr></thead>
+            <tbody id="loanRankingRows">
+                @if (Model.TopBooks.Count == 0)
+                {
+                    <tr><td colspan="4" class="text-center text-muted py-4">Không có đầu sách phát sinh lượt mượn trong khoảng thời gian đã chọn.</td></tr>
+                }
+                else
+                {
+                    foreach (var row in Model.TopBooks)
+                    {
+                        <tr><td>@row.Rank</td><td>@row.BookTitle</td><td>@row.LoanCount</td><td>@row.PhysicalCopyCount</td></tr>
+                    }
+                }
+            </tbody>
+        </table></div>
+    </section>
+
+    <section class="card shadow-sm border-0" aria-labelledby="holdRankingTitle">
+        <div class="card-header bg-white d-flex flex-wrap justify-content-between align-items-center gap-2">
+            <h2 id="holdRankingTitle" class="h5 mb-0">10 đầu sách có hàng đợi đặt giữ dài nhất</h2>
+            <span class="small text-muted">Ảnh chụp hàng đợi hiện tại, không phụ thuộc khoảng ngày</span>
+        </div>
+        <div class="table-responsive"><table class="table table-hover align-middle mb-0">
+            <thead class="table-light"><tr><th scope="col">Hạng</th><th scope="col">Tên đầu sách</th><th scope="col">Yêu cầu đang chờ</th></tr></thead>
+            <tbody id="holdRankingRows">
+                @if (Model.TopHeldBooks.Count == 0)
+                {
+                    <tr><td colspan="3" class="text-center text-muted py-4">Hiện không có đầu sách nào có hàng đợi đặt giữ.</td></tr>
+                }
+                else
+                {
+                    foreach (var row in Model.TopHeldBooks)
+                    {
+                        <tr><td>@row.Rank</td><td>@row.BookTitle</td><td>@row.PendingHoldCount</td></tr>
+                    }
+                }
+            </tbody>
+        </table></div>
+    </section>
+>>>>>>> origin/feature/S4-07/xem_10_dau_sach_co_hang_doi_dat_giu
 </div>
 @section Scripts {
 <script>
@@ -32,10 +102,40 @@
     const message = document.getElementById('reportMessage');
     const start = document.getElementById('startDate');
     const end = document.getElementById('endDate');
+<<<<<<< HEAD
+=======
+    const loanRows = document.getElementById('loanRankingRows');
+    const holdRows = document.getElementById('holdRankingRows');
+>>>>>>> origin/feature/S4-07/xem_10_dau_sach_co_hang_doi_dat_giu
     const showMessage = (text, kind) => {
         message.textContent = text;
         message.className = `alert alert-${kind}`;
     };
+<<<<<<< HEAD
+=======
+    const renderRows = (target, items, emptyText, values, colspan) => {
+        target.replaceChildren();
+        if (items.length === 0) {
+            const tr = document.createElement('tr');
+            const td = document.createElement('td');
+            td.colSpan = colspan;
+            td.className = 'text-center text-muted py-4';
+            td.textContent = emptyText;
+            tr.append(td);
+            target.append(tr);
+            return;
+        }
+        for (const item of items) {
+            const tr = document.createElement('tr');
+            for (const field of values) {
+                const td = document.createElement('td');
+                td.textContent = item[field];
+                tr.append(td);
+            }
+            target.append(tr);
+        }
+    };
+>>>>>>> origin/feature/S4-07/xem_10_dau_sach_co_hang_doi_dat_giu
     form.addEventListener('submit', async event => {
         event.preventDefault();
         if (!start.value || !end.value || start.value > end.value) {
@@ -44,6 +144,7 @@
         }
         const button = form.querySelector('button[type="submit"]');
         button.disabled = true;
+<<<<<<< HEAD
         showMessage('Đang tải báo cáo…', 'info');
         try {
             const query = new URLSearchParams({ startDate: start.value, endDate: end.value });
@@ -57,6 +158,41 @@
             }
             showMessage(result.hasActivityInRange ? 'Đã cập nhật báo cáo theo khoảng ngày đã chọn.' : 'Không có dữ liệu phù hợp trong khoảng ngày này; các chỉ số phát sinh bằng 0.', 'success');
         } catch (error) {
+=======
+        for (const key of ['totalLoans', 'totalReturns', 'openLoans', 'overdueLoans', 'overdueRate'])
+            document.querySelector(`[data-metric="${key}"]`).textContent = '…';
+        renderRows(loanRows, [], 'Đang tải bảng xếp hạng…', [], 4);
+        renderRows(holdRows, [], 'Đang tải hàng đợi đặt giữ…', [], 3);
+        showMessage('Đang tải báo cáo…', 'info');
+        try {
+            const query = new URLSearchParams({ startDate: start.value, endDate: end.value });
+            const [summaryResponse, loansResponse, holdsResponse] = await Promise.all([
+                fetch(`/api/reports/loans/summary?${query}`, { headers: { 'Accept': 'application/json' } }),
+                fetch(`/api/reports/loans/top-books?${query}`, { headers: { 'Accept': 'application/json' } }),
+                fetch('/api/reports/holds/top-books', { headers: { 'Accept': 'application/json' } })
+            ]);
+            const [summary, books, holds] = await Promise.all([
+                summaryResponse.json(), loansResponse.json(), holdsResponse.json()
+            ]);
+            if (!summaryResponse.ok) throw new Error(summary.message || 'Không thể tải số liệu tổng quan.');
+            if (!loansResponse.ok) throw new Error(books.message || 'Không thể tải bảng xếp hạng mượn.');
+            if (!holdsResponse.ok) throw new Error(holds.message || 'Không thể tải hàng đợi đặt giữ.');
+            for (const key of ['totalLoans', 'totalReturns', 'openLoans', 'overdueLoans', 'overdueRate']) {
+                document.querySelector(`[data-metric="${key}"]`).textContent = key === 'overdueRate'
+                    ? Number(summary[key]).toLocaleString('vi-VN', { maximumFractionDigits: 2 })
+                    : summary[key];
+            }
+            renderRows(loanRows, books, 'Không có đầu sách phát sinh lượt mượn trong khoảng thời gian đã chọn.',
+                ['rank', 'bookTitle', 'loanCount', 'physicalCopyCount'], 4);
+            renderRows(holdRows, holds, 'Hiện không có đầu sách nào có hàng đợi đặt giữ.',
+                ['rank', 'bookTitle', 'pendingHoldCount'], 3);
+            showMessage('Đã cập nhật báo cáo. Bảng hàng đợi đặt giữ phản ánh trạng thái hiện tại, không phụ thuộc khoảng ngày.', 'success');
+        } catch (error) {
+            for (const key of ['totalLoans', 'totalReturns', 'openLoans', 'overdueLoans', 'overdueRate'])
+                document.querySelector(`[data-metric="${key}"]`).textContent = '—';
+            renderRows(loanRows, [], 'Không thể tải dữ liệu xếp hạng.', [], 4);
+            renderRows(holdRows, [], 'Không thể tải dữ liệu hàng đợi.', [], 3);
+>>>>>>> origin/feature/S4-07/xem_10_dau_sach_co_hang_doi_dat_giu
             showMessage(error.message || 'Có lỗi khi tải báo cáo. Vui lòng thử lại.', 'danger');
         } finally {
             button.disabled = false;

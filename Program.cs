@@ -26,7 +26,11 @@ builder.Services.AddScoped<IWarehouseService, WarehouseService>();
 builder.Services.AddScoped<IShelfService, ShelfService>();
 builder.Services.AddScoped<IWorkingScheduleService, WorkingScheduleService>();
 builder.Services.AddScoped<IBookLoanService, BookLoanService>();
+<<<<<<< HEAD
 builder.Services.AddScoped<ILoanReportService, DemoLoanReportService>();
+=======
+builder.Services.AddScoped<ILoanReportService, LoanReportService>();
+>>>>>>> origin/feature/S4-07/xem_10_dau_sach_co_hang_doi_dat_giu
 builder.Services.AddScoped<IAuditLogService, AuditLogService>();
 builder.Services.AddScoped<IStaffAccountService, StaffAccountService>();
 builder.Services.AddDataProtection()

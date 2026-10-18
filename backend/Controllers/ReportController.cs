@@ -1,19 +1,26 @@
 <<<<<<< HEAD:backend/Controllers/ReportController.cs
+<<<<<<< HEAD:backend/Controllers/ReportController.cs
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Project.Data;
 using Project.Filters;
 =======
+=======
+>>>>>>> origin/feature/S4-07/xem_10_dau_sach_co_hang_doi_dat_giu:Controllers/ReportController.cs
 using System.Globalization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Project.Data;
+<<<<<<< HEAD:backend/Controllers/ReportController.cs
 >>>>>>> origin/feature/S4-07/xem_tong_quan_luot_muon_va_tinh_trang:Controllers/ReportController.cs
+=======
+>>>>>>> origin/feature/S4-07/xem_10_dau_sach_co_hang_doi_dat_giu:Controllers/ReportController.cs
 using Project.Models;
 using Project.Services;
 
 namespace Project.Controllers;
 
+<<<<<<< HEAD:backend/Controllers/ReportController.cs
 <<<<<<< HEAD:backend/Controllers/ReportController.cs
 [Route("reports")]
 [StaffOnly(AccountRoles.SystemAdmin, AccountRoles.LibraryManager)]
@@ -83,6 +90,8 @@ public sealed class ReportController(ILibraryReportService reports, ApplicationD
         return DateOnly.FromDateTime(TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, zone));
     }
 =======
+=======
+>>>>>>> origin/feature/S4-07/xem_10_dau_sach_co_hang_doi_dat_giu:Controllers/ReportController.cs
 public sealed class ReportController(ApplicationDbContext db, ILoanReportService reports) : Controller
 {
     private static readonly TimeZoneInfo VietnamTimeZone = TimeZoneInfo.FindSystemTimeZoneById("Asia/Ho_Chi_Minh");
@@ -98,6 +107,7 @@ public sealed class ReportController(ApplicationDbContext db, ILoanReportService
 
         var today = GetVietnamToday();
         var (start, end) = DefaultRange(today);
+<<<<<<< HEAD:backend/Controllers/ReportController.cs
         return View(reports.GetDemoReport(start, end, today));
     }
 
@@ -129,6 +139,60 @@ public sealed class ReportController(ApplicationDbContext db, ILoanReportService
 
         var today = GetVietnamToday();
         return Ok(reports.GetDemoReport(start, end, today));
+=======
+        var summary = reports.GetDemoSummary(start, end, today);
+        var topBooks = await reports.GetTopBooksAsync(start, end, ct);
+        var topHeldBooks = await reports.GetTopHeldBooksAsync(ct);
+        return View(new LoanReportPageViewModel
+        {
+            Summary = summary,
+            TopBooks = topBooks,
+            TopHeldBooks = topHeldBooks
+        });
+    }
+
+    [HttpGet("api/reports/loans/summary")]
+    public async Task<IActionResult> GetSummary(
+        [FromQuery] string? startDate, [FromQuery] string? endDate, CancellationToken ct = default)
+    {
+        var access = await CheckApiAccessAsync(ct);
+        if (access is not null) return access;
+        if (!TryResolveRange(startDate, endDate, out var start, out var end, out var error))
+            return BadRequest(new { message = error });
+
+        return Ok(reports.GetDemoSummary(start, end, GetVietnamToday()));
+    }
+
+    [HttpGet("api/reports/loans/top-books")]
+    public async Task<IActionResult> GetTopBooks(
+        [FromQuery] string? startDate, [FromQuery] string? endDate, CancellationToken ct = default)
+    {
+        var access = await CheckApiAccessAsync(ct);
+        if (access is not null) return access;
+        if (!TryResolveRange(startDate, endDate, out var start, out var end, out var error))
+            return BadRequest(new { message = error });
+
+        return Ok(await reports.GetTopBooksAsync(start, end, ct));
+    }
+
+    [HttpGet("api/reports/holds/top-books")]
+    public async Task<IActionResult> GetTopHeldBooks(CancellationToken ct = default)
+    {
+        var access = await CheckApiAccessAsync(ct);
+        if (access is not null) return access;
+        return Ok(await reports.GetTopHeldBooksAsync(ct));
+    }
+
+    private async Task<IActionResult?> CheckApiAccessAsync(CancellationToken ct)
+    {
+        var access = await CheckAccessAsync(ct);
+        return access switch
+        {
+            AccessResult.Unauthenticated => Unauthorized(new { message = "Vui lòng đăng nhập để xem báo cáo." }),
+            AccessResult.Forbidden => StatusCode(StatusCodes.Status403Forbidden, new { message = "Bạn không có quyền xem báo cáo." }),
+            _ => null
+        };
+>>>>>>> origin/feature/S4-07/xem_10_dau_sach_co_hang_doi_dat_giu:Controllers/ReportController.cs
     }
 
     private async Task<AccessResult> CheckAccessAsync(CancellationToken ct)
@@ -146,11 +210,45 @@ public sealed class ReportController(ApplicationDbContext db, ILoanReportService
             : AccessResult.Forbidden;
     }
 
+<<<<<<< HEAD:backend/Controllers/ReportController.cs
+=======
+    private static bool TryResolveRange(
+        string? startDate, string? endDate, out DateOnly start, out DateOnly end, out string? error)
+    {
+        error = null;
+        if (startDate is null && endDate is null)
+        {
+            (start, end) = DefaultRange(GetVietnamToday());
+            return true;
+        }
+        if (!DateOnly.TryParseExact(startDate, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out start))
+        {
+            end = default;
+            error = "Ngày phải đúng định dạng YYYY-MM-DD.";
+            return false;
+        }
+        if (!DateOnly.TryParseExact(endDate, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out end))
+        {
+            error = "Ngày phải đúng định dạng YYYY-MM-DD.";
+            return false;
+        }
+        if (start > end)
+        {
+            error = "Ngày bắt đầu không được sau ngày kết thúc.";
+            return false;
+        }
+        return true;
+    }
+
+>>>>>>> origin/feature/S4-07/xem_10_dau_sach_co_hang_doi_dat_giu:Controllers/ReportController.cs
     private static DateOnly GetVietnamToday() =>
         DateOnly.FromDateTime(TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, VietnamTimeZone));
 
     private static (DateOnly Start, DateOnly End) DefaultRange(DateOnly today) => (today.AddDays(-29), today);
 
     private enum AccessResult { Allowed, Unauthenticated, Forbidden }
+<<<<<<< HEAD:backend/Controllers/ReportController.cs
 >>>>>>> origin/feature/S4-07/xem_tong_quan_luot_muon_va_tinh_trang:Controllers/ReportController.cs
+=======
+>>>>>>> origin/feature/S4-07/xem_10_dau_sach_co_hang_doi_dat_giu:Controllers/ReportController.cs
 }
