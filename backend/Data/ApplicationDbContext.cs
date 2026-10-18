@@ -25,7 +25,11 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     public DbSet<BookHold> BookHolds => Set<BookHold>();
     public DbSet<HoldPickupExpiryRun> HoldPickupExpiryRuns => Set<HoldPickupExpiryRun>();
     public DbSet<BookLoan> BookLoans => Set<BookLoan>();
+<<<<<<< HEAD
     public DbSet<EmailSendHistory> EmailSendHistories => Set<EmailSendHistory>();
+=======
+    public DbSet<OverdueReminderLog> OverdueReminderLogs => Set<OverdueReminderLog>();
+>>>>>>> origin/feature/nhac-qua-han
     public DbSet<ReaderFee> ReaderFees => Set<ReaderFee>();
     public DbSet<FeePayment> FeePayments => Set<FeePayment>();
     public DbSet<FeePaymentAllocation> FeePaymentAllocations => Set<FeePaymentAllocation>();
@@ -351,6 +355,7 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
                 .HasForeignKey<ReaderFee>(fee => fee.BookLoanId).OnDelete(DeleteBehavior.Restrict);
         });
 
+<<<<<<< HEAD
         modelBuilder.Entity<EmailSendHistory>(entity =>
         {
             entity.HasIndex(item => item.StartedAtUtc);
@@ -369,6 +374,15 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
             entity.Property(item => item.CompletedAtUtc).HasColumnType("datetime2");
             entity.Property(item => item.PickupDeadlineUtcSnapshot).HasColumnType("datetime2");
             entity.Property(item => item.EventOccurredAtUtc).HasColumnType("datetime2");
+=======
+        modelBuilder.Entity<OverdueReminderLog>(entity =>
+        {
+            entity.HasIndex(log => new { log.BookLoanId, log.MilestoneDays }).IsUnique();
+            entity.Property(log => log.BusinessDate).HasColumnType("date");
+            entity.Property(log => log.SentAtUtc).HasColumnType("datetime2");
+            entity.Property(log => log.Status).HasMaxLength(20).IsRequired();
+            entity.Property(log => log.ErrorMessage).HasMaxLength(500);
+>>>>>>> origin/feature/nhac-qua-han
         });
 
         modelBuilder.Entity<ReaderFee>(entity =>

@@ -955,6 +955,22 @@ namespace Project.Migrations
                     b.ToTable("HoldPickupExpiryRuns");
                 });
 
+            modelBuilder.Entity("Project.Models.OverdueReminderLog", b =>
+                {
+                    b.Property<long>("Id").ValueGeneratedOnAdd().HasColumnType("bigint");
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+                    b.Property<DateOnly>("BusinessDate").HasColumnType("date");
+                    b.Property<long>("BookLoanId").HasColumnType("bigint");
+                    b.Property<string>("ErrorMessage").HasMaxLength(500).HasColumnType("nvarchar(500)");
+                    b.Property<int>("MilestoneDays").HasColumnType("int");
+                    b.Property<int>("ReaderAccountId").HasColumnType("int");
+                    b.Property<DateTime>("SentAtUtc").HasColumnType("datetime2");
+                    b.Property<string>("Status").IsRequired().HasMaxLength(20).HasColumnType("nvarchar(20)");
+                    b.HasKey("Id");
+                    b.HasIndex("BookLoanId", "MilestoneDays").IsUnique();
+                    b.ToTable("OverdueReminderLogs");
+                });
+
             modelBuilder.Entity("Project.Models.HolidayClosure", b =>
                 {
                     b.Property<int>("Id")
