@@ -26,6 +26,8 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     public DbSet<HoldPickupExpiryRun> HoldPickupExpiryRuns => Set<HoldPickupExpiryRun>();
     public DbSet<BookLoan> BookLoans => Set<BookLoan>();
     public DbSet<ReaderFee> ReaderFees => Set<ReaderFee>();
+    public DbSet<FeePayment> FeePayments => Set<FeePayment>();
+    public DbSet<FeePaymentAllocation> FeePaymentAllocations => Set<FeePaymentAllocation>();
     public DbSet<FeeWaiverRequest> FeeWaiverRequests => Set<FeeWaiverRequest>();
     public DbSet<DirectLoanOperation> DirectLoanOperations => Set<DirectLoanOperation>();
     public DbSet<DirectLoanOperationItem> DirectLoanOperationItems => Set<DirectLoanOperationItem>();
@@ -76,6 +78,7 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
+        FeePaymentMapping.Configure(modelBuilder);
         modelBuilder.Entity<DirectLoanOperation>(entity =>
         {
             entity.HasKey(x => x.RequestId);

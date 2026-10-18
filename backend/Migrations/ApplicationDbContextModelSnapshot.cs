@@ -2198,6 +2198,53 @@ namespace Project.Migrations
                 {
                     b.Navigation("Shelves");
                 });
+            modelBuilder.Entity("Project.Models.FeePayment", b =>
+                {
+                    b.Property<long>("Id").ValueGeneratedOnAdd().HasColumnType("bigint");
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+                    b.Property<Guid>("RequestId").HasColumnType("uniqueidentifier");
+                    b.Property<int>("ReaderAccountId").HasColumnType("int");
+                    b.Property<int>("CollectedByAdminAccountId").HasColumnType("int");
+                    b.Property<decimal>("Amount").HasColumnType("decimal(18,2)");
+                    b.Property<decimal>("BalanceAfter").HasColumnType("decimal(18,2)");
+                    b.Property<DateTime>("PaidAtUtc").HasColumnType("datetime2");
+                    b.HasKey("Id");
+                    b.HasIndex("RequestId").IsUnique();
+                    b.HasIndex("ReaderAccountId");
+                    b.HasIndex("CollectedByAdminAccountId");
+                    b.ToTable("FeePayments");
+                });
+            modelBuilder.Entity("Project.Models.FeePaymentAllocation", b =>
+                {
+                    b.Property<long>("Id").ValueGeneratedOnAdd().HasColumnType("bigint");
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+                    b.Property<long>("FeePaymentId").HasColumnType("bigint");
+                    b.Property<int>("ReaderFeeId").HasColumnType("int");
+                    b.Property<decimal>("Amount").HasColumnType("decimal(18,2)");
+                    b.HasKey("Id");
+                    b.HasIndex("FeePaymentId", "ReaderFeeId").IsUnique();
+                    b.HasIndex("ReaderFeeId");
+                    b.ToTable("FeePaymentAllocations");
+                });
+            modelBuilder.Entity("Project.Models.FeePayment", b =>
+                {
+                    b.HasOne("Project.Models.ReaderAccount", "ReaderAccount").WithMany()
+                        .HasForeignKey("ReaderAccountId").OnDelete(DeleteBehavior.Restrict).IsRequired();
+                    b.HasOne("Project.Models.AdminAccount", "CollectedByAdminAccount").WithMany()
+                        .HasForeignKey("CollectedByAdminAccountId").OnDelete(DeleteBehavior.Restrict).IsRequired();
+                    b.Navigation("ReaderAccount");
+                    b.Navigation("CollectedByAdminAccount");
+                });
+            modelBuilder.Entity("Project.Models.FeePaymentAllocation", b =>
+                {
+                    b.HasOne("Project.Models.FeePayment", "FeePayment").WithMany("Allocations")
+                        .HasForeignKey("FeePaymentId").OnDelete(DeleteBehavior.Restrict).IsRequired();
+                    b.HasOne("Project.Models.ReaderFee", "ReaderFee").WithMany()
+                        .HasForeignKey("ReaderFeeId").OnDelete(DeleteBehavior.Restrict).IsRequired();
+                    b.Navigation("FeePayment");
+                    b.Navigation("ReaderFee");
+                });
+            modelBuilder.Entity("Project.Models.FeePayment", b => b.Navigation("Allocations"));
 #pragma warning restore 612, 618
         }
     }

@@ -1,0 +1,70 @@
+@model FeePaymentIndexViewModel
+@using System.Globalization
+@{
+    ViewData["Title"] = "Thu phí";
+    string Money(decimal amount) => amount.ToString("N2", CultureInfo.GetCultureInfo("vi-VN")) + " đ";
+}
+<div class="container-fluid py-4 px-4">
+    <h1 class="h3 text-primary fw-bold mb-4">Ghi nhận thu phí</h1>
+    @if (TempData["SuccessMessage"] is string success) { <div class="alert alert-success" role="status">@success</div> }
+    <div asp-validation-summary="All" class="text-danger mb-3" role="alert"></div>
+    <section class="card border-0 shadow-sm mb-4 p-4">
+        <form method="get" asp-action="Index" class="d-flex gap-2">
+            <label for="fee-search" class="visually-hidden">Tìm bạn đọc</label>
+            <input id="fee-search" name="search" value="@Model.Search" class="form-control" placeholder="Họ tên, mã bạn đọc, mã thẻ, email hoặc số điện thoại" maxlength="256" required />
+            <button class="btn btn-primary" type="submit">Tìm kiếm</button>
+        </form>
+        @if (!string.IsNullOrWhiteSpace(Model.Search))
+        {
+            <p class="text-muted mt-3">Tìm thấy @Model.Readers.Count kết quả (tối đa 50).</p>
+            @foreach (var reader in Model.Readers)
+            {
+                <div class="border-bottom py-2 d-flex justify-content-between gap-2">
+                    <span><strong>@reader.FullName</strong> · @reader.Code · @reader.CardCode · @reader.Email</span>
+                    <a asp-action="Index" asp-route-readerId="@reader.Id" asp-route-search="@Model.Search" class="btn btn-sm btn-outline-primary">Chọn</a>
+                </div>
+            }
+        }
+    </section>
+    @if (Model.Debt is { } debt)
+    {
+        <section class="card border-0 shadow-sm p-4">
+            <h2 class="h5">@debt.Reader.FullName · @debt.Reader.Code</h2>
+            <p class="text-muted">@debt.Reader.Email · Thẻ: @debt.Reader.CardCode</p>
+            <p class="fs-5">Tổng số tiền còn nợ: <strong>@Money(debt.Balance)</strong></p>
+            @if (!debt.IsConsistent)
+            {
+                <div class="alert alert-warning">Số dư bạn đọc lệch tổng khoản phí (@Money(debt.FeeTotal)). Cần đối soát trước khi thu tiền.</div>
+            }
+            else if (debt.Balance == 0m)
+            {
+                <div class="alert alert-info">Bạn đọc không có khoản nợ.</div>
+            }
+            <div class="table-responsive">
+                <table class="table table-hover align-middle">
+                    <thead class="table-light"><tr><th>Khoản phí</th><th>Phát sinh (UTC)</th><th>Phí gốc</th><th>Đã nộp</th><th>Đã miễn</th><th>Còn nợ</th></tr></thead>
+                    <tbody>
+                    @foreach (var fee in debt.Fees)
+                    {
+                        <tr><td>#@fee.Id · @fee.Description</td><td>@fee.CreatedAtUtc.ToString("dd/MM/yyyy HH:mm")</td><td>@Money(fee.Amount)</td><td>@Money(fee.PaidAmount)</td><td>@Money(fee.WaivedAmount)</td><td>@Money(fee.RemainingAmount)</td></tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+            @if (debt.IsConsistent && debt.Balance > 0m)
+            {
+                <form asp-action="Collect" method="post" id="fee-payment-form" class="mt-3">
+                    @Html.AntiForgeryToken()
+                    <input type="hidden" name="ReaderAccountId" value="@debt.Reader.Id" />
+                    <input type="hidden" name="RequestId" value="@Model.Payment.RequestId" />
+                    <label for="fee-amount" class="form-label">Số tiền thực nộp</label>
+                    <input id="fee-amount" name="Amount" type="number" min="0.01" max="@debt.Balance.ToString(CultureInfo.InvariantCulture)" step="0.01" required class="form-control" value="@Model.Payment.Amount?.ToString(CultureInfo.InvariantCulture)" />
+                    <p class="text-muted mt-2">Tiền được phân bổ vào khoản phí phát sinh trước; cùng thời điểm thì theo mã khoản phí tăng dần.</p>
+                    <div class="form-check mb-3"><input type="checkbox" name="Confirmed" value="true" id="fee-confirmed" required class="form-check-input" /><label for="fee-confirmed" class="form-check-label">Tôi xác nhận đã nhận đúng số tiền thực nộp trên.</label></div>
+                    <button type="submit" class="btn btn-primary">Xác nhận thu tiền</button>
+                </form>
+            }
+        </section>
+    }
+</div>
+@section Scripts { <script src="~/js/fee-payment.js" asp-append-version="true"></script> }
