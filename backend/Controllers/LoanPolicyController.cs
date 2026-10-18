@@ -23,11 +23,8 @@ public sealed class LoanPolicyController(
         var model = new LoanPolicyViewModel
         {
             LoanDays = policy?.LoanDays ?? LoanPolicy.DefaultLoanDays,
-<<<<<<< HEAD
             DailyOverdueFee = policy?.DailyOverdueFee,
-=======
             DebtLockThreshold = threshold,
->>>>>>> origin/featture/S4-04/mo_khoa_the_ban_doc_va_ghi_nhat_ky_mo_khoa
             UpdatedAtUtc = policy?.UpdatedAtUtc,
             CardTypePolicies = await GetCardTypePoliciesAsync(cancellationToken),
             LockProposals = await GetLockProposalsAsync(threshold, cancellationToken)
@@ -45,7 +42,8 @@ public sealed class LoanPolicyController(
 
         var policy = await dbContext.LoanPolicies
             .SingleOrDefaultAsync(item => item.Id == LoanPolicy.SingletonId, cancellationToken);
-        if (model.DailyOverdueFee is null && ModelState.IsValid)
+        var effectiveDailyOverdueFee = model.DailyOverdueFee ?? (ModelState.IsValid ? policy?.DailyOverdueFee : null);
+        if (effectiveDailyOverdueFee is null && ModelState.IsValid)
             ModelState.AddModelError(nameof(model.DailyOverdueFee), "Vui lòng nhập mức phí trễ hạn mỗi ngày.");
         if (!ModelState.IsValid)
         {
@@ -63,38 +61,27 @@ public sealed class LoanPolicyController(
         }
 
         var previousLoanDays = policy.LoanDays;
-<<<<<<< HEAD
         var previousDailyOverdueFee = policy.DailyOverdueFee;
-        if (policy.LoanDays == model.LoanDays && policy.DailyOverdueFee == model.DailyOverdueFee
-            && dbContext.Entry(policy).State != EntityState.Added)
-=======
         var previousThreshold = policy.DebtLockThreshold;
         var isUnchanged = policy.LoanDays == model.LoanDays
+            && policy.DailyOverdueFee == effectiveDailyOverdueFee
             && policy.DebtLockThreshold == model.DebtLockThreshold
             && dbContext.Entry(policy).State != EntityState.Added;
         if (isUnchanged)
->>>>>>> origin/featture/S4-04/mo_khoa_the_ban_doc_va_ghi_nhat_ky_mo_khoa
         {
             TempData["SuccessMessage"] = "Chính sách mượn không thay đổi.";
             return RedirectToAction(nameof(Index));
         }
 
         policy.LoanDays = model.LoanDays;
-<<<<<<< HEAD
-        policy.DailyOverdueFee = model.DailyOverdueFee;
-=======
+        policy.DailyOverdueFee = effectiveDailyOverdueFee;
         policy.DebtLockThreshold = model.DebtLockThreshold;
->>>>>>> origin/featture/S4-04/mo_khoa_the_ban_doc_va_ghi_nhat_ky_mo_khoa
         policy.UpdatedAtUtc = DateTime.UtcNow;
         await dbContext.SaveChangesAsync(cancellationToken);
         await auditLogService.WriteAsync(
             admin.Email,
             AuditActions.UpdateLoanPolicy,
-<<<<<<< HEAD
-            $"Chính sách mượn: số ngày mượn {previousLoanDays} → {policy.LoanDays}; phí trễ hạn/ngày {previousDailyOverdueFee?.ToString("N2") ?? "chưa khai báo"} → {policy.DailyOverdueFee:N2} VNĐ",
-=======
-            $"Chính sách mượn: số ngày mượn {previousLoanDays} → {policy.LoanDays}; ngưỡng nợ phí {previousThreshold:0.##} → {policy.DebtLockThreshold:0.##}",
->>>>>>> origin/featture/S4-04/mo_khoa_the_ban_doc_va_ghi_nhat_ky_mo_khoa
+            $"Chính sách mượn: số ngày mượn {previousLoanDays} → {policy.LoanDays}; phí trễ hạn/ngày {previousDailyOverdueFee?.ToString("N2") ?? "chưa khai báo"} → {policy.DailyOverdueFee:N2} VNĐ; ngưỡng nợ phí {previousThreshold:0.##} → {policy.DebtLockThreshold:0.##}",
             AuditLogService.ClientIp(HttpContext),
             cancellationToken);
 
@@ -167,7 +154,7 @@ public sealed class LoanPolicyController(
         var now = DateTime.UtcNow;
         var today = DateOnly.FromDateTime(now);
         var overdueByReader = await dbContext.BookLoans.AsNoTracking()
-            .Where(loan => !loan.IsReturned && loan.DueDate < today)
+            .Where(loan => loan.ReturnedAtUtc == null && loan.CloseReason == null && loan.DueDate < today)
             .Select(loan => new { loan.ReaderAccountId, loan.DueDate })
             .ToListAsync(cancellationToken);
 

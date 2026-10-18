@@ -26,11 +26,7 @@ public static class AuditActions
     public static readonly IReadOnlyList<string> All =
     [
         Login, LoginFailed, Logout, CreateAccount, UpdateAccount, ChangePassword, ResetPassword,
-<<<<<<< HEAD
         IssueCard, CreateLoan, RenewLoan, PlaceHold, CancelHold, UpdateLoanPolicy, ExportOverdueReaders
-=======
-        IssueCard, LockCard, UnlockCard, CreateLoan, RenewLoan, PlaceHold, CancelHold, UpdateLoanPolicy
->>>>>>> origin/featture/S4-04/mo_khoa_the_ban_doc_va_ghi_nhat_ky_mo_khoa
     ];
 
     /// <summary>Màu nhãn trên trang nhật ký để phân biệt nhanh từng nhóm hành động.</summary>

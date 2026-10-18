@@ -658,15 +658,9 @@ public sealed class ReaderRegistrationController(
             return RedirectToAction(nameof(MyHolds));
         }
 
-<<<<<<< HEAD
-        if (holdPickupConfirmationService == null)
-        {
-            TempData["ErrorMessage"] = "Dịch vụ xác nhận nhận sách tạm thời không khả dụng.";
-=======
         if (holdPickupConfirmationService is null)
         {
-            TempData["ErrorMessage"] = "Dịch vụ xác nhận nhận sách chưa được cấu hình.";
->>>>>>> origin/featture/S4-04/mo_khoa_the_ban_doc_va_ghi_nhat_ky_mo_khoa
+            TempData["ErrorMessage"] = "Dịch vụ xác nhận nhận sách tạm thời không khả dụng.";
             return RedirectToAction(nameof(MyHolds));
         }
 

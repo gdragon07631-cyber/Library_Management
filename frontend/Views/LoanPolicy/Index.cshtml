@@ -30,7 +30,6 @@
                     <span asp-validation-for="LoanDays" class="text-danger"></span>
                 </div>
                 <div class="mb-3">
-<<<<<<< HEAD
                     <label asp-for="DailyOverdueFee" class="form-label fw-semibold"></label>
                     <div class="input-group">
                         <input asp-for="DailyOverdueFee" class="form-control" type="number" min="0" max="1000000000" step="0.01" />
@@ -38,14 +37,14 @@
                     </div>
                     <span asp-validation-for="DailyOverdueFee" class="text-danger"></span>
                     <div class="form-text">Phí dự kiến được làm tròn đến 1.000 VNĐ gần nhất; đúng điểm giữa làm tròn lên.</div>
-=======
+                </div>
+                <div class="mb-3">
                     <label asp-for="DebtLockThreshold" class="form-label fw-semibold"></label>
                     <div class="input-group">
                         <input asp-for="DebtLockThreshold" class="form-control" type="number" min="0" step="1000" />
                         <span class="input-group-text">VND</span>
                     </div>
                     <span asp-validation-for="DebtLockThreshold" class="text-danger"></span>
->>>>>>> origin/featture/S4-04/mo_khoa_the_ban_doc_va_ghi_nhat_ky_mo_khoa
                 </div>
                 @if (Model.UpdatedAtUtc is DateTime updatedAt)
                 {
