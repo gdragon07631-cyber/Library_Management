@@ -31,6 +31,7 @@ Mở `.env`, thay các placeholder trước khi khởi chạy. `.env` đã đư�
 | `EMAIL_FROM` | Không* | Ứng dụng | Địa chỉ người gửi; cần khai báo cùng SMTP để gửi email. |
 | `EMAIL_USERNAME` | Không* | Ứng dụng | Tài khoản SMTP nếu nhà cung cấp yêu cầu. |
 | `EMAIL_PASSWORD` | Không* | Ứng dụng | Mật khẩu SMTP; lưu riêng trong `.env` hoặc secret manager. |
+| `STAGING_DEMO_*_PASSWORD` | Chỉ khi tạo tài khoản mẫu | Ứng dụng | Bốn mật khẩu staging riêng biệt, mỗi mật khẩu tối thiểu 12 ký tự. Xem `docs/staging-demo.md`; không dùng lại mật khẩu production. |
 | `STAGING_HTTP_PORT` | Không | Compose | Cổng host cho giao diện; mặc định `5188`. |
 | `STAGING_SQL_PORT` | Không | Compose | Cổng host SQL Server; mặc định `1433`. |
 
@@ -80,6 +81,14 @@ Sau khi chạy, terminal in tổng số bản ghi và phân bố trạng thái. 
     docker compose -f docker-compose.staging.yml exec -T database /bin/sh -c '/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$MSSQL_SA_PASSWORD" -C -d ProjectDb -Q "SELECT COUNT(*) AS Books FROM Books; SELECT COUNT(*) AS Copies FROM BookCopies; SELECT COUNT(*) AS Readers FROM ReaderAccounts; SELECT COUNT(*) AS Loans FROM BookLoans;"'
 
 Mở giao diện ở http://localhost:5188 và tra cứu các mã bạn đọc STG-DEMO-RD-* hoặc bản sao STG-DEMO-CPY-*. Các phiếu sự cố mẫu có thể xem từ màn hình lịch sử sự cố sách; dữ liệu lưu trong bảng nghiệp vụ thật, không phải dữ liệu tĩnh trên giao diện.
+
+### Tạo bốn tài khoản đăng nhập demo (S4-10 Lát 3)
+
+Trong `.env`, đặt `STAGING_DEMO_SYSTEM_ADMIN_PASSWORD`, `STAGING_DEMO_LIBRARY_MANAGER_PASSWORD`, `STAGING_DEMO_LIBRARIAN_PASSWORD` và `STAGING_DEMO_READER_PASSWORD` thành bốn mật khẩu riêng, mỗi mật khẩu tối thiểu 12 ký tự. Sau đó chạy:
+
+    docker compose -f docker-compose.staging.yml exec -T web dotnet Project.dll --seed-staging-demo-accounts
+
+Lệnh chỉ chạy trong môi trường Staging và áp dụng migrations trước. Nó tạo tài khoản còn thiếu, không sửa tài khoản đã có, không in mật khẩu hoặc password hash ra log. Password được lưu bằng ASP.NET Core PasswordHasher; tài khoản bạn đọc có thẻ staging hoạt động nếu database có loại thẻ hoạt động. Tên đăng nhập, vai trò, URL và kịch bản ở `docs/staging-demo.md`.
 
 ## D. Truy cập
 

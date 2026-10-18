@@ -157,6 +157,32 @@ if (args.Contains("--seed-staging-demo", StringComparer.OrdinalIgnoreCase))
     return;
 }
 
+if (args.Contains("--seed-staging-demo-accounts", StringComparer.OrdinalIgnoreCase))
+{
+    if (!app.Environment.IsStaging())
+        throw new InvalidOperationException("Lệnh --seed-staging-demo-accounts chỉ được chạy khi ASPNETCORE_ENVIRONMENT=Staging.");
+
+    await using var scope = app.Services.CreateAsyncScope();
+    var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+    await dbContext.Database.MigrateAsync();
+    var accountSeeder = new StagingDemoAccountsSeeder(
+        dbContext,
+        scope.ServiceProvider.GetRequiredService<IPasswordHasher<AdminAccount>>(),
+        scope.ServiceProvider.GetRequiredService<IPasswordHasher<ReaderAccount>>());
+    var passwords = new Dictionary<string, string?>
+    {
+        ["SYSTEM_ADMIN"] = app.Configuration["STAGING_DEMO_SYSTEM_ADMIN_PASSWORD"],
+        ["LIBRARY_MANAGER"] = app.Configuration["STAGING_DEMO_LIBRARY_MANAGER_PASSWORD"],
+        ["LIBRARIAN"] = app.Configuration["STAGING_DEMO_LIBRARIAN_PASSWORD"],
+        ["READER"] = app.Configuration["STAGING_DEMO_READER_PASSWORD"]
+    };
+    var result = await accountSeeder.SeedAsync(passwords);
+    Console.WriteLine("Staging demo accounts checked (passwords omitted):");
+    foreach (var item in result.Created)
+        Console.WriteLine($"  {item.Key}: {(item.Value ? "created" : "already exists; unchanged")}");
+    return;
+}
+
 if (args.Contains("--seed-hold-pickup", StringComparer.OrdinalIgnoreCase))
 {
     await using var scope = app.Services.CreateAsyncScope();
