@@ -349,6 +349,7 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
         {
             entity.HasIndex(item => item.StartedAtUtc);
             entity.HasIndex(item => item.DeduplicationKey).IsUnique();
+            entity.HasIndex(item => item.HoldId);
             entity.HasIndex(item => new { item.ReaderAccountId, item.StartedAtUtc });
             entity.HasIndex(item => new { item.Recipient, item.StartedAtUtc });
             entity.Property(item => item.Recipient).HasMaxLength(256).IsRequired();

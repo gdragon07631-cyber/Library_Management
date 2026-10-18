@@ -15,6 +15,7 @@ public sealed class EmailSendHistory
     public long Id { get; set; }
     [Required, MaxLength(64)] public string DeduplicationKey { get; set; } = string.Empty;
     public int? ReaderAccountId { get; set; }
+    public long? HoldId { get; set; }
     [Required, MaxLength(256)] public string Recipient { get; set; } = string.Empty;
     [Required, MaxLength(30)] public string NotificationType { get; set; } = "Other";
     [Required, MaxLength(500)] public string Subject { get; set; } = string.Empty;

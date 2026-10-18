@@ -64,6 +64,7 @@ builder.Services.AddScoped<IReaderAccountAdminService, ReaderAccountAdminService
 builder.Services.AddSingleton<IPermissionMatrixService, PermissionMatrixService>();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddHostedService<HoldPickupExpiryScheduledWorker>();
+builder.Services.AddHostedService<HoldReadyEmailWorker>();
 builder.Services.Configure<BookCopyLabelPrintOptions>(builder.Configuration.GetSection("BookCopyLabels"));
 builder.Services.AddDataProtection()
     .PersistKeysToFileSystem(new DirectoryInfo(Path.Combine(builder.Environment.ContentRootPath, "Data", "Keys")));
