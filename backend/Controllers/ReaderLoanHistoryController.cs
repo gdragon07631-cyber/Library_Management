@@ -65,10 +65,16 @@ public sealed class ReaderLoanHistoryController(ApplicationDbContext db) : Contr
         var today = HoldPickupExpirySchedule.GetBusinessDate(DateTime.UtcNow);
         foreach (var loan in loans)
         {
-            var returnDate = GetLocalReturnDate(loan.ReturnedAtUtc);
-            var status = returnDate.HasValue
-                ? "Đã trả"
-                : loan.DueDate < today ? "Quá hạn, chưa trả" : "Đang mở";
+            var isIncidentClosed = loan.CloseReason is BookLoanCloseReason.Lost or BookLoanCloseReason.Damaged;
+            var returnDate = isIncidentClosed ? null : GetLocalReturnDate(loan.ReturnedAtUtc);
+            var status = loan.CloseReason switch
+            {
+                BookLoanCloseReason.Lost => "Đã đóng - mất",
+                BookLoanCloseReason.Damaged => "Đã đóng - hỏng nặng",
+                _ => returnDate.HasValue
+                    ? returnDate.Value > loan.DueDate ? "Đã trả trễ hạn" : "Đã trả đúng hạn"
+                    : loan.DueDate < today ? "Quá hạn, chưa trả" : "Đang mượn"
+            };
             AppendCsvRow(csv,
                 loan.Id.ToString(System.Globalization.CultureInfo.InvariantCulture),
                 reader.StudentOrStaffCode,
@@ -114,7 +120,8 @@ public sealed class ReaderLoanHistoryController(ApplicationDbContext db) : Contr
                 loanDate = loan.LoanDate,
                 dueDate = loan.DueDate,
                 returnedAtUtc = loan.ReturnedAtUtc,
-                isReturned = loan.ReturnedAtUtc.HasValue
+                isReturned = loan.IsReturned,
+                closeReason = loan.CloseReason
             })
         });
     }

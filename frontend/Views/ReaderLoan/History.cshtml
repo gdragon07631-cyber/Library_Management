@@ -6,7 +6,7 @@
 <div class="container py-4">
     <div class="mb-4">
         <h1 class="h3 mb-1 text-primary fw-bold">Phiếu mượn của tôi</h1>
-        <p class="text-muted mb-0">Các sách bạn đã trả.</p>
+        <p class="text-muted mb-0">Các phiếu mượn đã kết thúc.</p>
     </div>
     <ul class="nav nav-tabs mb-3" aria-label="Phiếu mượn">
         <li class="nav-item"><a class="nav-link" asp-controller="ReaderLoan" asp-action="Index">Đang mượn</a></li>
@@ -15,17 +15,26 @@
 
     <div class="card shadow-sm border-0"><div class="table-responsive">
         <table class="table table-hover align-middle mb-0">
-            <thead class="table-light"><tr><th>Sách</th><th>Mã vạch bản sao</th><th>Ngày mượn</th><th>Hạn trả</th><th>Ngày trả</th></tr></thead>
+            <thead class="table-light"><tr><th>Sách</th><th>Mã vạch bản sao</th><th>Ngày mượn</th><th>Hạn trả</th><th>Ngày trả / đóng</th><th>Trạng thái</th></tr></thead>
             <tbody>
-            @if (Model.Loans.Count == 0) { <tr><td colspan="5" class="text-center text-muted py-4">Chưa có phiếu mượn đã trả.</td></tr> }
+            @if (Model.Loans.Count == 0) { <tr><td colspan="6" class="text-center text-muted py-4">Chưa có phiếu mượn đã kết thúc.</td></tr> }
             @foreach (var loan in Model.Loans)
             {
+                var isIncidentClosed = loan.CloseReason is Project.Models.BookLoanCloseReason.Lost or Project.Models.BookLoanCloseReason.Damaged;
+                var status = loan.CloseReason switch
+                {
+                    Project.Models.BookLoanCloseReason.Lost => "Đã đóng - mất",
+                    Project.Models.BookLoanCloseReason.Damaged => "Đã đóng - hỏng nặng",
+                    _ => DateOnly.FromDateTime(Project.Services.HoldPickupExpirySchedule.GetVietnamLocalTime(loan.ReturnedAtUtc!.Value)) > loan.DueDate
+                        ? "Đã trả trễ hạn" : "Đã trả đúng hạn"
+                };
                 <tr>
                     <td>@loan.Book?.Title</td>
                     <td class="font-monospace">@(loan.BookCopy?.CopyCode ?? "—")</td>
                     <td>@loan.LoanDate.ToString("dd/MM/yyyy")</td>
                     <td>@loan.DueDate.ToString("dd/MM/yyyy")</td>
-                    <td>@loan.ReturnedAtUtc?.ToLocalTime().ToString("dd/MM/yyyy")</td>
+                    <td>@(!isIncidentClosed ? Project.Services.HoldPickupExpirySchedule.GetVietnamLocalTime(loan.ReturnedAtUtc!.Value).ToString("dd/MM/yyyy") : "—")</td>
+                    <td>@status</td>
                 </tr>
             }
             </tbody>

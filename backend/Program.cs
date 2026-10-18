@@ -141,6 +141,22 @@ if (args.Contains("--seed-library-demo", StringComparer.OrdinalIgnoreCase))
     return;
 }
 
+if (args.Contains("--seed-staging-demo", StringComparer.OrdinalIgnoreCase))
+{
+    if (!app.Environment.IsStaging())
+        throw new InvalidOperationException("Lệnh --seed-staging-demo chỉ được chạy khi ASPNETCORE_ENVIRONMENT=Staging.");
+
+    await using var scope = app.Services.CreateAsyncScope();
+    var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+    await dbContext.Database.MigrateAsync();
+    var result = await new StagingAcceptanceDataSeeder(dbContext).SeedAsync();
+    Console.WriteLine(
+        $"Staging sample data ready: books={result.Books}, copies={result.Copies}, readers={result.Readers}, loans={result.Loans}.");
+    foreach (var state in result.LoanStates.OrderBy(item => item.Key, StringComparer.Ordinal))
+        Console.WriteLine($"  {state.Key}: {state.Value}");
+    return;
+}
+
 if (args.Contains("--seed-hold-pickup", StringComparer.OrdinalIgnoreCase))
 {
     await using var scope = app.Services.CreateAsyncScope();

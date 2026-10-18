@@ -63,6 +63,24 @@ docker compose -f docker-compose.staging.yml logs --follow web
 docker compose -f docker-compose.staging.yml logs --follow database
 ```
 
+### Nạp dữ liệu mẫu nghiệm thu (S4-10 Lát 2)
+
+Sau khi staging đã khởi động healthy, tại thư mục gốc chạy:
+
+    docker compose -f docker-compose.staging.yml exec -T web dotnet Project.dll --seed-staging-demo
+
+Lệnh chỉ chạy khi ứng dụng có ASPNETCORE_ENVIRONMENT=Staging, áp dụng migrations trước, rồi ghi dữ liệu vào SQL Server staging. Seeder tái sử dụng kho/kệ/danh mục demo hiện có và thêm tối thiểu 200 đầu sách, 500 bản sao, 50 bạn đọc, 100 phiếu mượn. Dữ liệu dùng mã STG-DEMO-*, email miền .test, và không tạo tài khoản nhân viên/quản trị. Mật khẩu ngẫu nhiên của bạn đọc chỉ lưu dưới dạng hash và không in ra log.
+
+Seeder không chạy tự động cùng ứng dụng. Có thể chạy lại mà không nhân bản các bản ghi staging hiện có; lệnh này không phải chức năng reset dữ liệu.
+
+Phân bố phiếu seed hiện tại: 20 đang mượn, 20 quá hạn chưa trả, 20 đã trả đúng hạn, 20 đã trả trễ hạn, 10 đóng do mất và 10 đóng do hỏng nặng. Quá hạn được xác định từ hạn trả theo ngày nghiệp vụ Việt Nam; mất/hỏng dùng các giá trị CloseReason và IncidentType có sẵn trong ứng dụng.
+
+Sau khi chạy, terminal in tổng số bản ghi và phân bố trạng thái. Có thể kiểm tra số lượng:
+
+    docker compose -f docker-compose.staging.yml exec -T database /bin/sh -c '/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$MSSQL_SA_PASSWORD" -C -d ProjectDb -Q "SELECT COUNT(*) AS Books FROM Books; SELECT COUNT(*) AS Copies FROM BookCopies; SELECT COUNT(*) AS Readers FROM ReaderAccounts; SELECT COUNT(*) AS Loans FROM BookLoans;"'
+
+Mở giao diện ở http://localhost:5188 và tra cứu các mã bạn đọc STG-DEMO-RD-* hoặc bản sao STG-DEMO-CPY-*. Các phiếu sự cố mẫu có thể xem từ màn hình lịch sử sự cố sách; dữ liệu lưu trong bảng nghiệp vụ thật, không phải dữ liệu tĩnh trên giao diện.
+
 ## D. Truy cập
 
 Mặc định giao diện ở [http://localhost:5188](http://localhost:5188). Nếu đổi `STAGING_HTTP_PORT`, thay cổng trong URL. Các cổng được bind vào loopback để chỉ máy chạy Docker truy cập trực tiếp; DB không bị mở ra mạng ngoài. Muốn nghiệm thu từ máy khác, hạ tầng cần cấu hình reverse proxy/firewall và bind cổng web vào interface phù hợp; không nên công khai cổng SQL. DNS/TLS và địa chỉ máy chủ do hạ tầng cung cấp. Compose này không tạo địa chỉ công khai hoặc TLS.

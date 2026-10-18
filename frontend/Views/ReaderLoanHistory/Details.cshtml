@@ -56,11 +56,20 @@
                 }
                 @foreach (var loan in Model.Loans)
                 {
-                    var isOpen = loan.ReturnedAtUtc is null;
-                    var returnedDate = loan.ReturnedAtUtc is DateTime returnedAt
+                    var isIncidentClosed = loan.CloseReason is Project.Models.BookLoanCloseReason.Lost or Project.Models.BookLoanCloseReason.Damaged;
+                    var isReturned = loan.ReturnedAtUtc.HasValue && !isIncidentClosed;
+                    var returnedDate = isReturned && loan.ReturnedAtUtc is DateTime returnedAt
                         ? DateOnly.FromDateTime(Project.Services.HoldPickupExpirySchedule.GetVietnamLocalTime(returnedAt))
                         : (DateOnly?)null;
-                    var isOverdue = isOpen && loan.DueDate < Project.Services.HoldPickupExpirySchedule.GetBusinessDate(DateTime.UtcNow);
+                    var isOverdue = !isReturned && !isIncidentClosed && loan.DueDate < Project.Services.HoldPickupExpirySchedule.GetBusinessDate(DateTime.UtcNow);
+                    var loanStatus = loan.CloseReason switch
+                    {
+                        Project.Models.BookLoanCloseReason.Lost => "Đã đóng - mất",
+                        Project.Models.BookLoanCloseReason.Damaged => "Đã đóng - hỏng nặng",
+                        _ => isReturned
+                            ? returnedDate.HasValue && returnedDate.Value > loan.DueDate ? "Đã trả trễ hạn" : "Đã trả đúng hạn"
+                            : isOverdue ? "Quá hạn, chưa trả" : "Đang mượn"
+                    };
                     <tr>
                         <td>#@loan.Id</td>
                         <td>@loan.Book?.Title</td>
@@ -68,7 +77,7 @@
                         <td>@loan.LoanDate.ToString("dd/MM/yyyy")</td>
                         <td>@loan.DueDate.ToString("dd/MM/yyyy")</td>
                         <td>@(returnedDate?.ToString("dd/MM/yyyy") ?? "—")</td>
-                        <td>@(isOverdue ? "Quá hạn, chưa trả" : isOpen ? "Đang mở" : "Đã trả")</td>
+                        <td>@loanStatus</td>
                     </tr>
                 }
                 </tbody>
