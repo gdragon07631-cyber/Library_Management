@@ -60,11 +60,20 @@ builder.Services.AddScoped<IStaffHoldCancellationService, StaffHoldCancellationS
 builder.Services.AddScoped<IHoldPickupExpiryService, HoldPickupExpiryService>();
 builder.Services.AddScoped<IHoldPickupExpirySchedulingService, HoldPickupExpirySchedulingService>();
 builder.Services.AddScoped<IHoldPickupExpiryHistoryService, HoldPickupExpiryHistoryService>();
+builder.Services.AddScoped<HoldPickupReminderEnqueuer>();
 builder.Services.AddScoped<IReaderAccountAdminService, ReaderAccountAdminService>();
 builder.Services.AddSingleton<IPermissionMatrixService, PermissionMatrixService>();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddHostedService<HoldPickupExpiryScheduledWorker>();
 builder.Services.AddHostedService<HoldReadyEmailWorker>();
+builder.Services.AddOptions<HoldPickupReminderOptions>()
+    .Bind(builder.Configuration.GetSection(HoldPickupReminderOptions.SectionName))
+    .Validate(options => HoldPickupReminderSchedule.TryParseRunTime(options.SendTimeLocal, out _),
+        "HoldPickupReminder:SendTimeLocal must use HH:mm in Asia/Ho_Chi_Minh.")
+    .Validate(options => options.RetryIntervalSeconds is >= 30 and <= 3600,
+        "HoldPickupReminder:RetryIntervalSeconds must be between 30 and 3600.")
+    .ValidateOnStart();
+builder.Services.AddHostedService<HoldPickupReminderScheduledWorker>();
 builder.Services.Configure<BookCopyLabelPrintOptions>(builder.Configuration.GetSection("BookCopyLabels"));
 builder.Services.AddDataProtection()
     .PersistKeysToFileSystem(new DirectoryInfo(Path.Combine(builder.Environment.ContentRootPath, "Data", "Keys")));

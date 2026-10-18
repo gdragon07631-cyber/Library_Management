@@ -6,21 +6,24 @@ using Project.Models;
 
 namespace Project.Services;
 
-public sealed class HoldReadyEmailWorker(IServiceScopeFactory scopeFactory, ILogger<HoldReadyEmailWorker> logger)
-    : BackgroundService
+public sealed class HoldReadyEmailWorker(
+    IServiceScopeFactory scopeFactory,
+    TimeProvider timeProvider,
+    ILogger<HoldReadyEmailWorker> logger) : BackgroundService
 {
+    private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(15);
+    private static readonly TimeSpan ProcessingLease = TimeSpan.FromMinutes(2);
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         while (!stoppingToken.IsCancellationRequested)
         {
-            try
-            {
-                await ProcessOneAsync(stoppingToken);
-            }
+            try { await ProcessOneAsync(stoppingToken); }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
-            catch (Exception exception) { logger.LogError(exception, "Hold-ready email worker iteration failed."); }
+            catch (Exception exception) { logger.LogError(exception, "Hold email worker iteration failed."); }
 
-            await Task.Delay(TimeSpan.FromSeconds(15), stoppingToken);
+            try { await Task.Delay(PollInterval, timeProvider, stoppingToken); }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
         }
     }
 
@@ -28,16 +31,25 @@ public sealed class HoldReadyEmailWorker(IServiceScopeFactory scopeFactory, ILog
     {
         await using var scope = scopeFactory.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        var now = DateTime.UtcNow;
+        var now = timeProvider.GetUtcNow().UtcDateTime;
         var item = await db.EmailSendHistories.AsNoTracking()
-            .Where(x => x.NotificationType == "HoldReady" && x.Attempts < 5 &&
-                (x.Status == "Queued" ||
-                 (x.Status == "Retrying" && x.CompletedAtUtc <= now.AddSeconds(-30)) ||
-                 (x.Status == "Processing" && x.CompletedAtUtc <= now.AddMinutes(-2))))
+            .Where(x => (x.NotificationType == "HoldReady" || x.NotificationType == "HoldPickupLastDay") &&
+                ((x.Status == "Queued" && x.Attempts < 5) ||
+                 (x.Status == "Retrying" && x.Attempts < 5 && x.CompletedAtUtc <= now.AddSeconds(-30)) ||
+                 (x.Status == "Processing" && x.CompletedAtUtc <= now - ProcessingLease)))
             .OrderBy(x => x.StartedAtUtc).ThenBy(x => x.Id).FirstOrDefaultAsync(cancellationToken);
         if (item is null) return;
 
-        // Conditional update makes only one worker instance claim this event.
+        if (item.Status == "Processing" && item.Attempts >= 5)
+        {
+            await db.EmailSendHistories.Where(x => x.Id == item.Id && x.Status == "Processing" && x.CompletedAtUtc == item.CompletedAtUtc)
+                .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.Status, "Failed")
+                    .SetProperty(x => x.ErrorMessage, "Tiến trình dừng trong lần thử cuối; cần nhân viên kiểm tra trước khi gửi lại.")
+                    .SetProperty(x => x.CompletedAtUtc, now), cancellationToken);
+            return;
+        }
+
+        // Compare status and timestamp so multiple worker instances cannot claim the same row.
         var claimed = await db.EmailSendHistories.Where(x => x.Id == item.Id && x.Status == item.Status &&
                 x.CompletedAtUtc == item.CompletedAtUtc)
             .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.Status, "Processing")
@@ -57,18 +69,29 @@ public sealed class HoldReadyEmailWorker(IServiceScopeFactory scopeFactory, ILog
                 !new EmailAddressAttribute().IsValid(hold.ReaderAccount.Email))
                 throw new InvalidOperationException("Thiếu thông tin hợp lệ của đơn, sách, email, hạn nhận hoặc địa điểm nhận.");
 
+            var isLastDayReminder = item.NotificationType == "HoldPickupLastDay";
+            if (isLastDayReminder && HoldPickupExpirySchedule.GetBusinessDate(hold.PickupDeadlineUtc.Value) !=
+                HoldPickupExpirySchedule.GetBusinessDate(timeProvider.GetUtcNow().UtcDateTime))
+                throw new InvalidOperationException("Đơn không còn trong ngày cuối cùng nhận sách; đã bỏ qua email nhắc.");
+
             var location = $"{hold.BookCopy.Shelf.Warehouse.Name} – {hold.BookCopy.Shelf.Name}";
-            var deadline = HoldPickupExpirySchedule.GetVietnamLocalTime(hold.PickupDeadlineUtc.Value).ToString("dd/MM/yyyy HH:mm");
-            var body = $"<p>Xin chào {WebUtility.HtmlEncode(hold.ReaderAccount.FullName)},</p>" +
-                "<p>Sách bạn đã đặt giữ hiện đã sẵn sàng để nhận.</p><ul>" +
+            var deadline = HoldPickupExpirySchedule.GetVietnamLocalTime(hold.PickupDeadlineUtc.Value)
+                .ToString("dd/MM/yyyy HH:mm");
+            var greeting = $"<p>Xin chào {WebUtility.HtmlEncode(hold.ReaderAccount.FullName)},</p>";
+            var introduction = isLastDayReminder
+                ? "<p>Hôm nay là ngày cuối cùng để nhận sách theo thời hạn giữ hiện tại.</p>"
+                : "<p>Sách bạn đã đặt giữ hiện đã sẵn sàng để nhận.</p>";
+            var body = greeting + introduction + "<ul>" +
                 $"<li>Tên sách: {WebUtility.HtmlEncode(hold.Book.Title)}</li>" +
                 $"<li>Mã đơn đặt giữ: {hold.Id}</li><li>Hạn cuối nhận sách: {deadline} (giờ Việt Nam)</li>" +
                 $"<li>Địa điểm nhận sách: {WebUtility.HtmlEncode(location)}</li></ul>" +
-                "<p>Vui lòng đến nhận sách trước hạn cuối nêu trên.</p><p>Trân trọng,<br/>Thư viện.</p>";
+                "<p>Vui lòng đến nhận sách trước hạn cuối nêu trên để tránh đơn đặt giữ bị hủy do quá hạn.</p>" +
+                "<p>Trân trọng,<br/>Thư viện.</p>";
+
             var sender = scope.ServiceProvider.GetRequiredService<SmtpEmailSender>();
             await sender.SendAsync(hold.ReaderAccount.Email, item.Subject, body, cancellationToken);
             await db.EmailSendHistories.Where(x => x.Id == item.Id).ExecuteUpdateAsync(setters => setters
-                .SetProperty(x => x.Status, "Sent").SetProperty(x => x.CompletedAtUtc, DateTime.UtcNow)
+                .SetProperty(x => x.Status, "Sent").SetProperty(x => x.CompletedAtUtc, timeProvider.GetUtcNow().UtcDateTime)
                 .SetProperty(x => x.ErrorMessage, (string?)null), cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
@@ -79,10 +102,9 @@ public sealed class HoldReadyEmailWorker(IServiceScopeFactory scopeFactory, ILog
             var message = exception.Message.Replace('\r', ' ').Replace('\n', ' ');
             if (message.Length > 1000) message = message[..1000];
             await db.EmailSendHistories.Where(x => x.Id == item.Id).ExecuteUpdateAsync(setters => setters
-                .SetProperty(x => x.Status, status).SetProperty(x => x.CompletedAtUtc, DateTime.UtcNow)
+                .SetProperty(x => x.Status, status).SetProperty(x => x.CompletedAtUtc, timeProvider.GetUtcNow().UtcDateTime)
                 .SetProperty(x => x.ErrorMessage, message), CancellationToken.None);
-            logger.LogWarning("Hold-ready email event {HistoryId} failed on attempt {Attempt}.", item.Id, attempts);
+            logger.LogWarning("Hold email event {HistoryId} failed on attempt {Attempt}.", item.Id, attempts);
         }
     }
-
 }

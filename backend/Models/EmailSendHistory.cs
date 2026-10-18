@@ -30,7 +30,11 @@ public sealed class EmailSendHistory
 
 public sealed record EmailSendHistoryItem(long Id, DateTime StartedAtUtc, DateTime? CompletedAtUtc,
     int? ReaderAccountId, string? ReaderCode, string Recipient, string NotificationType,
-    string Subject, string Status, int Attempts, string? ErrorMessage, int? OverdueMilestoneDays);
+    string Subject, string Status, int Attempts, string? ErrorMessage, int? OverdueMilestoneDays)
+{
+    public long? HoldId { get; init; }
+    public string? BookTitle { get; init; }
+}
 
 public sealed class EmailSendHistoryPageViewModel
 {
