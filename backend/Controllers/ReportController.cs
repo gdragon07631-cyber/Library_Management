@@ -1,5 +1,6 @@
 <<<<<<< HEAD:backend/Controllers/ReportController.cs
 <<<<<<< HEAD:backend/Controllers/ReportController.cs
+<<<<<<< HEAD:backend/Controllers/ReportController.cs
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Project.Data;
@@ -7,19 +8,25 @@ using Project.Filters;
 =======
 =======
 >>>>>>> origin/feature/S4-07/xem_10_dau_sach_co_hang_doi_dat_giu:Controllers/ReportController.cs
+=======
+>>>>>>> origin/feature/S4-07/xem_10_dau_sach_duoc_muon:Controllers/ReportController.cs
 using System.Globalization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Project.Data;
 <<<<<<< HEAD:backend/Controllers/ReportController.cs
+<<<<<<< HEAD:backend/Controllers/ReportController.cs
 >>>>>>> origin/feature/S4-07/xem_tong_quan_luot_muon_va_tinh_trang:Controllers/ReportController.cs
 =======
 >>>>>>> origin/feature/S4-07/xem_10_dau_sach_co_hang_doi_dat_giu:Controllers/ReportController.cs
+=======
+>>>>>>> origin/feature/S4-07/xem_10_dau_sach_duoc_muon:Controllers/ReportController.cs
 using Project.Models;
 using Project.Services;
 
 namespace Project.Controllers;
 
+<<<<<<< HEAD:backend/Controllers/ReportController.cs
 <<<<<<< HEAD:backend/Controllers/ReportController.cs
 <<<<<<< HEAD:backend/Controllers/ReportController.cs
 [Route("reports")]
@@ -92,6 +99,8 @@ public sealed class ReportController(ILibraryReportService reports, ApplicationD
 =======
 =======
 >>>>>>> origin/feature/S4-07/xem_10_dau_sach_co_hang_doi_dat_giu:Controllers/ReportController.cs
+=======
+>>>>>>> origin/feature/S4-07/xem_10_dau_sach_duoc_muon:Controllers/ReportController.cs
 public sealed class ReportController(ApplicationDbContext db, ILoanReportService reports) : Controller
 {
     private static readonly TimeZoneInfo VietnamTimeZone = TimeZoneInfo.FindSystemTimeZoneById("Asia/Ho_Chi_Minh");
@@ -107,6 +116,7 @@ public sealed class ReportController(ApplicationDbContext db, ILoanReportService
 
         var today = GetVietnamToday();
         var (start, end) = DefaultRange(today);
+<<<<<<< HEAD:backend/Controllers/ReportController.cs
 <<<<<<< HEAD:backend/Controllers/ReportController.cs
         return View(reports.GetDemoReport(start, end, today));
     }
@@ -149,6 +159,11 @@ public sealed class ReportController(ApplicationDbContext db, ILoanReportService
             TopBooks = topBooks,
             TopHeldBooks = topHeldBooks
         });
+=======
+        var summary = reports.GetDemoReport(start, end, today);
+        var topBooks = await reports.GetTopBooksAsync(start, end, ct);
+        return View(new LoanReportPageViewModel { Summary = summary, TopBooks = topBooks });
+>>>>>>> origin/feature/S4-07/xem_10_dau_sach_duoc_muon:Controllers/ReportController.cs
     }
 
     [HttpGet("api/reports/loans/summary")]
@@ -160,7 +175,11 @@ public sealed class ReportController(ApplicationDbContext db, ILoanReportService
         if (!TryResolveRange(startDate, endDate, out var start, out var end, out var error))
             return BadRequest(new { message = error });
 
+<<<<<<< HEAD:backend/Controllers/ReportController.cs
         return Ok(reports.GetDemoSummary(start, end, GetVietnamToday()));
+=======
+        return Ok(reports.GetDemoReport(start, end, GetVietnamToday()));
+>>>>>>> origin/feature/S4-07/xem_10_dau_sach_duoc_muon:Controllers/ReportController.cs
     }
 
     [HttpGet("api/reports/loans/top-books")]
@@ -175,6 +194,7 @@ public sealed class ReportController(ApplicationDbContext db, ILoanReportService
         return Ok(await reports.GetTopBooksAsync(start, end, ct));
     }
 
+<<<<<<< HEAD:backend/Controllers/ReportController.cs
     [HttpGet("api/reports/holds/top-books")]
     public async Task<IActionResult> GetTopHeldBooks(CancellationToken ct = default)
     {
@@ -183,6 +203,8 @@ public sealed class ReportController(ApplicationDbContext db, ILoanReportService
         return Ok(await reports.GetTopHeldBooksAsync(ct));
     }
 
+=======
+>>>>>>> origin/feature/S4-07/xem_10_dau_sach_duoc_muon:Controllers/ReportController.cs
     private async Task<IActionResult?> CheckApiAccessAsync(CancellationToken ct)
     {
         var access = await CheckAccessAsync(ct);
@@ -192,7 +214,10 @@ public sealed class ReportController(ApplicationDbContext db, ILoanReportService
             AccessResult.Forbidden => StatusCode(StatusCodes.Status403Forbidden, new { message = "Bạn không có quyền xem báo cáo." }),
             _ => null
         };
+<<<<<<< HEAD:backend/Controllers/ReportController.cs
 >>>>>>> origin/feature/S4-07/xem_10_dau_sach_co_hang_doi_dat_giu:Controllers/ReportController.cs
+=======
+>>>>>>> origin/feature/S4-07/xem_10_dau_sach_duoc_muon:Controllers/ReportController.cs
     }
 
     private async Task<AccessResult> CheckAccessAsync(CancellationToken ct)
@@ -211,7 +236,10 @@ public sealed class ReportController(ApplicationDbContext db, ILoanReportService
     }
 
 <<<<<<< HEAD:backend/Controllers/ReportController.cs
+<<<<<<< HEAD:backend/Controllers/ReportController.cs
 =======
+=======
+>>>>>>> origin/feature/S4-07/xem_10_dau_sach_duoc_muon:Controllers/ReportController.cs
     private static bool TryResolveRange(
         string? startDate, string? endDate, out DateOnly start, out DateOnly end, out string? error)
     {
@@ -240,7 +268,10 @@ public sealed class ReportController(ApplicationDbContext db, ILoanReportService
         return true;
     }
 
+<<<<<<< HEAD:backend/Controllers/ReportController.cs
 >>>>>>> origin/feature/S4-07/xem_10_dau_sach_co_hang_doi_dat_giu:Controllers/ReportController.cs
+=======
+>>>>>>> origin/feature/S4-07/xem_10_dau_sach_duoc_muon:Controllers/ReportController.cs
     private static DateOnly GetVietnamToday() =>
         DateOnly.FromDateTime(TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, VietnamTimeZone));
 
@@ -248,7 +279,10 @@ public sealed class ReportController(ApplicationDbContext db, ILoanReportService
 
     private enum AccessResult { Allowed, Unauthenticated, Forbidden }
 <<<<<<< HEAD:backend/Controllers/ReportController.cs
+<<<<<<< HEAD:backend/Controllers/ReportController.cs
 >>>>>>> origin/feature/S4-07/xem_tong_quan_luot_muon_va_tinh_trang:Controllers/ReportController.cs
 =======
 >>>>>>> origin/feature/S4-07/xem_10_dau_sach_co_hang_doi_dat_giu:Controllers/ReportController.cs
+=======
+>>>>>>> origin/feature/S4-07/xem_10_dau_sach_duoc_muon:Controllers/ReportController.cs
 }
