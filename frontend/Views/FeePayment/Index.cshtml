@@ -78,7 +78,7 @@
                         <tbody>
                         @foreach (var payment in Model.History)
                         {
-                            <tr><td>#@payment.Id</td><td>@payment.PaidAtUtc.ToString("dd/MM/yyyy HH:mm:ss")</td><td>@payment.CollectedBy</td><td>@Money(payment.Amount)</td><td>@Money(payment.BalanceAfter)</td><td>
+                            <tr><td>#@payment.Id<div><a asp-controller="FeeReceipt" asp-action="Details" asp-route-paymentId="@payment.Id">Xem biên lai</a></div></td><td>@payment.PaidAtUtc.ToString("dd/MM/yyyy HH:mm:ss")</td><td>@payment.CollectedBy</td><td>@Money(payment.Amount)</td><td>@Money(payment.BalanceAfter)</td><td>
                                 @foreach (var allocation in payment.Allocations)
                                 {
                                     <div>Khoản phí #@allocation.ReaderFeeId: @Money(allocation.Amount)</div>

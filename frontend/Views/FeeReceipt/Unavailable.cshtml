@@ -1,0 +1,9 @@
+@model string
+@{
+    ViewData["Title"] = "Không thể xem biên lai";
+}
+<div class="container-fluid py-4 px-4">
+    <h1 class="h3">Không thể xem biên lai</h1>
+    <div class="alert alert-warning" role="alert">@Model</div>
+    <a asp-controller="FeePayment" asp-action="Index" class="btn btn-outline-primary">Quay lại thu phí</a>
+</div>

@@ -35,6 +35,7 @@ builder.Services.AddScoped<IWorkingScheduleService, WorkingScheduleService>();
 builder.Services.AddScoped<IBookLoanService, BookLoanService>();
 builder.Services.AddScoped<IFeeWaiverService, FeeWaiverService>();
 builder.Services.AddScoped<IFeePaymentService, FeePaymentService>();
+builder.Services.AddScoped<FeeReceiptService>();
 builder.Services.AddScoped<IBookIncidentService, BookIncidentService>();
 builder.Services.AddScoped<ICompensationService, CompensationService>();
 builder.Services.AddScoped<DirectLoanService>();

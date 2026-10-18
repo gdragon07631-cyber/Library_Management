@@ -28,6 +28,8 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     public DbSet<ReaderFee> ReaderFees => Set<ReaderFee>();
     public DbSet<FeePayment> FeePayments => Set<FeePayment>();
     public DbSet<FeePaymentAllocation> FeePaymentAllocations => Set<FeePaymentAllocation>();
+    public DbSet<FeeReceipt> FeeReceipts => Set<FeeReceipt>();
+    public DbSet<FeeReceiptLine> FeeReceiptLines => Set<FeeReceiptLine>();
     public DbSet<FeeWaiverRequest> FeeWaiverRequests => Set<FeeWaiverRequest>();
     public DbSet<DirectLoanOperation> DirectLoanOperations => Set<DirectLoanOperation>();
     public DbSet<DirectLoanOperationItem> DirectLoanOperationItems => Set<DirectLoanOperationItem>();
@@ -79,6 +81,7 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     {
         base.OnModelCreating(modelBuilder);
         FeePaymentMapping.Configure(modelBuilder);
+        FeeReceiptMapping.Configure(modelBuilder);
         modelBuilder.Entity<DirectLoanOperation>(entity =>
         {
             entity.HasKey(x => x.RequestId);

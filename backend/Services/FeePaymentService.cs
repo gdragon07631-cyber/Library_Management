@@ -63,6 +63,12 @@ public sealed class FeePaymentService(ApplicationDbContext db) : IFeePaymentServ
                 CollectedByAdminAccountId = staffId, Amount = amount,
                 BalanceAfter = debt.Balance - amount, PaidAtUtc = DateTime.UtcNow
             };
+            var staff = await db.AdminAccounts.AsNoTracking().SingleAsync(a => a.Id == staffId, cancellationToken);
+            var receipt = new FeeReceipt
+            {
+                FeePayment = payment, ReaderName = debt.Reader.FullName,
+                CollectedByName = string.IsNullOrWhiteSpace(staff.FullName) ? staff.Email : staff.FullName
+            };
             var remaining = amount;
             foreach (var fee in debt.Fees.Where(f => f.RemainingAmount > 0m))
             {
@@ -74,7 +80,13 @@ public sealed class FeePaymentService(ApplicationDbContext db) : IFeePaymentServ
                     && f.IsPaid == fee.IsPaid && f.Status == fee.Status)
                     .ExecuteUpdateAsync(u => u.SetProperty(f => f.PaidAmount, fee.PaidAmount + allocated), cancellationToken);
                 if (updated != 1) throw new DbUpdateConcurrencyException();
-                payment.Allocations.Add(new() { ReaderFeeId = fee.Id, Amount = allocated });
+                var allocation = new FeePaymentAllocation { ReaderFeeId = fee.Id, Amount = allocated };
+                payment.Allocations.Add(allocation);
+                receipt.Lines.Add(new()
+                {
+                    FeePaymentAllocation = allocation,
+                    Description = string.IsNullOrWhiteSpace(fee.Description) ? $"Khoản phí #{fee.Id}" : fee.Description
+                });
                 remaining -= allocated;
             }
             if (remaining != 0m || payment.Allocations.Sum(a => a.Amount) != amount)
@@ -91,6 +103,7 @@ public sealed class FeePaymentService(ApplicationDbContext db) : IFeePaymentServ
                 if (cardUpdated != 1) throw new DbUpdateConcurrencyException();
             }
             db.FeePayments.Add(payment);
+            db.FeeReceipts.Add(receipt);
             await db.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
             return new(true, "Ghi nhận thu phí thành công.", payment.Id, payment.BalanceAfter);

@@ -2245,6 +2245,39 @@ namespace Project.Migrations
                     b.Navigation("ReaderFee");
                 });
             modelBuilder.Entity("Project.Models.FeePayment", b => b.Navigation("Allocations"));
+            modelBuilder.Entity("Project.Models.FeeReceipt", b =>
+                {
+                    b.Property<long>("FeePaymentId").ValueGeneratedNever().HasColumnType("bigint");
+                    b.Property<string>("ReaderName").IsRequired().HasMaxLength(100).HasColumnType("nvarchar(100)");
+                    b.Property<string>("CollectedByName").IsRequired().HasMaxLength(256).HasColumnType("nvarchar(256)");
+                    b.HasKey("FeePaymentId");
+                    b.ToTable("FeeReceipts");
+                });
+            modelBuilder.Entity("Project.Models.FeeReceiptLine", b =>
+                {
+                    b.Property<long>("FeePaymentAllocationId").ValueGeneratedNever().HasColumnType("bigint");
+                    b.Property<long>("FeePaymentId").HasColumnType("bigint");
+                    b.Property<string>("Description").IsRequired().HasMaxLength(500).HasColumnType("nvarchar(500)");
+                    b.HasKey("FeePaymentAllocationId");
+                    b.HasIndex("FeePaymentId");
+                    b.ToTable("FeeReceiptLines");
+                });
+            modelBuilder.Entity("Project.Models.FeeReceipt", b =>
+                {
+                    b.HasOne("Project.Models.FeePayment", "FeePayment").WithOne()
+                        .HasForeignKey("Project.Models.FeeReceipt", "FeePaymentId").OnDelete(DeleteBehavior.Restrict).IsRequired();
+                    b.Navigation("FeePayment");
+                });
+            modelBuilder.Entity("Project.Models.FeeReceiptLine", b =>
+                {
+                    b.HasOne("Project.Models.FeePaymentAllocation", "FeePaymentAllocation").WithOne()
+                        .HasForeignKey("Project.Models.FeeReceiptLine", "FeePaymentAllocationId").OnDelete(DeleteBehavior.Restrict).IsRequired();
+                    b.HasOne("Project.Models.FeeReceipt", "FeeReceipt").WithMany("Lines")
+                        .HasForeignKey("FeePaymentId").OnDelete(DeleteBehavior.Restrict).IsRequired();
+                    b.Navigation("FeePaymentAllocation");
+                    b.Navigation("FeeReceipt");
+                });
+            modelBuilder.Entity("Project.Models.FeeReceipt", b => b.Navigation("Lines"));
 #pragma warning restore 612, 618
         }
     }
