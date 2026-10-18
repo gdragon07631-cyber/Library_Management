@@ -11,11 +11,7 @@ public sealed class TopBookReportTests
     private static readonly DateOnly End = new(2026, 10, 17);
 
     [Fact]
-<<<<<<< HEAD:backend/tests/Project.Tests/TopBookReportTests.cs
     public async Task GroupsLoanEventsByBookCountsAllPhysicalCopiesAndIncludesDateBoundaries()
-=======
-    public async Task GroupsLoansByBookCountsAllPhysicalCopiesAndUsesInclusiveDateRange()
->>>>>>> origin/feature/S4-07/xem_10_dau_sach_duoc_muon:tests/Project.Tests/TopBookReportTests.cs
     {
         await using var db = CreateDb();
         db.Books.AddRange(Book(1, "Alpha"), Book(2, "Beta"), Book(3, "No loans"));
@@ -27,27 +23,17 @@ public sealed class TopBookReportTests
             Copy(4, 3, "C-1", "Sẵn sàng"));
         await db.SaveChangesAsync();
 
-<<<<<<< HEAD:backend/tests/Project.Tests/TopBookReportTests.cs
         var result = await new LoanReportService(db).GetTopBooksAsync(Start, End);
-
-        Assert.Equal(new[] { "Alpha", "Beta" }, result.Select(row => row.BookTitle));
-=======
-        var result = await new DemoLoanReportService(db).GetTopBooksAsync(Start, End);
 
         Assert.Equal(2, result.Count);
         Assert.Equal(new[] { "Alpha", "Beta" }, result.Select(row => row.BookTitle));
         Assert.Equal(new[] { 1, 2 }, result.Select(row => row.Rank));
->>>>>>> origin/feature/S4-07/xem_10_dau_sach_duoc_muon:tests/Project.Tests/TopBookReportTests.cs
         Assert.Equal(new[] { 3, 2 }, result.Select(row => row.LoanCount));
         Assert.Equal(new[] { 3, 0 }, result.Select(row => row.PhysicalCopyCount));
     }
 
     [Fact]
-<<<<<<< HEAD:backend/tests/Project.Tests/TopBookReportTests.cs
     public async Task ReturnsOnlyTenBooksAndOrdersTiesByTitle()
-=======
-    public async Task ReturnsAtMostTenBooksWithStableTitleOrderingForTies()
->>>>>>> origin/feature/S4-07/xem_10_dau_sach_duoc_muon:tests/Project.Tests/TopBookReportTests.cs
     {
         await using var db = CreateDb();
         for (var id = 1; id <= 11; id++)
@@ -57,37 +43,24 @@ public sealed class TopBookReportTests
         }
         await db.SaveChangesAsync();
 
-<<<<<<< HEAD:backend/tests/Project.Tests/TopBookReportTests.cs
         var result = await new LoanReportService(db).GetTopBooksAsync(Start, End);
 
-=======
-        var result = await new DemoLoanReportService(db).GetTopBooksAsync(Start, End);
-
         Assert.Equal(10, result.Count);
->>>>>>> origin/feature/S4-07/xem_10_dau_sach_duoc_muon:tests/Project.Tests/TopBookReportTests.cs
         Assert.Equal(Enumerable.Range(1, 10), result.Select(row => row.Rank));
         Assert.Equal(Enumerable.Range(1, 10).Select(id => $"Book {id:00}"), result.Select(row => row.BookTitle));
     }
 
     [Fact]
-<<<<<<< HEAD:backend/tests/Project.Tests/TopBookReportTests.cs
     public async Task ReturnsEmptyListWhenNoLoanEventsFallInRange()
-=======
-    public async Task ReturnsEmptyListWhenThereAreNoLoanEventsInRange()
->>>>>>> origin/feature/S4-07/xem_10_dau_sach_duoc_muon:tests/Project.Tests/TopBookReportTests.cs
     {
         await using var db = CreateDb();
         db.Books.Add(Book(1, "Outside range"));
         db.BookLoans.Add(Loan(1, Start.AddDays(-1)));
         await db.SaveChangesAsync();
 
-<<<<<<< HEAD:backend/tests/Project.Tests/TopBookReportTests.cs
-        Assert.Empty(await new LoanReportService(db).GetTopBooksAsync(Start, End));
-=======
-        var result = await new DemoLoanReportService(db).GetTopBooksAsync(Start, End);
+        var result = await new LoanReportService(db).GetTopBooksAsync(Start, End);
 
         Assert.Empty(result);
->>>>>>> origin/feature/S4-07/xem_10_dau_sach_duoc_muon:tests/Project.Tests/TopBookReportTests.cs
     }
 
     private static ApplicationDbContext CreateDb()

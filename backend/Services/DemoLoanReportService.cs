@@ -1,19 +1,11 @@
-<<<<<<< HEAD:backend/Services/DemoLoanReportService.cs
-=======
 using Microsoft.EntityFrameworkCore;
 using Project.Data;
->>>>>>> origin/feature/S4-07/xem_10_dau_sach_duoc_muon:Services/DemoLoanReportService.cs
 using Project.Models;
 
 namespace Project.Services;
 
-<<<<<<< HEAD:backend/Services/DemoLoanReportService.cs
-/// <summary>Deterministic, in-memory sample data for the practice report page.</summary>
-public sealed class DemoLoanReportService : ILoanReportService
-=======
-/// <summary>Practice summary data plus real database queries for the book ranking.</summary>
-public sealed class DemoLoanReportService(ApplicationDbContext db) : ILoanReportService
->>>>>>> origin/feature/S4-07/xem_10_dau_sach_duoc_muon:Services/DemoLoanReportService.cs
+/// <summary>Deterministic, in-memory sample data for the practice report page plus optional database queries.</summary>
+public sealed class DemoLoanReportService(ApplicationDbContext? db = null) : ILoanReportService
 {
     private sealed record DemoLoan(DateOnly LoanDate, DateOnly DueDate, DateOnly? ReturnedDate);
 
@@ -30,43 +22,33 @@ public sealed class DemoLoanReportService(ApplicationDbContext db) : ILoanReport
             overdueLoans, overdueRate, totalLoans > 0 || totalReturns > 0);
     }
 
+    public LoanReportViewModel GetDemoSummary(DateOnly startDate, DateOnly endDate, DateOnly today) =>
+        GetDemoReport(startDate, endDate, today);
+
     public static decimal CalculateOverdueRate(int overdueLoans, int openLoans) =>
         openLoans == 0 ? 0m : (decimal)overdueLoans / openLoans * 100m;
 
-<<<<<<< HEAD:backend/Services/DemoLoanReportService.cs
-=======
     public async Task<IReadOnlyList<TopBookReportRow>> GetTopBooksAsync(
         DateOnly startDate, DateOnly endDate, CancellationToken cancellationToken = default)
     {
-        var loanCounts = db.BookLoans.AsNoTracking()
-            .Where(loan => loan.LoanDate >= startDate && loan.LoanDate <= endDate)
-            .GroupBy(loan => loan.BookId)
-            .Select(group => new { BookId = group.Key, LoanCount = group.Count() });
-        var copyCounts = db.BookCopies.AsNoTracking()
-            .GroupBy(copy => copy.BookId)
-            .Select(group => new { BookId = group.Key, PhysicalCopyCount = group.Count() });
-
-        var rows = await (
-            from loanCount in loanCounts
-            join book in db.Books.AsNoTracking() on loanCount.BookId equals book.Id
-            join copyCount in copyCounts on book.Id equals copyCount.BookId into copies
-            from copyCount in copies.DefaultIfEmpty()
-            orderby loanCount.LoanCount descending, book.Title ascending, book.Id ascending
-            select new
-            {
-                book.Id,
-                book.Title,
-                loanCount.LoanCount,
-                PhysicalCopyCount = copyCount == null ? 0 : copyCount.PhysicalCopyCount
-            })
-            .Take(10)
-            .ToListAsync(cancellationToken);
-
-        return rows.Select((row, index) => new TopBookReportRow(
-            index + 1, row.Id, row.Title, row.LoanCount, row.PhysicalCopyCount)).ToList();
+        if (db is null) return [];
+        return await new LoanReportService(db).GetTopBooksAsync(startDate, endDate, cancellationToken);
     }
 
->>>>>>> origin/feature/S4-07/xem_10_dau_sach_duoc_muon:Services/DemoLoanReportService.cs
+    public async Task<IReadOnlyList<TopHeldBookReportRow>> GetTopHeldBooksAsync(
+        CancellationToken cancellationToken = default)
+    {
+        if (db is null) return [];
+        return await new LoanReportService(db).GetTopHeldBooksAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<DailyLoanReportRow>> GetDailyLoansAsync(
+        DateOnly startDate, DateOnly endDate, CancellationToken cancellationToken = default)
+    {
+        if (db is null) return [];
+        return await new LoanReportService(db).GetDailyLoansAsync(startDate, endDate, cancellationToken);
+    }
+
     private static List<DemoLoan> CreateSamples(DateOnly today)
     {
         var start = today.AddDays(-29);

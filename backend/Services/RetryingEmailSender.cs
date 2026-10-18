@@ -122,7 +122,7 @@ public sealed class RetryingEmailSender(IEmailSender inner, ApplicationDbContext
     {
         var configured = configuration.GetSection("Email:RetryDelaysSeconds").Get<int[]>();
         if (configured is not { Length: 3 } || configured.Any(x => x < 0 || x > 300)) return DefaultRetryDelays;
-        return configured.Select(TimeSpan.FromSeconds).ToArray();
+        return configured.Select(seconds => TimeSpan.FromSeconds(seconds)).ToArray();
     }
 
     private static string GetNotificationType(string subject)
@@ -142,7 +142,7 @@ public sealed class RetryingEmailSender(IEmailSender inner, ApplicationDbContext
     {
         SmtpFailedRecipientException => false,
         SmtpException smtp => smtp.StatusCode is SmtpStatusCode.GeneralFailure or SmtpStatusCode.ServiceNotAvailable or
-            SmtpStatusCode.LocalError or SmtpStatusCode.StorageOverflow,
+            SmtpStatusCode.LocalErrorInProcessing or SmtpStatusCode.ExceededStorageAllocation,
         TimeoutException or IOException => true,
         _ => false
     };

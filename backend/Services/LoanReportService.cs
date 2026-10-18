@@ -4,11 +4,7 @@ using Project.Models;
 
 namespace Project.Services;
 
-<<<<<<< HEAD:backend/Services/LoanReportService.cs
-/// <summary>Sample data for the practice summary and database-backed ranking queries.</summary>
-=======
 /// <summary>Sample data for the practice summary and database-backed report queries.</summary>
->>>>>>> origin/feature/S4-07/xem_bieu_do_luot_muon_theo_ngay:Services/LoanReportService.cs
 public sealed class LoanReportService(ApplicationDbContext db) : ILoanReportService
 {
     private sealed record DemoLoan(DateOnly LoanDate, DateOnly DueDate, DateOnly? ReturnedDate);
@@ -32,32 +28,40 @@ public sealed class LoanReportService(ApplicationDbContext db) : ILoanReportServ
     public async Task<IReadOnlyList<TopBookReportRow>> GetTopBooksAsync(
         DateOnly startDate, DateOnly endDate, CancellationToken cancellationToken = default)
     {
-        var loanCounts = db.BookLoans.AsNoTracking()
+        var loanCounts = await db.BookLoans.AsNoTracking()
             .Where(loan => loan.LoanDate >= startDate && loan.LoanDate <= endDate)
             .GroupBy(loan => loan.BookId)
-            .Select(group => new { BookId = group.Key, LoanCount = group.Count() });
-        var copyCounts = db.BookCopies.AsNoTracking()
-            .GroupBy(copy => copy.BookId)
-            .Select(group => new { BookId = group.Key, PhysicalCopyCount = group.Count() });
-
-        var rows = await (
-            from loanCount in loanCounts
-            join book in db.Books.AsNoTracking() on loanCount.BookId equals book.Id
-            join copyCount in copyCounts on book.Id equals copyCount.BookId into copies
-            from copyCount in copies.DefaultIfEmpty()
-            orderby loanCount.LoanCount descending, book.Title ascending, book.Id ascending
-            select new
-            {
-                book.Id,
-                book.Title,
-                loanCount.LoanCount,
-                PhysicalCopyCount = copyCount == null ? 0 : copyCount.PhysicalCopyCount
-            })
-            .Take(10)
+            .Select(group => new { BookId = group.Key, LoanCount = group.Count() })
             .ToListAsync(cancellationToken);
+        if (loanCounts.Count == 0) return [];
 
-        return rows.Select((row, index) => new TopBookReportRow(
-            index + 1, row.Id, row.Title, row.LoanCount, row.PhysicalCopyCount)).ToList();
+        var bookIds = loanCounts.Select(item => item.BookId).ToList();
+        var books = await db.Books.AsNoTracking()
+            .Where(book => bookIds.Contains(book.Id))
+            .Select(book => new { book.Id, book.Title })
+            .ToDictionaryAsync(book => book.Id, book => book.Title, cancellationToken);
+        var copyCounts = await db.BookCopies.AsNoTracking()
+            .Where(copy => bookIds.Contains(copy.BookId))
+            .GroupBy(copy => copy.BookId)
+            .Select(group => new { BookId = group.Key, PhysicalCopyCount = group.Count() })
+            .ToDictionaryAsync(group => group.BookId, group => group.PhysicalCopyCount, cancellationToken);
+
+        return loanCounts
+            .Where(item => books.ContainsKey(item.BookId))
+            .Select(item => new
+            {
+                Id = item.BookId,
+                Title = books[item.BookId],
+                item.LoanCount,
+                PhysicalCopyCount = copyCounts.GetValueOrDefault(item.BookId)
+            })
+            .OrderByDescending(row => row.LoanCount)
+            .ThenBy(row => row.Title)
+            .ThenBy(row => row.Id)
+            .Take(10)
+            .Select((row, index) => new TopBookReportRow(
+                index + 1, row.Id, row.Title, row.LoanCount, row.PhysicalCopyCount))
+            .ToList();
     }
 
     public async Task<IReadOnlyList<TopHeldBookReportRow>> GetTopHeldBooksAsync(
@@ -78,8 +82,6 @@ public sealed class LoanReportService(ApplicationDbContext db) : ILoanReportServ
             index + 1, row.Id, row.Title, row.PendingHoldCount)).ToList();
     }
 
-<<<<<<< HEAD:backend/Services/LoanReportService.cs
-=======
     public async Task<IReadOnlyList<DailyLoanReportRow>> GetDailyLoansAsync(
         DateOnly startDate, DateOnly endDate, CancellationToken cancellationToken = default)
     {
@@ -97,8 +99,6 @@ public sealed class LoanReportService(ApplicationDbContext db) : ILoanReportServ
         }
         return dailyRows;
     }
-
->>>>>>> origin/feature/S4-07/xem_bieu_do_luot_muon_theo_ngay:Services/LoanReportService.cs
     private static List<DemoLoan> CreateSamples(DateOnly today)
     {
         var start = today.AddDays(-29);

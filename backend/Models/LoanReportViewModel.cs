@@ -1,5 +1,6 @@
 namespace Project.Models;
 
+/// <summary>Summary metrics for the practice loan, return, and overdue report.</summary>
 public sealed record LoanReportViewModel(
     DateOnly StartDate,
     DateOnly EndDate,
@@ -9,15 +10,8 @@ public sealed record LoanReportViewModel(
     int OverdueLoans,
     decimal OverdueRate,
     bool HasActivityInRange);
-<<<<<<< HEAD:backend/Models/LoanReportViewModel.cs
-<<<<<<< HEAD:backend/Models/LoanReportViewModel.cs
-<<<<<<< HEAD:backend/Models/LoanReportViewModel.cs
-=======
-=======
->>>>>>> origin/feature/S4-07/xem_10_dau_sach_duoc_muon:Models/LoanReportViewModel.cs
-=======
->>>>>>> origin/feature/S4-07/xem_bieu_do_luot_muon_theo_ngay:Models/LoanReportViewModel.cs
 
+/// <summary>One ranked book title in the top borrowed books table.</summary>
 public sealed record TopBookReportRow(
     int Rank,
     int BookId,
@@ -25,37 +19,21 @@ public sealed record TopBookReportRow(
     int LoanCount,
     int PhysicalCopyCount);
 
-<<<<<<< HEAD:backend/Models/LoanReportViewModel.cs
-<<<<<<< HEAD:backend/Models/LoanReportViewModel.cs
-=======
->>>>>>> origin/feature/S4-07/xem_bieu_do_luot_muon_theo_ngay:Models/LoanReportViewModel.cs
+/// <summary>One ranked book title in the current hold queue table.</summary>
 public sealed record TopHeldBookReportRow(
     int Rank,
     int BookId,
     string BookTitle,
     int PendingHoldCount);
 
-<<<<<<< HEAD:backend/Models/LoanReportViewModel.cs
-=======
->>>>>>> origin/feature/S4-07/xem_10_dau_sach_duoc_muon:Models/LoanReportViewModel.cs
-=======
-public sealed record DailyLoanReportRow(DateOnly Date, int LoanCount);
+/// <summary>One calendar day and its loan count in the daily loans chart.</summary>
+public sealed record DailyLoanReportRow(
+    DateOnly Date,
+    int LoanCount);
 
->>>>>>> origin/feature/S4-07/xem_bieu_do_luot_muon_theo_ngay:Models/LoanReportViewModel.cs
-public sealed class LoanReportPageViewModel
-{
-    public required LoanReportViewModel Summary { get; init; }
-    public IReadOnlyList<TopBookReportRow> TopBooks { get; init; } = [];
-<<<<<<< HEAD:backend/Models/LoanReportViewModel.cs
-<<<<<<< HEAD:backend/Models/LoanReportViewModel.cs
-    public IReadOnlyList<TopHeldBookReportRow> TopHeldBooks { get; init; } = [];
-}
->>>>>>> origin/feature/S4-07/xem_10_dau_sach_co_hang_doi_dat_giu:Models/LoanReportViewModel.cs
-=======
-}
->>>>>>> origin/feature/S4-07/xem_10_dau_sach_duoc_muon:Models/LoanReportViewModel.cs
-=======
-    public IReadOnlyList<TopHeldBookReportRow> TopHeldBooks { get; init; } = [];
-    public IReadOnlyList<DailyLoanReportRow> DailyLoans { get; init; } = [];
-}
->>>>>>> origin/feature/S4-07/xem_bieu_do_luot_muon_theo_ngay:Models/LoanReportViewModel.cs
+/// <summary>Initial view model for the report page.</summary>
+public sealed record LoanReportPageViewModel(
+    LoanReportViewModel Summary,
+    IReadOnlyList<TopBookReportRow> TopBooks,
+    IReadOnlyList<TopHeldBookReportRow> TopHeldBooks,
+    IReadOnlyList<DailyLoanReportRow> DailyLoans);

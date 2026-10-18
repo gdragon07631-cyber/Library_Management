@@ -81,7 +81,7 @@ public sealed class PermissionApiAuthorizationTests : IDisposable
     {
         var services = new ServiceCollection().AddSingleton<IAuditLogService>(audit).BuildServiceProvider();
         var http = new DefaultHttpContext { RequestServices = services };
-        http.Request.Path = path;
+        http.Request.Path = path.StartsWith('/') ? path : $"/{path}";
         if (cookie is not null) http.Request.Headers.Cookie = cookie;
         var context = new ActionExecutingContext(new ActionContext(http, new RouteData(), new ActionDescriptor()), [], new Dictionary<string, object?>(), new object());
         await guard.OnActionExecutionAsync(context, () => Task.FromResult(new ActionExecutedContext(context, [], new object())));
