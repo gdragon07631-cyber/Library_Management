@@ -983,6 +983,30 @@ namespace Project.Migrations
                     b.ToTable("HolidayClosures");
                 });
 
+            modelBuilder.Entity("Project.Models.EmailSendHistory", b =>
+                {
+                    b.Property<long>("Id").ValueGeneratedOnAdd().HasColumnType("bigint");
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+                    b.Property<string>("AttemptErrors").HasMaxLength(4000).HasColumnType("nvarchar(4000)");
+                    b.Property<string>("DeduplicationKey").IsRequired().HasMaxLength(64).HasColumnType("nvarchar(64)");
+                    b.Property<int?>("OverdueMilestoneDays").HasColumnType("int");
+                    b.Property<DateTime?>("CompletedAtUtc").HasColumnType("datetime2");
+                    b.Property<int?>("ReaderAccountId").HasColumnType("int");
+                    b.Property<string>("Recipient").IsRequired().HasMaxLength(256).HasColumnType("nvarchar(256)");
+                    b.Property<string>("ErrorMessage").HasMaxLength(1000).HasColumnType("nvarchar(1000)");
+                    b.Property<string>("NotificationType").IsRequired().HasMaxLength(30).HasColumnType("nvarchar(30)");
+                    b.Property<string>("Status").IsRequired().HasMaxLength(20).HasColumnType("nvarchar(20)");
+                    b.Property<DateTime>("StartedAtUtc").HasColumnType("datetime2");
+                    b.Property<string>("Subject").IsRequired().HasMaxLength(500).HasColumnType("nvarchar(500)");
+                    b.Property<int>("Attempts").HasColumnType("int");
+                    b.HasKey("Id");
+                    b.HasIndex("Recipient", "StartedAtUtc");
+                    b.HasIndex("DeduplicationKey").IsUnique();
+                    b.HasIndex("ReaderAccountId", "StartedAtUtc");
+                    b.HasIndex("StartedAtUtc");
+                    b.ToTable("EmailSendHistories");
+                });
+
             modelBuilder.Entity("Project.Models.IncidentAdjustmentVoucher", b =>
                 {
                     b.Property<long>("Id")
