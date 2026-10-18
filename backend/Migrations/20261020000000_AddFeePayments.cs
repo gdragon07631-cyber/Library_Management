@@ -1,11 +1,7 @@
-using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
-using Project.Data;
 
 namespace Project.Migrations;
 
-[DbContext(typeof(ApplicationDbContext))]
-[Migration("20261020000000_AddFeePayments")]
 public partial class AddFeePayments : Migration
 {
     protected override void Up(MigrationBuilder migrationBuilder)

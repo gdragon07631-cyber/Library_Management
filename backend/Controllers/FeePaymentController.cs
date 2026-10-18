@@ -51,10 +51,14 @@ public sealed class FeePaymentController(IFeePaymentService payments, IAuditLogS
         return new()
         {
             Search = search, Readers = await payments.SearchAsync(search, cancellationToken), Debt = debt,
+<<<<<<< HEAD
             Payment = new() { ReaderAccountId = readerId ?? 0, RequestId = Guid.NewGuid() },
             History = history.Select(p => new FeePaymentHistoryItem(p.Id, p.Amount, p.BalanceAfter, p.PaidAtUtc,
                 p.CollectedByAdminAccount is { } staff ? (string.IsNullOrWhiteSpace(staff.FullName) ? staff.Email : staff.FullName) : $"#{p.CollectedByAdminAccountId}",
                 p.Allocations.OrderBy(a => a.ReaderFeeId).Select(a => new FeePaymentHistoryAllocation(a.ReaderFeeId, a.Amount)).ToList())).ToList()
+=======
+            Payment = new() { ReaderAccountId = readerId ?? 0, RequestId = Guid.NewGuid() }
+>>>>>>> origin/feature/s4-02/ghi_nhan_thu_phi_va_ghi_nhan_so_tien_con_no
         };
     }
 }
