@@ -54,6 +54,7 @@ public sealed class HoldPickupReminderTests : IDisposable
         var notification = await db.EmailSendHistories.SingleAsync();
         Assert.Equal(due.Id, notification.HoldId);
         Assert.Equal("HoldPickupLastDay", notification.NotificationType);
+        Assert.Equal("Nh\u1EAFc nh\u1EDF: H\u00F4m nay l\u00E0 h\u1EA1n cu\u1ED1i nh\u1EADn s\u00E1ch \u0111\u00E3 \u0111\u1EB7t gi\u1EEF", notification.Subject);
         Assert.Equal("Queued", notification.Status);
         Assert.Equal(due.ReaderAccount!.Email, notification.Recipient);
     }

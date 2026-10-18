@@ -24,6 +24,7 @@ public sealed class HoldReadyEmailQueueTests
         Assert.NotEqual(first.DeduplicationKey, later.DeduplicationKey);
         Assert.Equal(42, first.HoldId);
         Assert.Equal("HoldReady", first.NotificationType);
+        Assert.Equal("Th\u00F4ng b\u00E1o s\u00E1ch \u0111\u00E3 s\u1EB5n s\u00E0ng nh\u1EADn", first.Subject);
         Assert.Equal("Queued", first.Status);
         Assert.Equal("reader@example.test", first.Recipient);
     }

@@ -5,7 +5,7 @@ namespace Project.Services;
 public static class HoldExpiredEmailTemplate
 {
     public static string Build(string readerName, long holdId, string bookTitle, DateTime pickupDeadlineUtc,
-        DateTime cancelledAtUtc, string cancellationReason)
+        DateTime cancelledAtUtc, string cancellationReason, string? bookUrl = null)
     {
         var deadline = HoldPickupExpirySchedule.GetVietnamLocalTime(pickupDeadlineUtc).ToString("dd/MM/yyyy HH:mm");
         var cancelledAt = HoldPickupExpirySchedule.GetVietnamLocalTime(cancelledAtUtc).ToString("dd/MM/yyyy HH:mm");
@@ -24,6 +24,8 @@ public static class HoldExpiredEmailTemplate
             "<li>M\u1EDF m\u1EE5c Tra c\u1EE9u s\u00E1ch (Catalog) v\u00E0 t\u00ECm t\u00EAn s\u00E1ch.</li>" +
             "<li>M\u1EDF chi ti\u1EBFt s\u00E1ch, ki\u1EC3m tra t\u00ECnh tr\u1EA1ng v\u00E0 ch\u1ECDn \u0111\u1EB7t gi\u1EEF n\u1EBFu h\u1EC7 th\u1ED1ng cho ph\u00E9p.</li>" +
             "<li>Theo d\u00F5i \u0111\u01A1n m\u1EDBi trong m\u1EE5c \u0111\u01A1n \u0111\u1EB7t gi\u1EEF v\u00E0 email t\u1EEB th\u01B0 vi\u1EC7n.</li></ol>" +
+            (string.IsNullOrWhiteSpace(bookUrl) ? string.Empty :
+                $"<p><a href=\"{WebUtility.HtmlEncode(bookUrl)}\">M\u1EDF chi ti\u1EBFt s\u00E1ch</a></p>") +
             "<p>Vi\u1EC7c \u0111\u1EB7t gi\u1EEF l\u1EA1i t\u00F9y thu\u1ED9c t\u00ECnh tr\u1EA1ng s\u00E1ch v\u00E0 \u0111i\u1EC1u ki\u1EC7n c\u1EE7a t\u00E0i kho\u1EA3n.</p>" +
             "<p>Tr\u00E2n tr\u1ECDng,<br/>Th\u01B0 vi\u1EC7n.</p>";
     }

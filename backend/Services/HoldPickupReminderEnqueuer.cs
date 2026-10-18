@@ -41,7 +41,7 @@ public sealed class HoldPickupReminderEnqueuer(
                     HoldId = hold.Id,
                     Recipient = hold.ReaderAccount?.Email?.Trim() ?? string.Empty,
                     NotificationType = "HoldPickupLastDay",
-                    Subject = "Nhắc nhở: Hôm nay là hạn cuối nhận sách đã đặt giữ",
+                    Subject = "Nh\u1EAFc nh\u1EDF: H\u00F4m nay l\u00E0 h\u1EA1n cu\u1ED1i nh\u1EADn s\u00E1ch \u0111\u00E3 \u0111\u1EB7t gi\u1EEF",
                     StartedAtUtc = now,
                     Status = "Queued"
                 });

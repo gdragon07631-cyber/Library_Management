@@ -23,6 +23,7 @@ builder.Services.AddScoped<IReaderRegistrationService, ReaderRegistrationService
 builder.Services.AddScoped<IReaderPasswordResetService, ReaderPasswordResetService>();
 builder.Services.AddScoped<IReaderEmailVerificationService, ReaderEmailVerificationService>();
 builder.Services.AddScoped<SmtpEmailSender>();
+builder.Services.AddScoped<IHoldNotificationEmailTransport>(services => services.GetRequiredService<SmtpEmailSender>());
 builder.Services.AddScoped<IEmailSender>(services => new RetryingEmailSender(
     services.GetRequiredService<SmtpEmailSender>(),
     services.GetRequiredService<ApplicationDbContext>(),
@@ -61,6 +62,7 @@ builder.Services.AddScoped<IHoldPickupExpiryService, HoldPickupExpiryService>();
 builder.Services.AddScoped<IHoldPickupExpirySchedulingService, HoldPickupExpirySchedulingService>();
 builder.Services.AddScoped<IHoldPickupExpiryHistoryService, HoldPickupExpiryHistoryService>();
 builder.Services.AddScoped<HoldPickupReminderEnqueuer>();
+builder.Services.AddScoped<HoldEmailOutboxProcessor>();
 builder.Services.AddScoped<IReaderAccountAdminService, ReaderAccountAdminService>();
 builder.Services.AddSingleton<IPermissionMatrixService, PermissionMatrixService>();
 builder.Services.AddSingleton(TimeProvider.System);

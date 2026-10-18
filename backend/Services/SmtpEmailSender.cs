@@ -3,7 +3,7 @@ using System.Net.Mail;
 
 namespace Project.Services;
 
-public sealed class SmtpEmailSender(IConfiguration configuration) : IEmailSender
+public sealed class SmtpEmailSender(IConfiguration configuration) : IEmailSender, IHoldNotificationEmailTransport
 {
     public async Task SendAsync(string recipient, string subject, string htmlBody, CancellationToken cancellationToken = default)
     {

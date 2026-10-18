@@ -38,6 +38,9 @@ public sealed record EmailSendHistoryItem(long Id, DateTime StartedAtUtc, DateTi
     public long? HoldId { get; init; }
     public string? BookTitle { get; init; }
     public DateTime? EventOccurredAtUtc { get; init; }
+    public string? CurrentHoldStatus { get; init; }
+    public DateTime? CurrentPickupDeadlineUtc { get; init; }
+    public string? CancellationReason { get; init; }
 }
 
 public sealed class EmailSendHistoryPageViewModel
@@ -45,6 +48,7 @@ public sealed class EmailSendHistoryPageViewModel
     public IReadOnlyList<EmailSendHistoryItem> Items { get; init; } = [];
     public string? ReaderCodeFilter { get; init; }
     public string? Email { get; init; }
+    public long? HoldIdFilter { get; init; }
     public int Page { get; init; }
     public int TotalPages { get; init; }
 }
