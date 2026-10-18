@@ -1,0 +1,88 @@
+@model Project.Models.ReportPageViewModel
+@{
+    ViewData["Title"] = "Báo cáo mượn sách";
+}
+<div class="container-fluid py-3">
+    <div class="d-flex flex-wrap justify-content-between align-items-end gap-3 mb-4">
+        <div><h1 class="h3 fw-bold text-primary mb-1">Báo cáo mượn, trả và quá hạn</h1><p class="text-muted mb-0">Thống kê theo ngày mượn; hàng đợi đặt giữ là ảnh chụp hiện tại.</p></div>
+        <form id="report-filter" class="d-flex flex-wrap align-items-end gap-2">
+            <div><label class="form-label" for="start-date">Từ ngày</label><input class="form-control" id="start-date" type="date" value="@Model.StartDate.ToString("yyyy-MM-dd")" required></div>
+            <div><label class="form-label" for="end-date">Đến ngày</label><input class="form-control" id="end-date" type="date" value="@Model.EndDate.ToString("yyyy-MM-dd")" required></div>
+            <button id="refresh-report" class="btn btn-primary" type="submit">Xem báo cáo</button>
+        </form>
+    </div>
+    <div id="report-error" class="alert alert-danger d-none" role="alert"></div>
+    <div id="report-loading" class="text-muted mb-3" aria-live="polite">Đang tải báo cáo…</div>
+    <div class="row g-3 mb-4">
+        <div class="col-6 col-xl"><div class="card h-100 border-0 shadow-sm"><div class="card-body"><div class="small text-muted">Lượt mượn</div><div id="kpi-loans" class="h3 mb-0">—</div></div></div></div>
+        <div class="col-6 col-xl"><div class="card h-100 border-0 shadow-sm"><div class="card-body"><div class="small text-muted">Lượt trả</div><div id="kpi-returns" class="h3 mb-0">—</div></div></div></div>
+        <div class="col-6 col-xl"><div class="card h-100 border-0 shadow-sm"><div class="card-body"><div class="small text-muted">Phiếu đang mở</div><div id="kpi-open" class="h3 mb-0">—</div></div></div></div>
+        <div class="col-6 col-xl"><div class="card h-100 border-0 shadow-sm"><div class="card-body"><div class="small text-muted">Phiếu quá hạn</div><div id="kpi-overdue" class="h3 mb-0">—</div></div></div></div>
+        <div class="col-6 col-xl"><div class="card h-100 border-0 shadow-sm"><div class="card-body"><div class="small text-muted">Tỷ lệ quá hạn</div><div id="kpi-rate" class="h3 mb-0">—</div></div></div></div>
+    </div>
+    <div class="row g-3">
+        <div class="col-12"><div class="card border-0 shadow-sm"><div class="card-header bg-white fw-semibold">Lượt mượn theo ngày</div><div class="card-body"><div id="daily-chart" class="table-responsive" aria-live="polite"></div></div></div></div>
+        <div class="col-xl-6"><div class="card h-100 border-0 shadow-sm"><div class="card-header bg-white fw-semibold">10 đầu sách được mượn nhiều nhất</div><div class="table-responsive"><table class="table table-hover mb-0"><thead class="table-light"><tr><th>Đầu sách</th><th>Lượt mượn</th><th>Bản sao vật lý</th></tr></thead><tbody id="top-books"></tbody></table></div></div></div>
+        <div class="col-xl-6"><div class="card h-100 border-0 shadow-sm"><div class="card-header bg-white fw-semibold">10 đầu sách có hàng đợi đặt giữ dài nhất</div><div class="table-responsive"><table class="table table-hover mb-0"><thead class="table-light"><tr><th>Đầu sách</th><th>Yêu cầu đang chờ</th></tr></thead><tbody id="top-holds"></tbody></table></div></div></div>
+    </div>
+</div>
+@section Scripts {
+<script>
+(() => {
+    const form = document.getElementById('report-filter');
+    const loading = document.getElementById('report-loading');
+    const error = document.getElementById('report-error');
+    const button = document.getElementById('refresh-report');
+    const number = value => new Intl.NumberFormat('vi-VN').format(value);
+    const td = (value, className = '') => { const cell = document.createElement('td'); cell.textContent = value; if (className) cell.className = className; return cell; };
+    const emptyRow = (body, columns, message) => { const row = document.createElement('tr'); const cell = td(message, 'text-center text-muted py-3'); cell.colSpan = columns; row.append(cell); body.replaceChildren(row); };
+    async function loadReport(event) {
+        event?.preventDefault();
+        const start = document.getElementById('start-date').value;
+        const end = document.getElementById('end-date').value;
+        if (!start || !end || start > end) { error.textContent = 'Vui lòng chọn khoảng ngày hợp lệ.'; error.classList.remove('d-none'); return; }
+        const query = `startDate=${encodeURIComponent(start)}&endDate=${encodeURIComponent(end)}`;
+        error.classList.add('d-none'); loading.classList.remove('d-none'); loading.textContent = 'Đang tải báo cáo…'; button.disabled = true;
+        try {
+            const urls = [`/reports/api/loans/summary?${query}`, `/reports/api/loans/top-books?${query}`, '/reports/api/holds/top-books', `/reports/api/loans/daily?${query}`];
+            const responses = await Promise.all(urls.map(url => fetch(url, { headers: { Accept: 'application/json' } })));
+            const failed = responses.find(response => !response.ok);
+            if (failed) throw new Error(failed.status === 401 ? 'Phiên đăng nhập không còn quyền xem báo cáo.' : 'Không tải được dữ liệu báo cáo.');
+            const [summary, books, holds, daily] = await Promise.all(responses.map(response => response.json()));
+            document.getElementById('kpi-loans').textContent = number(summary.totalLoans);
+            document.getElementById('kpi-returns').textContent = number(summary.totalReturns);
+            document.getElementById('kpi-open').textContent = number(summary.openLoans);
+            document.getElementById('kpi-overdue').textContent = number(summary.overdueLoans);
+            document.getElementById('kpi-rate').textContent = `${number(summary.overdueRate)}%`;
+            const bookBody = document.getElementById('top-books'); bookBody.replaceChildren();
+            if (!books.length) emptyRow(bookBody, 3, 'Không có lượt mượn trong khoảng ngày này.');
+            else for (const book of books) { const row = document.createElement('tr'); row.append(td(book.title), td(number(book.loanCount)), td(number(book.physicalCopyCount))); bookBody.append(row); }
+            const holdBody = document.getElementById('top-holds'); holdBody.replaceChildren();
+            if (!holds.length) emptyRow(holdBody, 2, 'Hiện chưa có yêu cầu đặt giữ.');
+            else for (const hold of holds) { const row = document.createElement('tr'); row.append(td(hold.title), td(number(hold.holdCount))); holdBody.append(row); }
+            renderChart(daily);
+            loading.textContent = 'Báo cáo đã cập nhật.';
+        } catch (exception) {
+            error.textContent = exception.message || 'Đã xảy ra lỗi khi tải báo cáo.'; error.classList.remove('d-none'); loading.textContent = 'Không thể tải báo cáo.';
+        } finally { button.disabled = false; }
+    }
+    function renderChart(points) {
+        const host = document.getElementById('daily-chart');
+        if (!points.length) { host.textContent = 'Không có dữ liệu.'; return; }
+        const width = Math.max(720, points.length * 34), height = 270, pad = 36;
+        const max = Math.max(1, ...points.map(point => point.count));
+        const gap = 8, barWidth = Math.max(4, (width - pad * 2 - gap * points.length) / points.length);
+        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        svg.setAttribute('viewBox', `0 0 ${width} ${height}`); svg.setAttribute('role', 'img'); svg.setAttribute('aria-label', 'Biểu đồ lượt mượn theo ngày'); svg.style.width = '100%'; svg.style.minWidth = `${Math.min(width, 1000)}px`;
+        points.forEach((point, index) => {
+            const x = pad + index * (barWidth + gap), barHeight = (height - 70) * point.count / max;
+            const bar = document.createElementNS(svg.namespaceURI, 'rect'); bar.setAttribute('x', x); bar.setAttribute('y', height - 34 - barHeight); bar.setAttribute('width', barWidth); bar.setAttribute('height', Math.max(1, barHeight)); bar.setAttribute('rx', 3); bar.setAttribute('fill', '#2563eb');
+            const title = document.createElementNS(svg.namespaceURI, 'title'); title.textContent = `${point.date}: ${point.count} lượt mượn`; bar.append(title); svg.append(bar);
+            if (points.length <= 35 || index % Math.ceil(points.length / 35) === 0) { const label = document.createElementNS(svg.namespaceURI, 'text'); label.setAttribute('x', x + barWidth / 2); label.setAttribute('y', height - 12); label.setAttribute('text-anchor', 'middle'); label.setAttribute('font-size', '10'); label.setAttribute('fill', '#64748b'); label.textContent = point.date.slice(5); svg.append(label); }
+        });
+        host.replaceChildren(svg);
+    }
+    form.addEventListener('submit', loadReport); loadReport();
+})();
+</script>
+}
