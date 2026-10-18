@@ -361,6 +361,8 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
             entity.Property(item => item.ErrorMessage).HasMaxLength(1000);
             entity.Property(item => item.StartedAtUtc).HasColumnType("datetime2");
             entity.Property(item => item.CompletedAtUtc).HasColumnType("datetime2");
+            entity.Property(item => item.PickupDeadlineUtcSnapshot).HasColumnType("datetime2");
+            entity.Property(item => item.EventOccurredAtUtc).HasColumnType("datetime2");
         });
 
         modelBuilder.Entity<ReaderFee>(entity =>

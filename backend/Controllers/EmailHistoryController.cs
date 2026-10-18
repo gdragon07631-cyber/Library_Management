@@ -30,9 +30,11 @@ public sealed class EmailHistoryController(ApplicationDbContext db) : Controller
                 (log, readers) => new { log, reader = readers.Select(x => x.StudentOrStaffCode).FirstOrDefault() })
             .Select(x => new EmailSendHistoryItem(x.log.Id, x.log.StartedAtUtc, x.log.CompletedAtUtc,
                 x.log.ReaderAccountId, x.reader, x.log.Recipient, x.log.NotificationType, x.log.Subject,
-                x.log.Status, x.log.Attempts, x.log.ErrorMessage, x.log.OverdueMilestoneDays) { HoldId = x.log.HoldId })
+                x.log.Status, x.log.Attempts, x.log.ErrorMessage, x.log.OverdueMilestoneDays)
+                { HoldId = x.log.HoldId, BookTitle = x.log.BookTitleSnapshot, EventOccurredAtUtc = x.log.EventOccurredAtUtc })
             .ToListAsync(cancellationToken);
-        var holdIds = items.Where(item => item.HoldId.HasValue).Select(item => item.HoldId!.Value).Distinct().ToArray();
+        var holdIds = items.Where(item => item.HoldId.HasValue && string.IsNullOrWhiteSpace(item.BookTitle))
+            .Select(item => item.HoldId!.Value).Distinct().ToArray();
         if (holdIds.Length > 0)
         {
             var titles = await db.BookHolds.AsNoTracking().Where(hold => holdIds.Contains(hold.Id))

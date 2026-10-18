@@ -33,7 +33,7 @@ public sealed class HoldReadyEmailWorker(
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var now = timeProvider.GetUtcNow().UtcDateTime;
         var item = await db.EmailSendHistories.AsNoTracking()
-            .Where(x => (x.NotificationType == "HoldReady" || x.NotificationType == "HoldPickupLastDay") &&
+            .Where(x => (x.NotificationType == "HoldReady" || x.NotificationType == "HoldPickupLastDay" || x.NotificationType == "HoldExpired") &&
                 ((x.Status == "Queued" && x.Attempts < 5) ||
                  (x.Status == "Retrying" && x.Attempts < 5 && x.CompletedAtUtc <= now.AddSeconds(-30)) ||
                  (x.Status == "Processing" && x.CompletedAtUtc <= now - ProcessingLease)))
@@ -62,6 +62,12 @@ public sealed class HoldReadyEmailWorker(
             var hold = await db.BookHolds.AsNoTracking().Include(x => x.Book).Include(x => x.ReaderAccount)
                 .Include(x => x.BookCopy).ThenInclude(x => x!.Shelf).ThenInclude(x => x!.Warehouse)
                 .FirstOrDefaultAsync(x => x.Id == item.HoldId, cancellationToken);
+            if (item.NotificationType == "HoldExpired")
+            {
+                await SendExpiredHoldAsync(db, scope.ServiceProvider.GetRequiredService<SmtpEmailSender>(), item, hold, cancellationToken);
+                return;
+            }
+
             if (hold is null || !BookHoldStatus.WaitingPickupStatuses.Contains(hold.Status) ||
                 hold.BookCopy is null || hold.Book is null || hold.ReaderAccount is null ||
                 hold.PickupDeadlineUtc is null || string.IsNullOrWhiteSpace(hold.Book.Title) ||
@@ -88,23 +94,48 @@ public sealed class HoldReadyEmailWorker(
                 "<p>Vui lòng đến nhận sách trước hạn cuối nêu trên để tránh đơn đặt giữ bị hủy do quá hạn.</p>" +
                 "<p>Trân trọng,<br/>Thư viện.</p>";
 
-            var sender = scope.ServiceProvider.GetRequiredService<SmtpEmailSender>();
-            await sender.SendAsync(hold.ReaderAccount.Email, item.Subject, body, cancellationToken);
-            await db.EmailSendHistories.Where(x => x.Id == item.Id).ExecuteUpdateAsync(setters => setters
-                .SetProperty(x => x.Status, "Sent").SetProperty(x => x.CompletedAtUtc, timeProvider.GetUtcNow().UtcDateTime)
-                .SetProperty(x => x.ErrorMessage, (string?)null), cancellationToken);
+            await scope.ServiceProvider.GetRequiredService<SmtpEmailSender>()
+                .SendAsync(hold.ReaderAccount.Email, item.Subject, body, cancellationToken);
+            await MarkSentAsync(db, item.Id, cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
         catch (Exception exception)
         {
-            var attempts = item.Attempts + 1;
-            var status = attempts >= 5 ? "Failed" : "Retrying";
-            var message = exception.Message.Replace('\r', ' ').Replace('\n', ' ');
-            if (message.Length > 1000) message = message[..1000];
-            await db.EmailSendHistories.Where(x => x.Id == item.Id).ExecuteUpdateAsync(setters => setters
-                .SetProperty(x => x.Status, status).SetProperty(x => x.CompletedAtUtc, timeProvider.GetUtcNow().UtcDateTime)
-                .SetProperty(x => x.ErrorMessage, message), CancellationToken.None);
-            logger.LogWarning("Hold email event {HistoryId} failed on attempt {Attempt}.", item.Id, attempts);
+            await MarkFailedAttemptAsync(db, item, exception, cancellationToken);
         }
+    }
+
+    private async Task SendExpiredHoldAsync(Project.Data.ApplicationDbContext db, SmtpEmailSender sender,
+        EmailSendHistory item, BookHold? hold, CancellationToken cancellationToken)
+    {
+        if (hold is null || hold.Status != BookHoldStatus.Cancelled ||
+            hold.CancellationReason != HoldPickupExpiryService.ExpiredReason || hold.CancelledAtUtc is null ||
+            item.EventOccurredAtUtc != hold.CancelledAtUtc || hold.ReaderAccount is null ||
+            string.IsNullOrWhiteSpace(item.BookTitleSnapshot) || item.PickupDeadlineUtcSnapshot is null ||
+            !new EmailAddressAttribute().IsValid(item.Recipient))
+            throw new InvalidOperationException("Không đủ dữ liệu để xác nhận đơn bị hủy do quá hạn hoặc tạo nội dung email chính xác.");
+
+        var body = HoldExpiredEmailTemplate.Build(hold.ReaderAccount.FullName, hold.Id, item.BookTitleSnapshot,
+            item.PickupDeadlineUtcSnapshot.Value, hold.CancelledAtUtc.Value, hold.CancellationReason);
+        await sender.SendAsync(item.Recipient, item.Subject, body, cancellationToken);
+        await MarkSentAsync(db, item.Id, cancellationToken);
+    }
+
+    private async Task MarkSentAsync(Project.Data.ApplicationDbContext db, long historyId, CancellationToken cancellationToken) =>
+        await db.EmailSendHistories.Where(x => x.Id == historyId).ExecuteUpdateAsync(setters => setters
+            .SetProperty(x => x.Status, "Sent").SetProperty(x => x.CompletedAtUtc, timeProvider.GetUtcNow().UtcDateTime)
+            .SetProperty(x => x.ErrorMessage, (string?)null), cancellationToken);
+
+    private async Task MarkFailedAttemptAsync(Project.Data.ApplicationDbContext db, EmailSendHistory item,
+        Exception exception, CancellationToken cancellationToken)
+    {
+        var attempts = item.Attempts + 1;
+        var status = attempts >= 5 ? "Failed" : "Retrying";
+        var message = exception.Message.Replace('\r', ' ').Replace('\n', ' ');
+        if (message.Length > 1000) message = message[..1000];
+        await db.EmailSendHistories.Where(x => x.Id == item.Id).ExecuteUpdateAsync(setters => setters
+            .SetProperty(x => x.Status, status).SetProperty(x => x.CompletedAtUtc, timeProvider.GetUtcNow().UtcDateTime)
+            .SetProperty(x => x.ErrorMessage, message), CancellationToken.None);
+        logger.LogWarning("Hold email event {HistoryId} failed on attempt {Attempt}.", item.Id, attempts);
     }
 }

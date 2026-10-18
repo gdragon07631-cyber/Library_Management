@@ -1,4 +1,6 @@
 ﻿using System.Data;
+using System.Security.Cryptography;
+using System.Text;
 using Microsoft.EntityFrameworkCore;
 using Project.Data;
 using Project.Models;
@@ -135,6 +137,7 @@ public sealed class HoldPickupExpiryService(
         }
 
         var releasedCopy = hold.BookCopy;
+        var pickupDeadlineUtc = hold.PickupDeadlineUtc.Value;
         if (releasedCopy != null)
         {
             var previousStatus = releasedCopy.Status;
@@ -165,6 +168,21 @@ public sealed class HoldPickupExpiryService(
         var bookTitle = await db.Books.Where(book => book.Id == hold.BookId).Select(book => book.Title).SingleOrDefaultAsync(cancellationToken);
         var readerEmail = await db.ReaderAccounts.Where(reader => reader.Id == hold.ReaderAccountId)
             .Select(reader => reader.Email).SingleOrDefaultAsync(cancellationToken);
+        var eventKey = $"hold-expired|{hold.Id}|{hold.CancelledAtUtc!.Value.Ticks}";
+        db.EmailSendHistories.Add(new EmailSendHistory
+        {
+            DeduplicationKey = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(eventKey))),
+            ReaderAccountId = hold.ReaderAccountId,
+            HoldId = hold.Id,
+            BookTitleSnapshot = bookTitle,
+            PickupDeadlineUtcSnapshot = pickupDeadlineUtc,
+            EventOccurredAtUtc = hold.CancelledAtUtc,
+            Recipient = readerEmail?.Trim() ?? string.Empty,
+            NotificationType = "HoldExpired",
+            Subject = "Th\u00F4ng b\u00E1o \u0111\u01A1n \u0111\u1EB7t gi\u1EEF s\u00E1ch \u0111\u00E3 b\u1ECB h\u1EE7y do qu\u00E1 h\u1EA1n nh\u1EADn",
+            StartedAtUtc = hold.CancelledAtUtc.Value,
+            Status = "Queued"
+        });
         db.AuditLogs.Add(AuditLogService.Create(
             "\u0048\u1EC7 th\u1ED1ng",
             AuditActions.CancelHold,

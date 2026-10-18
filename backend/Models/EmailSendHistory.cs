@@ -16,6 +16,9 @@ public sealed class EmailSendHistory
     [Required, MaxLength(64)] public string DeduplicationKey { get; set; } = string.Empty;
     public int? ReaderAccountId { get; set; }
     public long? HoldId { get; set; }
+    [MaxLength(250)] public string? BookTitleSnapshot { get; set; }
+    public DateTime? PickupDeadlineUtcSnapshot { get; set; }
+    public DateTime? EventOccurredAtUtc { get; set; }
     [Required, MaxLength(256)] public string Recipient { get; set; } = string.Empty;
     [Required, MaxLength(30)] public string NotificationType { get; set; } = "Other";
     [Required, MaxLength(500)] public string Subject { get; set; } = string.Empty;
@@ -34,6 +37,7 @@ public sealed record EmailSendHistoryItem(long Id, DateTime StartedAtUtc, DateTi
 {
     public long? HoldId { get; init; }
     public string? BookTitle { get; init; }
+    public DateTime? EventOccurredAtUtc { get; init; }
 }
 
 public sealed class EmailSendHistoryPageViewModel
