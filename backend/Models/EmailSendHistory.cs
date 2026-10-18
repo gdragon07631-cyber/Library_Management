@@ -15,6 +15,10 @@ public sealed class EmailSendHistory
     public long Id { get; set; }
     [Required, MaxLength(64)] public string DeduplicationKey { get; set; } = string.Empty;
     public int? ReaderAccountId { get; set; }
+    public long? HoldId { get; set; }
+    [MaxLength(250)] public string? BookTitleSnapshot { get; set; }
+    public DateTime? PickupDeadlineUtcSnapshot { get; set; }
+    public DateTime? EventOccurredAtUtc { get; set; }
     [Required, MaxLength(256)] public string Recipient { get; set; } = string.Empty;
     [Required, MaxLength(30)] public string NotificationType { get; set; } = "Other";
     [Required, MaxLength(500)] public string Subject { get; set; } = string.Empty;
@@ -29,13 +33,22 @@ public sealed class EmailSendHistory
 
 public sealed record EmailSendHistoryItem(long Id, DateTime StartedAtUtc, DateTime? CompletedAtUtc,
     int? ReaderAccountId, string? ReaderCode, string Recipient, string NotificationType,
-    string Subject, string Status, int Attempts, string? ErrorMessage, int? OverdueMilestoneDays);
+    string Subject, string Status, int Attempts, string? ErrorMessage, int? OverdueMilestoneDays)
+{
+    public long? HoldId { get; init; }
+    public string? BookTitle { get; init; }
+    public DateTime? EventOccurredAtUtc { get; init; }
+    public string? CurrentHoldStatus { get; init; }
+    public DateTime? CurrentPickupDeadlineUtc { get; init; }
+    public string? CancellationReason { get; init; }
+}
 
 public sealed class EmailSendHistoryPageViewModel
 {
     public IReadOnlyList<EmailSendHistoryItem> Items { get; init; } = [];
     public string? ReaderCodeFilter { get; init; }
     public string? Email { get; init; }
+    public long? HoldIdFilter { get; init; }
     public int Page { get; init; }
     public int TotalPages { get; init; }
 }

@@ -27,6 +27,7 @@ public sealed class HoldPickupExpiryTests : IDisposable
     {
         var (book, copy) = await AddBookWithCopyAsync();
         var hold = await AddReadyHoldAsync(book, copy, DateTime.UtcNow.AddMinutes(-1));
+        var originalDeadline = hold.PickupDeadlineUtc;
 
         var expired = await service.ExpireOverdueAsync(DateTime.UtcNow);
 
@@ -41,6 +42,16 @@ public sealed class HoldPickupExpiryTests : IDisposable
         Assert.Equal(copy.Id, stored.ExpiredBookCopyId);
         Assert.Equal(copy.CopyCode, stored.ExpiredBookCopyCode);
         Assert.Equal(BookHoldExpiryCopyOutcome.ReturnedToAvailable, stored.ExpiryCopyOutcome);
+        var notification = await db.EmailSendHistories.SingleAsync();
+        Assert.Equal(hold.Id, notification.HoldId);
+        Assert.Equal("HoldExpired", notification.NotificationType);
+        Assert.Equal("Queued", notification.Status);
+        Assert.Equal(originalDeadline, notification.PickupDeadlineUtcSnapshot);
+        Assert.Equal(book.Title, notification.BookTitleSnapshot);
+        Assert.Equal(stored.CancelledAtUtc, notification.EventOccurredAtUtc);
+        Assert.Equal((await db.ReaderAccounts.SingleAsync()).Email, notification.Recipient);
+        await service.ExpireOverdueAsync(DateTime.UtcNow.AddMinutes(1));
+        Assert.Single(await db.EmailSendHistories.ToListAsync());
         Assert.Equal(BookCopyStatus.Available, (await db.BookCopies.AsNoTracking().SingleAsync()).Status);
         var history = await db.BookCopyStatusHistories.AsNoTracking().SingleAsync();
         Assert.Equal(BookCopyStatus.OnHold, history.FromStatus);
@@ -81,6 +92,7 @@ public sealed class HoldPickupExpiryTests : IDisposable
         Assert.Equal(BookHoldStatus.Available, stored.Status);
         Assert.Equal(copy.Id, stored.BookCopyId);
         Assert.Equal(BookCopyStatus.OnHold, (await db.BookCopies.AsNoTracking().SingleAsync()).Status);
+        Assert.Empty(await db.EmailSendHistories.ToListAsync());
     }
 
     [Fact]

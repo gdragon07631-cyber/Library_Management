@@ -10,7 +10,7 @@ namespace Project.Controllers;
 public sealed class EmailHistoryController(ApplicationDbContext db) : Controller
 {
     [HttpGet]
-    public async Task<IActionResult> Index(string? readerCode, string? email, int page = 1, CancellationToken cancellationToken = default)
+    public async Task<IActionResult> Index(string? readerCode, string? email, int page = 1, long? holdId = null, CancellationToken cancellationToken = default)
     {
         page = Math.Max(1, page);
         email = string.IsNullOrWhiteSpace(email) ? null : email.Trim()[..Math.Min(email.Trim().Length, 256)];
@@ -22,6 +22,7 @@ public sealed class EmailHistoryController(ApplicationDbContext db) : Controller
             query = query.Where(x => x.ReaderAccountId != null && readerIds.Contains(x.ReaderAccountId.Value));
         }
         if (email is not null) query = query.Where(x => x.Recipient.Contains(email));
+        if (holdId is > 0) query = query.Where(x => x.HoldId == holdId);
         var count = await query.CountAsync(cancellationToken);
         page = Math.Min(page, Math.Max(1, (int)Math.Ceiling(count / 50d)));
         var items = await query.OrderByDescending(x => x.StartedAtUtc).ThenByDescending(x => x.Id)
@@ -30,11 +31,34 @@ public sealed class EmailHistoryController(ApplicationDbContext db) : Controller
                 (log, readers) => new { log, reader = readers.Select(x => x.StudentOrStaffCode).FirstOrDefault() })
             .Select(x => new EmailSendHistoryItem(x.log.Id, x.log.StartedAtUtc, x.log.CompletedAtUtc,
                 x.log.ReaderAccountId, x.reader, x.log.Recipient, x.log.NotificationType, x.log.Subject,
-                x.log.Status, x.log.Attempts, x.log.ErrorMessage, x.log.OverdueMilestoneDays))
+                x.log.Status, x.log.Attempts, x.log.ErrorMessage, x.log.OverdueMilestoneDays)
+                { HoldId = x.log.HoldId, BookTitle = x.log.BookTitleSnapshot, EventOccurredAtUtc = x.log.EventOccurredAtUtc })
             .ToListAsync(cancellationToken);
+        var holdIds = items.Where(item => item.HoldId.HasValue && string.IsNullOrWhiteSpace(item.BookTitle))
+            .Select(item => item.HoldId!.Value).Distinct().ToArray();
+        if (holdIds.Length > 0)
+        {
+            var titles = await db.BookHolds.AsNoTracking().Where(hold => holdIds.Contains(hold.Id))
+                .Select(hold => new { hold.Id, Title = hold.Book == null ? null : hold.Book.Title })
+                .ToDictionaryAsync(item => item.Id, item => item.Title, cancellationToken);
+            items = items.Select(item => item.HoldId is long holdId && titles.TryGetValue(holdId, out var title)
+                ? item with { BookTitle = title }
+                : item).ToList();
+        }
+        var currentHolds = items.Where(item => item.HoldId.HasValue).Select(item => item.HoldId!.Value).Distinct().ToArray();
+        if (currentHolds.Length > 0)
+        {
+            var statuses = await db.BookHolds.AsNoTracking().Where(hold => currentHolds.Contains(hold.Id))
+                .Select(hold => new { hold.Id, hold.Status, hold.PickupDeadlineUtc, hold.CancellationReason })
+                .ToDictionaryAsync(hold => hold.Id, cancellationToken);
+            items = items.Select(item => item.HoldId is long id && statuses.TryGetValue(id, out var hold)
+                ? item with { CurrentHoldStatus = hold.Status, CurrentPickupDeadlineUtc = hold.PickupDeadlineUtc,
+                    CancellationReason = hold.CancellationReason }
+                : item).ToList();
+        }
         return View(new EmailSendHistoryPageViewModel
         {
-            Items = items, ReaderCodeFilter = readerCode, Email = email, Page = page,
+            Items = items, ReaderCodeFilter = readerCode, Email = email, HoldIdFilter = holdId, Page = page,
             TotalPages = Math.Max(1, (int)Math.Ceiling(count / 50d))
         });
     }

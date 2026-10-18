@@ -64,6 +64,8 @@ public sealed class BookHoldFulfillmentService(ApplicationDbContext db, IBookLoa
             head.BookCopyId = copy.Id;
             head.Status = BookHoldStatus.Available;
             head.PickupDeadlineUtc = deadlineUtc;
+            await db.Entry(head).Reference(x => x.ReaderAccount).LoadAsync(cancellationToken);
+            db.EmailSendHistories.Add(HoldReadyEmailQueue.Create(head, reservedAtUtc));
             db.BookCopyStatusHistories.Add(new BookCopyStatusHistory
             {
                 BookCopyId = copy.Id,

@@ -319,6 +319,7 @@ public sealed class BookLoanService(ApplicationDbContext db, IWorkingScheduleSer
                 assignedHold.Status = holdStatuses.Assigned;
                 assignedHold.BookCopyId = loan.BookCopy.Id;
                 assignedHold.PickupDeadlineUtc = pickupDeadlineUtc;
+                db.EmailSendHistories.Add(HoldReadyEmailQueue.Create(assignedHold, returnedAt));
             }
             await db.SaveChangesAsync(cancellationToken);
             return new(true, Loan: loan, AssignedHold: assignedHold, CopyStatus: loan.BookCopy.Status,
@@ -403,6 +404,11 @@ public sealed class BookLoanService(ApplicationDbContext db, IWorkingScheduleSer
                     .SetProperty(hold => hold.PickupDeadlineUtc, nextPickupDeadlineUtc), cancellationToken);
             if (holdClaimed != 1)
                 throw new InvalidOperationException("Yêu cầu đặt giữ đầu hàng đợi vừa được xử lý bởi thao tác khác.");
+            nextHold.Status = BookHoldStatus.Available;
+            nextHold.BookCopyId = currentLoan.BookCopyId;
+            nextHold.PickupDeadlineUtc = nextPickupDeadlineUtc;
+            await db.Entry(nextHold).Reference(hold => hold.ReaderAccount).LoadAsync(cancellationToken);
+            db.EmailSendHistories.Add(HoldReadyEmailQueue.Create(nextHold, returnedAt));
         }
 
         var copyStatus = nextHold is null ? BookCopyStatus.Available : BookCopyStatus.OnHold;
@@ -435,6 +441,7 @@ public sealed class BookLoanService(ApplicationDbContext db, IWorkingScheduleSer
             currentLoan.ReaderAccount!.OutstandingBalance += overdueFee;
         }
 
+        await db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         currentLoan.ReturnedAtUtc = returnedAt;
         currentLoan.CloseReason = BookLoanCloseReason.Returned;
@@ -449,12 +456,6 @@ public sealed class BookLoanService(ApplicationDbContext db, IWorkingScheduleSer
             trackedLoan.OverdueFee = overdueFee;
         }
 
-        if (nextHold is not null)
-        {
-            nextHold.Status = BookHoldStatus.Available;
-            nextHold.BookCopyId = currentLoan.BookCopyId;
-            nextHold.PickupDeadlineUtc = nextPickupDeadlineUtc;
-        }
         return new(true, Loan: currentLoan, AssignedHold: nextHold, CopyStatus: copyStatus,
             OverdueDays: feeCalculation.OverdueDays, Receivable: receivable);
     }

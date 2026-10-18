@@ -992,6 +992,10 @@ namespace Project.Migrations
                     b.Property<int?>("OverdueMilestoneDays").HasColumnType("int");
                     b.Property<DateTime?>("CompletedAtUtc").HasColumnType("datetime2");
                     b.Property<int?>("ReaderAccountId").HasColumnType("int");
+                    b.Property<long?>("HoldId").HasColumnType("bigint");
+                    b.Property<string>("BookTitleSnapshot").HasMaxLength(250).HasColumnType("nvarchar(250)");
+                    b.Property<DateTime?>("PickupDeadlineUtcSnapshot").HasColumnType("datetime2");
+                    b.Property<DateTime?>("EventOccurredAtUtc").HasColumnType("datetime2");
                     b.Property<string>("Recipient").IsRequired().HasMaxLength(256).HasColumnType("nvarchar(256)");
                     b.Property<string>("ErrorMessage").HasMaxLength(1000).HasColumnType("nvarchar(1000)");
                     b.Property<string>("NotificationType").IsRequired().HasMaxLength(30).HasColumnType("nvarchar(30)");
@@ -1003,6 +1007,7 @@ namespace Project.Migrations
                     b.HasIndex("Recipient", "StartedAtUtc");
                     b.HasIndex("DeduplicationKey").IsUnique();
                     b.HasIndex("ReaderAccountId", "StartedAtUtc");
+                    b.HasIndex("HoldId");
                     b.HasIndex("StartedAtUtc");
                     b.ToTable("EmailSendHistories");
                 });

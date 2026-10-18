@@ -33,6 +33,7 @@ public sealed class StaffHoldCancellationTests : IDisposable
         Assert.Equal("Bạn đọc yêu cầu hủy.", saved.CancellationReason);
         Assert.NotNull(saved.CancelledAtUtc);
         Assert.Equal(42, saved.CancelledByAdminAccountId);
+        Assert.Empty(await db.EmailSendHistories.ToListAsync());
     }
 
     [Fact]

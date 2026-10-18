@@ -355,6 +355,7 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
         {
             entity.HasIndex(item => item.StartedAtUtc);
             entity.HasIndex(item => item.DeduplicationKey).IsUnique();
+            entity.HasIndex(item => item.HoldId);
             entity.HasIndex(item => new { item.ReaderAccountId, item.StartedAtUtc });
             entity.HasIndex(item => new { item.Recipient, item.StartedAtUtc });
             entity.Property(item => item.Recipient).HasMaxLength(256).IsRequired();
@@ -366,6 +367,8 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
             entity.Property(item => item.ErrorMessage).HasMaxLength(1000);
             entity.Property(item => item.StartedAtUtc).HasColumnType("datetime2");
             entity.Property(item => item.CompletedAtUtc).HasColumnType("datetime2");
+            entity.Property(item => item.PickupDeadlineUtcSnapshot).HasColumnType("datetime2");
+            entity.Property(item => item.EventOccurredAtUtc).HasColumnType("datetime2");
         });
 
         modelBuilder.Entity<ReaderFee>(entity =>

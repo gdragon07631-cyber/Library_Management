@@ -1,4 +1,4 @@
-@model Project.Models.EmailSendHistoryPageViewModel
+﻿@model Project.Models.EmailSendHistoryPageViewModel
 @{
     ViewData["Title"] = "Lịch sử gửi email";
 }
@@ -7,19 +7,20 @@
 </div>
 <form method="get" class="card shadow-sm border-0 mb-3"><div class="card-body row g-3 align-items-end">
     <div class="col-md-3"><label for="readerCode" class="form-label">Mã bạn đọc</label><input id="readerCode" name="readerCode" type="text" maxlength="50" class="form-control" value="@Model.ReaderCodeFilter" /></div>
-    <div class="col-md-5"><label for="email" class="form-label">Email người nhận</label><input id="email" name="email" type="text" inputmode="email" maxlength="256" class="form-control" value="@Model.Email" /></div>
+    <div class="col-md-4"><label for="email" class="form-label">Email người nhận</label><input id="email" name="email" type="text" inputmode="email" maxlength="256" class="form-control" value="@Model.Email" /></div>
+    <div class="col-md-2"><label for="holdId" class="form-label">Mã đơn</label><input id="holdId" name="holdId" type="number" min="1" class="form-control" value="@Model.HoldIdFilter" /></div>
     <div class="col-auto"><button class="btn btn-primary" type="submit">Tìm kiếm</button> <a asp-action="Index" class="btn btn-outline-secondary">Xóa lọc</a></div>
     <div class="col-12 form-text">Nếu nhập cả hai, kết quả phải khớp đồng thời mã bạn đọc và email.</div>
 </div></form>
 <div class="card shadow-sm border-0"><div class="table-responsive"><table class="table table-hover align-middle mb-0">
-<thead class="table-light"><tr><th>Thời điểm</th><th>Mã bạn đọc</th><th>Email</th><th>Loại</th><th>Tiêu đề</th><th>Trạng thái</th><th>Lần thử</th><th>Lỗi</th></tr></thead><tbody>
-@if (Model.Items.Count == 0) { <tr><td colspan="8" class="text-center text-muted py-5">Không tìm thấy lịch sử gửi email.</td></tr> }
-else { foreach (var item in Model.Items) { var badge = item.Status switch { "Sent" => "success", "Retrying" or "Sending" => "warning", _ => "danger" };
-<tr><td>@Project.Services.HoldPickupExpirySchedule.GetVietnamLocalTime(item.StartedAtUtc).ToString("dd/MM/yyyy HH:mm:ss")</td><td>@(item.ReaderCode ?? item.ReaderAccountId?.ToString() ?? "—")</td><td>@item.Recipient</td><td>@(item.NotificationType switch { "Overdue" => "Nhắc quá hạn", "DueReminder" => "Nhắc hạn", _ => "Khác" }) @if (item.OverdueMilestoneDays is int milestone) { <span>(mốc @milestone ngày)</span> }</td><td>@item.Subject</td><td><span class="badge bg-@badge">@(item.Status switch { "Sent" => "Đã gửi", "Retrying" => "Đang thử lại", "Sending" => "Đang gửi", _ => "Thất bại" })</span></td><td>@item.Attempts</td><td class="text-danger">@item.ErrorMessage</td></tr>
+<thead class="table-light"><tr><th>Thời điểm gửi/thử</th><th>Thời điểm sự kiện</th><th>Mã bạn đọc</th><th>Email</th><th>Mã đơn</th><th>Tên sách</th><th>Trạng thái đơn</th><th>Hạn nhận hiện tại</th><th>Lý do hủy</th><th>Loại</th><th>Tiêu đề</th><th>Trạng thái email</th><th>Lần thử</th><th>Lỗi</th></tr></thead><tbody>
+@if (Model.Items.Count == 0) { <tr><td colspan="14" class="text-center text-muted py-5">Không tìm thấy lịch sử gửi email.</td></tr> }
+else { foreach (var item in Model.Items) { var badge = item.Status switch { "Sent" => "success", "Skipped" => "secondary", "Retrying" or "Sending" or "Queued" or "Processing" => "warning", _ => "danger" };
+<tr><td>@Project.Services.HoldPickupExpirySchedule.GetVietnamLocalTime(item.CompletedAtUtc ?? item.StartedAtUtc).ToString("dd/MM/yyyy HH:mm:ss")</td><td>@(item.EventOccurredAtUtc is DateTime eventAt ? Project.Services.HoldPickupExpirySchedule.GetVietnamLocalTime(eventAt).ToString("dd/MM/yyyy HH:mm:ss") : "—")</td><td>@(item.ReaderCode ?? item.ReaderAccountId?.ToString() ?? "—")</td><td>@item.Recipient</td><td>@(item.HoldId?.ToString() ?? "—")</td><td>@(item.BookTitle ?? "—")</td><td>@(item.CurrentHoldStatus ?? "—")</td><td>@(item.CurrentPickupDeadlineUtc is DateTime currentDeadline ? Project.Services.HoldPickupExpirySchedule.GetVietnamLocalTime(currentDeadline).ToString("dd/MM/yyyy HH:mm") : "—")</td><td>@(item.CancellationReason ?? "—")</td><td>@(item.NotificationType switch { "Overdue" => "Nhắc quá hạn", "DueReminder" => "Nhắc hạn", "HoldReady" => "Sách sẵn sàng nhận", "HoldPickupLastDay" => "Nhắc hạn nhận cuối", "HoldExpired" => "Hủy đơn do quá hạn", _ => "Khác" }) @if (item.OverdueMilestoneDays is int milestone) { <span>(mốc @milestone ngày)</span> }</td><td>@item.Subject</td><td><span class="badge bg-@badge">@(item.Status switch { "Sent" => "Đã gửi", "Queued" => "Đang chờ gửi", "Processing" => "Đang xử lý", "Retrying" => "Đang thử lại", "Sending" => "Đang gửi", "Skipped" => "Bỏ qua do đơn không còn phù hợp", _ => "Thất bại" })</span></td><td>@item.Attempts</td><td class="text-danger">@item.ErrorMessage</td></tr>
 } }
 </tbody></table></div>
 @if (Model.TotalPages > 1) { <div class="card-body d-flex justify-content-between align-items-center"><span>Trang @Model.Page / @Model.TotalPages</span><div>
-@if (Model.Page > 1) { <a class="btn btn-sm btn-outline-secondary" asp-action="Index" asp-route-readerCode="@Model.ReaderCodeFilter" asp-route-email="@Model.Email" asp-route-page="@(Model.Page - 1)">Trước</a> }
-@if (Model.Page < Model.TotalPages) { <a class="btn btn-sm btn-outline-secondary" asp-action="Index" asp-route-readerCode="@Model.ReaderCodeFilter" asp-route-email="@Model.Email" asp-route-page="@(Model.Page + 1)">Sau</a> }
+@if (Model.Page > 1) { <a class="btn btn-sm btn-outline-secondary" asp-action="Index" asp-route-readerCode="@Model.ReaderCodeFilter" asp-route-email="@Model.Email" asp-route-holdId="@Model.HoldIdFilter" asp-route-page="@(Model.Page - 1)">Trước</a> }
+@if (Model.Page < Model.TotalPages) { <a class="btn btn-sm btn-outline-secondary" asp-action="Index" asp-route-readerCode="@Model.ReaderCodeFilter" asp-route-email="@Model.Email" asp-route-holdId="@Model.HoldIdFilter" asp-route-page="@(Model.Page + 1)">Sau</a> }
 </div></div> }
 </div>
