@@ -83,6 +83,7 @@
             }
             @if (isLibrarian)
             {
+                <a class="side-link @Active("FeePayment")" aria-current="@Current("FeePayment")" asp-controller="FeePayment" asp-action="Index"><span>₫</span> Thu phí</a>
                 <a class="side-link @Active("FeeWaiver")" aria-current="@Current("FeeWaiver")" asp-controller="FeeWaiver" asp-action="Index"><span>↗</span> Đề nghị miễn giảm</a>
             }            <div class="sidebar-bottom"><span class="status-dot"></span> Hệ thống đang hoạt động</div>
         </aside>

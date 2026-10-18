@@ -1,0 +1,44 @@
+@model FeeReceiptViewModel
+@using System.Globalization
+@{
+    Layout = null;
+    string Money(decimal amount) => amount.ToString("N2", CultureInfo.GetCultureInfo("vi-VN")) + " đ";
+    var index = 0;
+}
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Biên lai @Model.Number</title>
+    <link rel="stylesheet" href="~/css/fee-receipt.css" asp-append-version="true" />
+</head>
+<body>
+    <nav class="receipt-toolbar" aria-label="Thao tác biên lai">
+        <a asp-controller="FeePayment" asp-action="Index" asp-route-readerId="@Model.ReaderId">Quay lại thu phí</a>
+        <button type="button" onclick="window.print()">In biên lai</button>
+        <span>Có thể lưu thành PDF trong hộp thoại in nếu trình duyệt hỗ trợ.</span>
+    </nav>
+    <main class="receipt-sheet">
+        <header><p>THƯ VIỆN</p><h1>BIÊN LAI THU PHÍ</h1></header>
+        <dl>
+            <dt>Mã biên lai</dt><dd>@Model.Number</dd>
+            <dt>Ngày giờ thu tiền</dt><dd>@Model.PaidAtLocal.ToString("dd/MM/yyyy HH:mm:ss") (UTC+7)</dd>
+            <dt>Bạn đọc</dt><dd>@Model.ReaderName</dd>
+            <dt>Thủ thư thu tiền</dt><dd>@Model.CollectedByName</dd>
+        </dl>
+        <table>
+            <colgroup><col class="receipt-sequence" /><col /><col class="receipt-money" /></colgroup>
+            <thead><tr><th scope="col">STT</th><th scope="col">Khoản phí thực tế đã thu</th><th scope="col" class="money">Thực thu</th></tr></thead>
+            <tbody>
+            @foreach (var line in Model.Lines)
+            {
+                <tr><td>@(++index)</td><td>@line.Description<div class="fee-reference">Khoản phí #@line.ReaderFeeId</div></td><td class="money">@Money(line.Amount)</td></tr>
+            }
+            </tbody>
+        </table>
+        <p class="receipt-total">Tổng tiền thanh toán: <strong>@Money(Model.Amount)</strong></p>
+        <p class="receipt-note">Biên lai ghi nhận số tiền thực thu của giao dịch này. Xem và in lại không phát sinh khoản thu mới.</p>
+    </main>
+</body>
+</html>
