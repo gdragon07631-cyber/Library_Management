@@ -278,6 +278,15 @@ if (string.IsNullOrWhiteSpace(jwtSigningKey) || System.Text.Encoding.UTF8.GetByt
         "Configure Jwt:SigningKey using dotnet user-secrets or the Jwt__SigningKey environment variable (minimum 32 bytes) before starting the web app.");
 }
 
+// Staging starts from an empty SQL Server volume on first launch. Apply the existing
+// migrations before serving requests; other environments retain their current behavior.
+if (app.Environment.IsStaging())
+{
+    await using var scope = app.Services.CreateAsyncScope();
+    var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+    await dbContext.Database.MigrateAsync();
+}
+
 // Configure the HTTP request pipeline.
 if (!app.Environment.IsDevelopment())
 {
@@ -293,6 +302,14 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.UseStaticFiles();
+
+app.MapGet("/health/ready", async Task<IResult> (ApplicationDbContext dbContext, CancellationToken cancellationToken) =>
+{
+    if (await dbContext.Database.CanConnectAsync(cancellationToken))
+        return Results.Ok(new { status = "ready" });
+
+    return Results.StatusCode(StatusCodes.Status503ServiceUnavailable);
+});
 
 app.MapControllerRoute(
     name: "default",
