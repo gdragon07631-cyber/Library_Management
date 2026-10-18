@@ -64,31 +64,33 @@ docker compose -f docker-compose.staging.yml logs --follow web
 docker compose -f docker-compose.staging.yml logs --follow database
 ```
 
-### Nạp dữ liệu mẫu nghiệm thu (S4-10 Lát 2)
+### Reset và nạp lại dữ liệu mẫu nghiệm thu (S4-10 Lát 4)
 
 Sau khi staging đã khởi động healthy, tại thư mục gốc chạy:
 
     docker compose -f docker-compose.staging.yml exec -T web dotnet Project.dll --seed-staging-demo
 
-Lệnh chỉ chạy khi ứng dụng có ASPNETCORE_ENVIRONMENT=Staging, áp dụng migrations trước, rồi ghi dữ liệu vào SQL Server staging. Seeder tái sử dụng kho/kệ/danh mục demo hiện có và thêm tối thiểu 200 đầu sách, 500 bản sao, 50 bạn đọc, 100 phiếu mượn. Dữ liệu dùng mã STG-DEMO-*, email miền .test, và không tạo tài khoản nhân viên/quản trị. Mật khẩu ngẫu nhiên của bạn đọc chỉ lưu dưới dạng hash và không in ra log.
+Đây là lệnh reset duy nhất cho dataset demo. Nó từ chối chạy nếu `ASPNETCORE_ENVIRONMENT` không phải `Staging`, áp dụng migrations, rồi xóa và dựng lại trong **một transaction**: 200 đầu sách, 500 bản sao, 50 bạn đọc fixture và 100 phiếu mượn. Dataset dùng mã định danh ổn định `DEMO-*`/`STG-DEMO-*`; 100 phiếu có đúng phân bố trạng thái bên dưới. Lệnh đồng thời bảo đảm bốn tài khoản Lát 3 tồn tại nhưng không xóa tài khoản, sửa mật khẩu hoặc thay đổi role. Mật khẩu chỉ cần cấu hình trong `.env` nếu tài khoản tương ứng đang thiếu; giá trị đặt cho tài khoản đã có sẽ không được áp dụng.
 
-Seeder không chạy tự động cùng ứng dụng. Có thể chạy lại mà không nhân bản các bản ghi staging hiện có; lệnh này không phải chức năng reset dữ liệu.
+Phạm vi reset là sách theo ISBN demo đã định trước, bản sao trên các sách/kệ demo, bạn đọc có mã `STG-DEMO-RD-*`, cùng phiếu, sự cố, phí, giữ chỗ và bảng con phụ thuộc các bản ghi đó. Tài khoản đăng nhập `stg-demo-*`, policy/lịch làm việc, dữ liệu khác và `AuditLogs` hệ thống được giữ lại. Tác giả/thể loại là danh mục dùng chung nên được tái sử dụng, không bị xóa. Nếu phát hiện lịch sử sự cố do nhân viên tạo, bút toán điều chỉnh bất biến, khoản thanh toán trộn dữ liệu ngoài phạm vi, thao tác mượn trộn bản sao ngoài phạm vi hoặc bản sao ngoài phạm vi đặt trên kệ demo, lệnh dừng và rollback thay vì xóa vượt phạm vi. Không chạy lệnh trên production.
 
 Phân bố phiếu seed hiện tại: 20 đang mượn, 20 quá hạn chưa trả, 20 đã trả đúng hạn, 20 đã trả trễ hạn, 10 đóng do mất và 10 đóng do hỏng nặng. Quá hạn được xác định từ hạn trả theo ngày nghiệp vụ Việt Nam; mất/hỏng dùng các giá trị CloseReason và IncidentType có sẵn trong ứng dụng.
 
-Sau khi chạy, terminal in tổng số bản ghi và phân bố trạng thái. Có thể kiểm tra số lượng:
+Sau khi chạy thành công, terminal in số lượng truy vấn lại từ database, phân bố trạng thái và tài khoản được tạo/bảo toàn. Có thể kiểm tra độc lập bằng SQL:
 
-    docker compose -f docker-compose.staging.yml exec -T database /bin/sh -c '/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$MSSQL_SA_PASSWORD" -C -d ProjectDb -Q "SELECT COUNT(*) AS Books FROM Books; SELECT COUNT(*) AS Copies FROM BookCopies; SELECT COUNT(*) AS Readers FROM ReaderAccounts; SELECT COUNT(*) AS Loans FROM BookLoans;"'
+    docker compose -f docker-compose.staging.yml exec -T database /bin/sh -c '/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$MSSQL_SA_PASSWORD" -C -d ProjectDb -Q "SELECT COUNT(*) AS DemoBooks FROM Books WHERE Isbn LIKE ''979000000%''; SELECT COUNT(*) AS DemoCopies FROM BookCopies WHERE CopyCode LIKE ''DEMO-CPY-%'' OR CopyCode LIKE ''STG-DEMO-CPY-%''; SELECT COUNT(*) AS DemoReaders FROM ReaderAccounts WHERE StudentOrStaffCode LIKE ''STG-DEMO-RD-%''; SELECT COUNT(*) AS DemoLoans FROM BookLoans l JOIN BookCopies c ON c.Id=l.BookCopyId WHERE c.CopyCode LIKE ''DEMO-CPY-%'' OR c.CopyCode LIKE ''STG-DEMO-CPY-%''; SELECT Role, Email, IsActive FROM AdminAccounts WHERE Email IN (''stg-demo-admin@example.test'',''stg-demo-manager@example.test'',''stg-demo-librarian@example.test''); SELECT Email, Status, EmailConfirmed FROM ReaderAccounts WHERE Email=''stg-demo-reader@example.test'';"'
 
-Mở giao diện ở http://localhost:5188 và tra cứu các mã bạn đọc STG-DEMO-RD-* hoặc bản sao STG-DEMO-CPY-*. Các phiếu sự cố mẫu có thể xem từ màn hình lịch sử sự cố sách; dữ liệu lưu trong bảng nghiệp vụ thật, không phải dữ liệu tĩnh trên giao diện.
+Số cần thấy: 200 đầu sách, 500 bản sao, 50 bạn đọc và 100 phiếu; mỗi trạng thái gồm 20 đang mượn, 20 quá hạn chưa trả, 20 trả đúng hạn, 20 trả trễ hạn, 10 đóng do mất và 10 đóng do hỏng nặng. Đối chiếu email/role trong kết quả SQL với bảng tài khoản tại [staging-demo.md](staging-demo.md); thử đăng nhập cả bốn tài khoản. Sau đó chạy các bước demo ở tài liệu đó.
 
-### Tạo bốn tài khoản đăng nhập demo (S4-10 Lát 3)
+Nếu lệnh báo thất bại, transaction được rollback. Đọc thông báo cụ thể, xử lý bản ghi liên kết ngoài phạm vi bằng quy trình nghiệp vụ staging, rồi chạy lại cùng lệnh. Không tự xóa bảng hoặc dùng `down --volumes` để xử lý lỗi. Xác nhận số lượng bằng SQL trước khi tiếp tục demo.
+
+### Tạo bốn tài khoản đăng nhập demo riêng (S4-10 Lát 3)
 
 Trong `.env`, đặt `STAGING_DEMO_SYSTEM_ADMIN_PASSWORD`, `STAGING_DEMO_LIBRARY_MANAGER_PASSWORD`, `STAGING_DEMO_LIBRARIAN_PASSWORD` và `STAGING_DEMO_READER_PASSWORD` thành bốn mật khẩu riêng, mỗi mật khẩu tối thiểu 12 ký tự. Sau đó chạy:
 
     docker compose -f docker-compose.staging.yml exec -T web dotnet Project.dll --seed-staging-demo-accounts
 
-Lệnh chỉ chạy trong môi trường Staging và áp dụng migrations trước. Nó tạo tài khoản còn thiếu, không sửa tài khoản đã có, không in mật khẩu hoặc password hash ra log. Password được lưu bằng ASP.NET Core PasswordHasher; tài khoản bạn đọc có thẻ staging hoạt động nếu database có loại thẻ hoạt động. Tên đăng nhập, vai trò, URL và kịch bản ở `docs/staging-demo.md`.
+Lệnh riêng vẫn dùng được nếu chỉ cần khởi tạo tài khoản mà không reset dataset. Nó chỉ chạy trong Staging, áp dụng migrations, tạo tài khoản còn thiếu, không sửa tài khoản đã có và không in mật khẩu/hash ra log. Lệnh reset phía trên cũng gọi lại cơ chế này trong transaction của nó.
 
 ## D. Truy cập
 

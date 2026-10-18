@@ -17,7 +17,7 @@ Mã nguồn hiện khai báo ba vai trò nhân viên trong `AccountRoles`: `Syst
 | `stg-demo-librarian@example.test` | Thủ thư (`Librarian`) | `STAGING_DEMO_LIBRARIAN_PASSWORD` |
 | `stg-demo-reader@example.test` | Bạn đọc (tài khoản `ReaderAccount`, không phải `AccountRoles`) | `STAGING_DEMO_READER_PASSWORD` |
 
-Tạo file cấu hình riêng từ `.env.example`, đặt các mật khẩu rồi khởi chạy staging theo [hướng dẫn staging](staging.md). Sau khi `/health/ready` trả HTTP 200, nạp dữ liệu sách/phiếu nếu chưa có bằng `docker compose -f docker-compose.staging.yml exec -T web dotnet Project.dll --seed-staging-demo`, rồi tạo tài khoản bằng `docker compose -f docker-compose.staging.yml exec -T web dotnet Project.dll --seed-staging-demo-accounts`. Lệnh tài khoản báo từng vai trò được tạo hay đã tồn tại; trường hợp đã tồn tại, lệnh không đổi mật khẩu. Nếu chưa rõ mật khẩu hiện hữu, hãy dùng quy trình đặt lại mật khẩu staging được đơn vị vận hành phê duyệt; không xóa tài khoản để chạy lại.
+Tạo file cấu hình riêng từ `.env.example`, đặt mật khẩu cho tài khoản còn thiếu rồi khởi chạy staging theo [hướng dẫn staging](staging.md). Khi `/health/ready` trả HTTP 200, chạy lệnh reset duy nhất `docker compose -f docker-compose.staging.yml exec -T web dotnet Project.dll --seed-staging-demo`. Lệnh nạp lại dữ liệu và bảo toàn bốn tài khoản. Nếu mật khẩu của tài khoản đã có không rõ, lệnh không đổi nó; dùng quy trình reset mật khẩu staging do đơn vị vận hành cấp. Không xóa tài khoản để chạy lại.
 
 ## Ma trận quyền để nghiệm thu
 
@@ -36,7 +36,7 @@ Với endpoint API, xác nhận phản hồi 401 khi chưa có phiên phù hợp
 
 Các bước dưới đây dùng bản ghi giả lập `STG-DEMO-*` và có thể làm thay đổi trạng thái dữ liệu staging khi tạo phiếu/đặt giữ. Không thực hiện trên production.
 
-1. **Mở staging và xác nhận dữ liệu sẵn sàng.** Tài khoản: chưa cần đăng nhập. Điều kiện: Compose đã khởi chạy. Mở `http://localhost:5188`, kiểm tra `/health/ready` trả HTTP 200; chạy hai lệnh nạp dữ liệu ở phần trên. Xác nhận log có tổng sách, bản sao, bạn đọc, phiếu mượn và kết quả tạo/bỏ qua bốn tài khoản, không có mật khẩu trong log.
+1. **Mở staging và xác nhận dữ liệu sẵn sàng.** Tài khoản: chưa cần đăng nhập. Điều kiện: Compose đã khởi chạy. Mở `http://localhost:5188`, kiểm tra `/health/ready` trả HTTP 200; chạy lệnh reset+nạp một lần. Xác nhận log có số lượng sách, bản sao, bạn đọc, phiếu mượn, phân bố trạng thái và trạng thái bốn tài khoản, không có mật khẩu trong log. Có thể chạy lệnh lần nữa trước buổi demo để khôi phục bộ dữ liệu ban đầu.
 2. **Kiểm tra quyền quản trị.** Tài khoản: `stg-demo-admin@example.test`. Đăng nhập ở `/Account/Login`, mở `/PermissionMatrix` và `/StaffAccount`; xác nhận trang quản trị tải được. Thử `/ReaderApproval`; xác nhận bị từ chối do vai trò. Đăng xuất trước bước tiếp theo.
 3. **Kiểm tra luồng quản lý.** Tài khoản: `stg-demo-manager@example.test`. Đăng nhập ở `/Manager/Login`, mở `/Report` và `/Loan`. Lấy ID bạn đọc staging bằng `SELECT Id FROM ReaderAccounts WHERE Email = 'stg-demo-reader-001@example.test';`, rồi mở `/ReaderLoanHistory/Details?id={readerId}`; xác nhận có dữ liệu lịch sử mượn trả. Mở `/PermissionMatrix`; xác nhận không có quyền. Đăng xuất.
 4. **Kiểm tra luồng thủ thư.** Tài khoản: `stg-demo-librarian@example.test`. Đăng nhập ở `/Librarian/Login`, mở `/Book` và `/ReaderApproval`; xác nhận các trang nghiệp vụ tải. Dùng cùng ID bạn đọc mẫu đã lấy ở bước 3 để mở `/ReaderLoanHistory/Details?id={readerId}`. Thử `/Loan`; xác nhận bị chặn theo chính sách. Đăng xuất.
@@ -60,7 +60,7 @@ Các bước dưới đây dùng bản ghi giả lập `STG-DEMO-*` và có th�
 
 | Kiểm tra | Kết quả |
 |---|---|
-| Khởi tạo đủ bốn tài khoản, đúng role; không nhân bản hoặc đổi hash khi seed lại | CHƯA THỰC HIỆN — có test tự động `StagingDemoAccountsSeederTests` |
+| Khởi tạo đủ bốn tài khoản, đúng role; không nhân bản hoặc đổi hash khi reset | CHƯA THỰC HIỆN — có test tự động `StagingDemoAccountsSeederTests` và test reset staging |
 | Đăng nhập thực tế đủ bốn tài khoản và nhập sai mật khẩu | CHƯA THỰC HIỆN — cần chạy ứng dụng với SQL Server staging |
 | Phân quyền allow/deny bằng trang và gọi API trực tiếp; đăng xuất | CHƯA THỰC HIỆN — cần phiên đăng nhập trên staging |
 | Kịch bản demo theo thứ tự | CHƯA THỰC HIỆN — cần staging healthy |

@@ -11,10 +11,14 @@ public sealed record StagingAcceptanceSeedResult(
     int Copies,
     int Readers,
     int Loans,
-    IReadOnlyDictionary<string, int> LoanStates);
+    IReadOnlyDictionary<string, int> LoanStates,
+    IReadOnlyDictionary<string, bool> DemoAccounts);
 
 /// <summary>Builds a clearly marked, persistent staging dataset using the application's real entities.</summary>
-public sealed class StagingAcceptanceDataSeeder(ApplicationDbContext db)
+public sealed class StagingAcceptanceDataSeeder(
+    ApplicationDbContext db,
+    IPasswordHasher<AdminAccount> staffPasswordHasher,
+    IPasswordHasher<ReaderAccount> readerPasswordHasher)
 {
     private const int BookTarget = 200;
     private const int CopyTarget = 500;
@@ -45,37 +49,187 @@ public sealed class StagingAcceptanceDataSeeder(ApplicationDbContext db)
     private static readonly string[] Publishers =
     ["NXB Tri Thức", "NXB Giáo Dục", "NXB Tổng hợp", "NXB Văn hóa", "NXB Khoa học"];
 
-    public async Task<StagingAcceptanceSeedResult> SeedAsync(CancellationToken cancellationToken = default)
+    public async Task<StagingAcceptanceSeedResult> SeedAsync(
+        IReadOnlyDictionary<string, string?> accountPasswords,
+        CancellationToken cancellationToken = default)
     {
-        // Retain the existing catalog foundation and its established demo warehouse/shelf layout.
-        await new LibraryDemoDataSeeder(db).SeedAsync(cancellationToken);
-
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        await ResetSampleDataAsync(cancellationToken);
+
+        // Reuse the existing catalog seeder inside this reset transaction.
+        await new LibraryDemoDataSeeder(db).SeedAsync(cancellationToken);
         await EnsureSupplementalBooksAndCopiesAsync(cancellationToken);
         await EnsureReadersAndLoansAsync(cancellationToken);
+        var demoAccounts = await new StagingDemoAccountsSeeder(db, staffPasswordHasher, readerPasswordHasher)
+            .SeedAsync(accountPasswords, cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
-        await transaction.CommitAsync(cancellationToken);
 
         var bookIsbns = Enumerable.Range(1, BookTarget).Select(CreateSampleIsbn).ToArray();
         var books = await db.Books.CountAsync(book => book.Isbn != null && bookIsbns.Contains(book.Isbn), cancellationToken);
-        var copies = await db.BookCopies.CountAsync(copy =>
-            copy.CopyCode.StartsWith("DEMO-CPY-") || copy.CopyCode.StartsWith(CopyCodePrefix), cancellationToken);
-        if (books < BookTarget || copies < CopyTarget)
+        var distinctBookIsbns = await db.Books.Where(book => book.Isbn != null && bookIsbns.Contains(book.Isbn))
+            .Select(book => book.Isbn).Distinct().CountAsync(cancellationToken);
+        var demoBookIds = await db.Books.Where(book => book.Isbn != null && bookIsbns.Contains(book.Isbn))
+            .Select(book => book.Id).ToArrayAsync(cancellationToken);
+        var copies = await db.BookCopies.CountAsync(copy => demoBookIds.Contains(copy.BookId), cancellationToken);
+        var distinctCopyCodes = await db.BookCopies.Where(copy => demoBookIds.Contains(copy.BookId))
+            .Select(copy => copy.CopyCode).Distinct().CountAsync(cancellationToken);
+        if (books != BookTarget || distinctBookIsbns != BookTarget || copies != CopyTarget || distinctCopyCodes != CopyTarget)
             throw new InvalidOperationException(
-                $"Dữ liệu staging chưa đạt số lượng tối thiểu: sách {books}/{BookTarget}, bản sao {copies}/{CopyTarget}.");
+                $"Dữ liệu staging không đúng bộ chuẩn: sách {books}/{BookTarget}, bản sao {copies}/{CopyTarget}.");
         var readers = await db.ReaderAccounts.CountAsync(reader => reader.StudentOrStaffCode.StartsWith(ReaderCodePrefix), cancellationToken);
-        var demoCopyIds = await db.BookCopies.Where(copy =>
-                copy.CopyCode.StartsWith("DEMO-CPY-") || copy.CopyCode.StartsWith(CopyCodePrefix))
+        var distinctReaderCodes = await db.ReaderAccounts.Where(reader => reader.StudentOrStaffCode.StartsWith(ReaderCodePrefix))
+            .Select(reader => reader.StudentOrStaffCode).Distinct().CountAsync(cancellationToken);
+        var demoCopyIds = await db.BookCopies.Where(copy => demoBookIds.Contains(copy.BookId))
             .Select(copy => copy.Id).ToListAsync(cancellationToken);
         var loans = await db.BookLoans.AsNoTracking()
             .Where(loan => loan.BookCopyId.HasValue && demoCopyIds.Contains(loan.BookCopyId.Value))
             .Include(loan => loan.BookCopy)
             .ToListAsync(cancellationToken);
+        if (readers != ReaderTarget || distinctReaderCodes != ReaderTarget || loans.Count != LoanTarget)
+            throw new InvalidOperationException(
+                $"Dữ liệu staging không đúng bộ chuẩn: bạn đọc {readers}/{ReaderTarget}, phiếu mượn {loans.Count}/{LoanTarget}.");
+        var demoReaderCodes = Enumerable.Range(1, ReaderTarget).Select(index => $"{ReaderCodePrefix}{index:000}").ToArray();
+        var hasInvalidLoanRelationship = loans.Any(loan => loan.BookCopy is null || loan.BookCopy.BookId != loan.BookId) ||
+            await db.BookLoans.AnyAsync(loan => demoCopyIds.Contains(loan.BookCopyId ?? 0) &&
+                (!demoReaderCodes.Contains(loan.ReaderAccount!.StudentOrStaffCode) || !demoBookIds.Contains(loan.BookId)), cancellationToken);
+        var hasInvalidCopyRelationship = await db.BookCopies.AnyAsync(copy => demoBookIds.Contains(copy.BookId) &&
+            (copy.Shelf == null || copy.Book == null), cancellationToken);
+        var hasInvalidBookRelationship = await db.Books.AnyAsync(book => demoBookIds.Contains(book.Id) &&
+            (book.Author == null || book.Category == null), cancellationToken);
+        if (hasInvalidLoanRelationship || hasInvalidCopyRelationship || hasInvalidBookRelationship)
+            throw new InvalidOperationException("Dữ liệu staging có quan hệ phiếu mượn/bản sao/đầu sách không hợp lệ.");
+
         var today = LibraryCalendarDate.Today();
         var states = loans.GroupBy(loan => GetState(loan, today))
             .ToDictionary(group => group.Key, group => group.Count());
+        var expectedStates = new Dictionary<string, int>(StringComparer.Ordinal)
+        {
+            ["Đang mượn"] = 20,
+            ["Quá hạn chưa trả"] = 20,
+            ["Đã trả đúng hạn"] = 20,
+            ["Đã trả trễ hạn"] = 20,
+            ["Đóng do mất"] = 10,
+            ["Đóng do hỏng nặng"] = 10
+        };
+        if (expectedStates.Any(pair => !states.TryGetValue(pair.Key, out var count) || count != pair.Value) ||
+            states.Values.Sum() != LoanTarget)
+            throw new InvalidOperationException("Phân bố trạng thái phiếu staging không đúng bộ chuẩn.");
 
-        return new(books, copies, readers, loans.Count, states);
+        await transaction.CommitAsync(cancellationToken);
+
+        return new(books, copies, readers, loans.Count, states, demoAccounts.Created);
+    }
+
+    private async Task ResetSampleDataAsync(CancellationToken cancellationToken)
+    {
+        var sampleIsbns = Enumerable.Range(1, BookTarget).Select(CreateSampleIsbn).ToArray();
+        var markedCopyBookIds = db.BookCopies.Where(copy => copy.CopyCode.StartsWith("DEMO-CPY-") ||
+                copy.CopyCode.StartsWith(CopyCodePrefix))
+            .Select(copy => copy.BookId);
+        var bookIds = await db.Books.Where(book => (book.Isbn != null && sampleIsbns.Contains(book.Isbn)) ||
+                (book.Description != null && book.Description.Contains(StagingDemoMarkers.BookDescription)) ||
+                markedCopyBookIds.Contains(book.Id))
+            .Select(book => book.Id).ToArrayAsync(cancellationToken);
+        var sampleCopyIds = await db.BookCopies.Where(copy =>
+                copy.CopyCode.StartsWith("DEMO-CPY-") || copy.CopyCode.StartsWith(CopyCodePrefix) || bookIds.Contains(copy.BookId))
+            .Select(copy => copy.Id).ToArrayAsync(cancellationToken);
+        var sampleReaderEmails = Enumerable.Range(1, ReaderTarget)
+            .Select(index => $"stg-demo-reader-{index:000}@example.test").ToArray();
+        var readerIds = await db.ReaderAccounts.Where(reader => reader.StudentOrStaffCode.StartsWith(ReaderCodePrefix) ||
+                sampleReaderEmails.Contains(reader.Email) ||
+                (reader.Address != null && reader.Address.Contains(StagingDemoMarkers.ReaderAddress)))
+            .Select(reader => reader.Id).ToArrayAsync(cancellationToken);
+        var loanIds = await db.BookLoans.Where(loan => bookIds.Contains(loan.BookId) ||
+                (loan.BookCopyId.HasValue && sampleCopyIds.Contains(loan.BookCopyId.Value)) ||
+                readerIds.Contains(loan.ReaderAccountId))
+            .Select(loan => loan.Id).ToArrayAsync(cancellationToken);
+        var holdIds = await db.BookHolds.Where(hold => bookIds.Contains(hold.BookId) ||
+                sampleCopyIds.Contains(hold.BookCopyId ?? 0) || sampleCopyIds.Contains(hold.ExpiredBookCopyId ?? 0) ||
+                readerIds.Contains(hold.ReaderAccountId))
+            .Select(hold => hold.Id).ToArrayAsync(cancellationToken);
+        var readerHasLoanOutsideSampleBooks = await db.BookLoans.AnyAsync(loan => readerIds.Contains(loan.ReaderAccountId) &&
+            !bookIds.Contains(loan.BookId) && (!loan.BookCopyId.HasValue || !sampleCopyIds.Contains(loan.BookCopyId.Value)), cancellationToken);
+        var externalLoanUsesSampleHold = await db.BookLoans.AnyAsync(loan => loan.SourceBookHoldId.HasValue &&
+            holdIds.Contains(loan.SourceBookHoldId.Value) && !loanIds.Contains(loan.Id), cancellationToken);
+        if (readerHasLoanOutsideSampleBooks || externalLoanUsesSampleHold)
+            throw new InvalidOperationException(
+                "Không thể reset an toàn: một phiếu ngoài bộ dữ liệu đang liên kết với bạn đọc/đơn giữ mẫu.");
+        var incidentIds = await db.BookIncidents.Where(incident => loanIds.Contains(incident.BookLoanId) ||
+                sampleCopyIds.Contains(incident.BookCopyId))
+            .Select(incident => incident.Id).ToArrayAsync(cancellationToken);
+        var hasNonSeedIncidentHistory = await db.BookIncidentAuditLogs.AnyAsync(log =>
+            (loanIds.Contains(log.BookLoanId) ||
+             (log.BookIncidentId.HasValue && incidentIds.Contains(log.BookIncidentId.Value)) ||
+             (log.BookCopyId.HasValue && sampleCopyIds.Contains(log.BookCopyId.Value))) &&
+            log.Actor != "STAGING-DEMO-SEEDER", cancellationToken);
+        var hasAdjustmentVoucher = await db.IncidentAdjustmentVouchers.AnyAsync(voucher =>
+            loanIds.Contains(voucher.BookLoanId) || incidentIds.Contains(voucher.BookIncidentId) ||
+            sampleCopyIds.Contains(voucher.BookCopyId), cancellationToken);
+        var hasCompensationAdjustmentHistory = await db.CompensationAdjustmentHistories.AnyAsync(history =>
+            db.BookIncidentCompensations.Any(compensation => incidentIds.Contains(compensation.BookIncidentId) &&
+                compensation.Id == history.BookIncidentCompensationId), cancellationToken);
+        if (hasNonSeedIncidentHistory || hasAdjustmentVoucher || hasCompensationAdjustmentHistory)
+            throw new InvalidOperationException(
+                "Không thể reset an toàn: dữ liệu mẫu có lịch sử sự cố/bút toán điều chỉnh bất biến do người dùng tạo; lịch sử được giữ nguyên.");
+        var feeIds = await db.ReaderFees.Where(fee => readerIds.Contains(fee.ReaderAccountId) ||
+                (fee.BookLoanId.HasValue && loanIds.Contains(fee.BookLoanId.Value)))
+            .Select(fee => fee.Id).ToArrayAsync(cancellationToken);
+        var paymentIds = await db.FeePayments.Where(payment => readerIds.Contains(payment.ReaderAccountId) ||
+                db.FeePaymentAllocations.Any(allocation => allocation.FeePaymentId == payment.Id && feeIds.Contains(allocation.ReaderFeeId)))
+            .Select(payment => payment.Id).ToArrayAsync(cancellationToken);
+        var mixedPayment = await db.FeePaymentAllocations.AnyAsync(allocation => paymentIds.Contains(allocation.FeePaymentId) &&
+            !feeIds.Contains(allocation.ReaderFeeId), cancellationToken);
+        if (mixedPayment)
+            throw new InvalidOperationException("Không thể reset an toàn: khoản thanh toán mẫu gộp khoản thu ngoài phạm vi.");
+        var allocationIds = await db.FeePaymentAllocations.Where(allocation => paymentIds.Contains(allocation.FeePaymentId) ||
+                feeIds.Contains(allocation.ReaderFeeId))
+            .Select(allocation => allocation.Id).ToArrayAsync(cancellationToken);
+        var operationIds = await db.DirectLoanOperationItems.Where(item => loanIds.Contains(item.BookLoanId))
+            .Select(item => item.RequestId).Distinct().ToArrayAsync(cancellationToken);
+        var mixedOperation = await db.DirectLoanOperationItems.AnyAsync(item => operationIds.Contains(item.RequestId) &&
+            !loanIds.Contains(item.BookLoanId), cancellationToken);
+        if (mixedOperation)
+            throw new InvalidOperationException("Không thể reset an toàn: một thao tác mượn gộp bản sao staging và bản sao ngoài phạm vi.");
+
+        var demoWarehouses = await db.Warehouses.Where(warehouse => warehouse.Code.StartsWith("DEMO-KHO-"))
+            .Select(warehouse => warehouse.Id).ToArrayAsync(cancellationToken);
+        var demoShelves = await db.Shelves.Where(shelf => demoWarehouses.Contains(shelf.WarehouseId))
+            .Select(shelf => shelf.Id).ToArrayAsync(cancellationToken);
+        var externalCopyOnDemoShelf = await db.BookCopies.AnyAsync(copy => demoShelves.Contains(copy.ShelfId) &&
+            !sampleCopyIds.Contains(copy.Id), cancellationToken);
+        if (externalCopyOnDemoShelf)
+            throw new InvalidOperationException("Không thể reset an toàn: có bản sao ngoài phạm vi trên kệ demo.");
+
+        await db.FeeReceiptLines.Where(line => paymentIds.Contains(line.FeePaymentId)).ExecuteDeleteAsync(cancellationToken);
+        await db.FeeReceipts.Where(receipt => paymentIds.Contains(receipt.FeePaymentId)).ExecuteDeleteAsync(cancellationToken);
+        await db.FeePaymentAllocations.Where(allocation => allocationIds.Contains(allocation.Id)).ExecuteDeleteAsync(cancellationToken);
+        await db.FeePayments.Where(payment => paymentIds.Contains(payment.Id)).ExecuteDeleteAsync(cancellationToken);
+        await db.FeeWaiverRequests.Where(request => feeIds.Contains(request.ReaderFeeId)).ExecuteDeleteAsync(cancellationToken);
+        await db.IncidentAdjustmentVouchers.Where(voucher => loanIds.Contains(voucher.BookLoanId) ||
+            incidentIds.Contains(voucher.BookIncidentId) || sampleCopyIds.Contains(voucher.BookCopyId)).ExecuteDeleteAsync(cancellationToken);
+        // Only this fixture actor's immutable event rows are reset with their disposable sample entities.
+        // Operator-created audit rows are detected above and make the reset abort before any deletion.
+        await db.BookIncidentAuditLogs.Where(log => log.Actor == "STAGING-DEMO-SEEDER" &&
+            (loanIds.Contains(log.BookLoanId) ||
+             (log.BookIncidentId.HasValue && incidentIds.Contains(log.BookIncidentId.Value)) ||
+             (log.BookCopyId.HasValue && sampleCopyIds.Contains(log.BookCopyId.Value))))
+            .ExecuteDeleteAsync(cancellationToken);
+        await db.BookIncidentCompensations.Where(compensation => incidentIds.Contains(compensation.BookIncidentId))
+            .ExecuteDeleteAsync(cancellationToken);
+        await db.BookIncidents.Where(incident => incidentIds.Contains(incident.Id)).ExecuteDeleteAsync(cancellationToken);
+        await db.DirectLoanOperationItems.Where(item => operationIds.Contains(item.RequestId)).ExecuteDeleteAsync(cancellationToken);
+        await db.DirectLoanOperations.Where(operation => operationIds.Contains(operation.RequestId)).ExecuteDeleteAsync(cancellationToken);
+        await db.BookLoans.Where(loan => loanIds.Contains(loan.Id)).ExecuteDeleteAsync(cancellationToken);
+        await db.BookHolds.Where(hold => holdIds.Contains(hold.Id)).ExecuteDeleteAsync(cancellationToken);
+        await db.ReaderFees.Where(fee => feeIds.Contains(fee.Id)).ExecuteDeleteAsync(cancellationToken);
+        await db.LibraryCards.Where(card => readerIds.Contains(card.ReaderAccountId)).ExecuteDeleteAsync(cancellationToken);
+        await db.BookCopyStatusHistories.Where(history => sampleCopyIds.Contains(history.BookCopyId)).ExecuteDeleteAsync(cancellationToken);
+        await db.BookCopies.Where(copy => sampleCopyIds.Contains(copy.Id)).ExecuteDeleteAsync(cancellationToken);
+        await db.ReaderAccounts.Where(reader => readerIds.Contains(reader.Id)).ExecuteDeleteAsync(cancellationToken);
+        await db.Books.Where(book => bookIds.Contains(book.Id)).ExecuteDeleteAsync(cancellationToken);
+        await db.Shelves.Where(shelf => demoShelves.Contains(shelf.Id)).ExecuteDeleteAsync(cancellationToken);
+        await db.Warehouses.Where(warehouse => demoWarehouses.Contains(warehouse.Id)).ExecuteDeleteAsync(cancellationToken);
+        db.ChangeTracker.Clear();
     }
 
     private async Task EnsureSupplementalBooksAndCopiesAsync(CancellationToken cancellationToken)
@@ -108,7 +262,7 @@ public sealed class StagingAcceptanceDataSeeder(ApplicationDbContext db)
                 Publisher = Publishers[(sequence - 1) % Publishers.Length],
                 PublicationYear = 1990 + sequence % 36,
                 PageCount = 120 + sequence % 401,
-                Description = "Đầu sách hư cấu được tạo cho môi trường nghiệm thu staging."
+                Description = $"Đầu sách hư cấu được tạo cho môi trường nghiệm thu staging. {StagingDemoMarkers.BookDescription}"
             };
             book.BookAuthors.Add(new BookAuthor { AuthorId = book.AuthorId, SortOrder = 0 });
             additionalBooks.Add(book);
@@ -170,7 +324,7 @@ public sealed class StagingAcceptanceDataSeeder(ApplicationDbContext db)
                 DateOfBirth = new DateOnly(1988 + index % 15, 1 + index % 12, 1 + index % 27),
                 Email = $"stg-demo-reader-{index:000}@example.test",
                 PhoneNumber = $"090000{index:0000}",
-                Address = $"Địa chỉ mẫu {index:000}, chỉ dùng trong staging.",
+                Address = $"Địa chỉ mẫu {index:000}, chỉ dùng trong staging. {StagingDemoMarkers.ReaderAddress}",
                 StudentOrStaffCode = code,
                 Status = "Đang hoạt động",
                 EmailConfirmed = true,

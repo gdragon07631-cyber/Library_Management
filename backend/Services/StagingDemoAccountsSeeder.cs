@@ -22,32 +22,45 @@ public sealed class StagingDemoAccountsSeeder(
         IReadOnlyDictionary<string, string?> passwords,
         CancellationToken cancellationToken = default)
     {
-        var required = new[] { "SYSTEM_ADMIN", "LIBRARY_MANAGER", "LIBRARIAN", "READER" };
-        foreach (var key in required)
-        {
-            if (!passwords.TryGetValue(key, out var password) || string.IsNullOrWhiteSpace(password) || password.Length < 12)
-                throw new InvalidOperationException($"Thiếu STAGING_DEMO_{key}_PASSWORD hoặc mật khẩu ngắn hơn 12 ký tự.");
-        }
-        if (required.Select(key => passwords[key]).Distinct(StringComparer.Ordinal).Count() != required.Length)
-            throw new InvalidOperationException("Bốn tài khoản staging phải dùng bốn mật khẩu khác nhau.");
-
         var results = new Dictionary<string, bool>(StringComparer.Ordinal);
-        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        var ownsTransaction = db.Database.CurrentTransaction is null;
+        var transaction = ownsTransaction ? await db.Database.BeginTransactionAsync(cancellationToken) : null;
+        try
+        {
+            var needed = new List<string>();
+            if (!await db.AdminAccounts.AnyAsync(account => account.Email == SystemAdminEmail, cancellationToken)) needed.Add("SYSTEM_ADMIN");
+            if (!await db.AdminAccounts.AnyAsync(account => account.Email == LibraryManagerEmail, cancellationToken)) needed.Add("LIBRARY_MANAGER");
+            if (!await db.AdminAccounts.AnyAsync(account => account.Email == LibrarianEmail, cancellationToken)) needed.Add("LIBRARIAN");
+            if (!await db.ReaderAccounts.AnyAsync(account => account.Email == ReaderEmail, cancellationToken)) needed.Add("READER");
 
-        results[AccountRoles.SystemAdmin] = await CreateStaffAsync(
-            SystemAdminEmail, "Quản trị demo staging", AccountRoles.SystemAdmin, passwords["SYSTEM_ADMIN"]!, cancellationToken);
-        results[AccountRoles.LibraryManager] = await CreateStaffAsync(
-            LibraryManagerEmail, "Quản lý demo staging", AccountRoles.LibraryManager, passwords["LIBRARY_MANAGER"]!, cancellationToken);
-        results[AccountRoles.Librarian] = await CreateStaffAsync(
-            LibrarianEmail, "Thủ thư demo staging", AccountRoles.Librarian, passwords["LIBRARIAN"]!, cancellationToken);
-        results["Reader"] = await CreateReaderAsync(passwords["READER"]!, cancellationToken);
+            foreach (var key in needed)
+            {
+                if (!passwords.TryGetValue(key, out var password) || string.IsNullOrWhiteSpace(password) || password.Length < 12)
+                    throw new InvalidOperationException($"Thiếu STAGING_DEMO_{key}_PASSWORD hoặc mật khẩu ngắn hơn 12 ký tự.");
+            }
+            var newPasswords = needed.Select(key => passwords[key]).ToArray();
+            if (newPasswords.Distinct(StringComparer.Ordinal).Count() != newPasswords.Length)
+                throw new InvalidOperationException("Các tài khoản staging mới phải dùng mật khẩu khác nhau.");
 
-        await transaction.CommitAsync(cancellationToken);
-        return new StagingDemoAccountsSeedResult(results);
+            results[AccountRoles.SystemAdmin] = await CreateStaffAsync(
+                SystemAdminEmail, "Quản trị demo staging", AccountRoles.SystemAdmin, passwords.GetValueOrDefault("SYSTEM_ADMIN"), cancellationToken);
+            results[AccountRoles.LibraryManager] = await CreateStaffAsync(
+                LibraryManagerEmail, "Quản lý demo staging", AccountRoles.LibraryManager, passwords.GetValueOrDefault("LIBRARY_MANAGER"), cancellationToken);
+            results[AccountRoles.Librarian] = await CreateStaffAsync(
+                LibrarianEmail, "Thủ thư demo staging", AccountRoles.Librarian, passwords.GetValueOrDefault("LIBRARIAN"), cancellationToken);
+            results["Reader"] = await CreateReaderAsync(passwords.GetValueOrDefault("READER"), cancellationToken);
+
+            if (transaction is not null) await transaction.CommitAsync(cancellationToken);
+            return new StagingDemoAccountsSeedResult(results);
+        }
+        finally
+        {
+            if (transaction is not null) await transaction.DisposeAsync();
+        }
     }
 
     private async Task<bool> CreateStaffAsync(
-        string email, string fullName, string role, string password, CancellationToken cancellationToken)
+        string email, string fullName, string role, string? password, CancellationToken cancellationToken)
     {
         var existing = await db.AdminAccounts.SingleOrDefaultAsync(account => account.Email == email, cancellationToken);
         if (existing is not null)
@@ -58,13 +71,14 @@ public sealed class StagingDemoAccountsSeeder(
         }
 
         var account = new AdminAccount { Email = email, FullName = fullName, Role = role, IsActive = true };
-        account.PasswordHash = staffPasswordHasher.HashPassword(account, password);
+        account.PasswordHash = staffPasswordHasher.HashPassword(account, password
+            ?? throw new InvalidOperationException($"Thiếu mật khẩu để tạo tài khoản mẫu {email}."));
         db.AdminAccounts.Add(account);
         await db.SaveChangesAsync(cancellationToken);
         return true;
     }
 
-    private async Task<bool> CreateReaderAsync(string password, CancellationToken cancellationToken)
+    private async Task<bool> CreateReaderAsync(string? password, CancellationToken cancellationToken)
     {
         var existing = await db.ReaderAccounts.SingleOrDefaultAsync(account => account.Email == ReaderEmail, cancellationToken);
         if (existing is not null)
@@ -88,7 +102,8 @@ public sealed class StagingDemoAccountsSeeder(
             CreatedAtUtc = now,
             UpdatedAtUtc = now
         };
-        reader.PasswordHash = readerPasswordHasher.HashPassword(reader, password);
+        reader.PasswordHash = readerPasswordHasher.HashPassword(reader, password
+            ?? throw new InvalidOperationException($"Thiếu mật khẩu để tạo tài khoản mẫu {ReaderEmail}."));
         db.ReaderAccounts.Add(reader);
         await db.SaveChangesAsync(cancellationToken);
 

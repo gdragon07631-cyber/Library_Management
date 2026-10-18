@@ -143,24 +143,43 @@ if (args.Contains("--seed-library-demo", StringComparer.OrdinalIgnoreCase))
 
 if (args.Contains("--seed-staging-demo", StringComparer.OrdinalIgnoreCase))
 {
-    if (!app.Environment.IsStaging())
-        throw new InvalidOperationException("Lệnh --seed-staging-demo chỉ được chạy khi ASPNETCORE_ENVIRONMENT=Staging.");
+    StagingResetEnvironmentGuard.EnsureStaging(app.Environment);
 
     await using var scope = app.Services.CreateAsyncScope();
     var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-    await dbContext.Database.MigrateAsync();
-    var result = await new StagingAcceptanceDataSeeder(dbContext).SeedAsync();
-    Console.WriteLine(
-        $"Staging sample data ready: books={result.Books}, copies={result.Copies}, readers={result.Readers}, loans={result.Loans}.");
-    foreach (var state in result.LoanStates.OrderBy(item => item.Key, StringComparer.Ordinal))
-        Console.WriteLine($"  {state.Key}: {state.Value}");
+    var passwords = new Dictionary<string, string?>
+    {
+        ["SYSTEM_ADMIN"] = app.Configuration["STAGING_DEMO_SYSTEM_ADMIN_PASSWORD"],
+        ["LIBRARY_MANAGER"] = app.Configuration["STAGING_DEMO_LIBRARY_MANAGER_PASSWORD"],
+        ["LIBRARIAN"] = app.Configuration["STAGING_DEMO_LIBRARIAN_PASSWORD"],
+        ["READER"] = app.Configuration["STAGING_DEMO_READER_PASSWORD"]
+    };
+    try
+    {
+        await dbContext.Database.MigrateAsync();
+        var seeder = new StagingAcceptanceDataSeeder(
+            dbContext,
+            scope.ServiceProvider.GetRequiredService<IPasswordHasher<AdminAccount>>(),
+            scope.ServiceProvider.GetRequiredService<IPasswordHasher<ReaderAccount>>());
+        var result = await seeder.SeedAsync(passwords);
+        Console.WriteLine(
+            $"Staging sample reset complete: books={result.Books}, copies={result.Copies}, readers={result.Readers}, loans={result.Loans}.");
+        foreach (var state in result.LoanStates.OrderBy(item => item.Key, StringComparer.Ordinal))
+            Console.WriteLine($"  {state.Key}: {state.Value}");
+        foreach (var account in result.DemoAccounts.OrderBy(item => item.Key, StringComparer.Ordinal))
+            Console.WriteLine($"  account {account.Key}: {(account.Value ? "created" : "preserved")}");
+    }
+    catch (Exception exception)
+    {
+        Console.Error.WriteLine($"Staging sample reset failed; transaction was rolled back: {exception.Message}");
+        throw;
+    }
     return;
 }
 
 if (args.Contains("--seed-staging-demo-accounts", StringComparer.OrdinalIgnoreCase))
 {
-    if (!app.Environment.IsStaging())
-        throw new InvalidOperationException("Lệnh --seed-staging-demo-accounts chỉ được chạy khi ASPNETCORE_ENVIRONMENT=Staging.");
+    StagingResetEnvironmentGuard.EnsureStaging(app.Environment);
 
     await using var scope = app.Services.CreateAsyncScope();
     var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
