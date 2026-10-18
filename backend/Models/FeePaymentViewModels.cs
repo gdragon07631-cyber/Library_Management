@@ -5,7 +5,7 @@ namespace Project.Models;
 public sealed class CollectFeeViewModel
 {
     public int ReaderAccountId { get; set; }
-    public Guid RequestId { get; set; } = Guid.NewGuid();
+    public Guid RequestId { get; set; }
     [Required(ErrorMessage = "Vui lòng nhập số tiền.")]
     public decimal? Amount { get; set; }
     public bool Confirmed { get; set; }

@@ -45,7 +45,7 @@ public sealed class FeePaymentController(IFeePaymentService payments, IAuditLogS
         return new()
         {
             Search = search, Readers = await payments.SearchAsync(search, cancellationToken), Debt = debt,
-            Payment = new() { ReaderAccountId = readerId ?? 0 }
+            Payment = new() { ReaderAccountId = readerId ?? 0, RequestId = Guid.NewGuid() }
         };
     }
 }

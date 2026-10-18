@@ -42,9 +42,9 @@ public sealed class FeePaymentService(ApplicationDbContext db) : IFeePaymentServ
         // Durable uniqueness and relational transactions are required; never emulate a payment in memory.
         if (!db.Database.IsRelational()) return new(false, "Thu phí yêu cầu cơ sở dữ liệu hỗ trợ giao dịch.");
 
-        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
         try
         {
+            await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
             var existing = await db.FeePayments.AsNoTracking().SingleOrDefaultAsync(p => p.RequestId == request.RequestId, cancellationToken);
             if (existing is not null)
                 return existing.ReaderAccountId == request.ReaderAccountId && existing.Amount == amount && existing.CollectedByAdminAccountId == staffId
@@ -89,9 +89,8 @@ public sealed class FeePaymentService(ApplicationDbContext db) : IFeePaymentServ
         }
         catch (Exception ex) when (ex is DbException or DbUpdateException)
         {
-            await transaction.RollbackAsync(CancellationToken.None);
             db.ChangeTracker.Clear();
-            return new(false, "Chưa thể xác nhận giao dịch. Vui lòng tải lại và gửi lại cùng mã yêu cầu để kiểm tra, tránh thu tiền hai lần.");
+            return new(false, "Chưa thể xác nhận giao dịch. Hãy gửi lại biểu mẫu này để kiểm tra cùng mã yêu cầu; không nhận thêm tiền từ bạn đọc.");
         }
     }
 }
