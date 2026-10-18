@@ -12,6 +12,16 @@
     </div>
 </div>
 
+<section class="card shadow-sm border-0 mb-3" aria-labelledby="due-reminder-heading">
+    <div class="card-body">
+        @Html.AntiForgeryToken()
+        <h2 id="due-reminder-heading" class="h5">Email nhắc hạn trả sách</h2>
+        <p class="text-muted">Chạy thử quét nhắc hạn cho hôm nay; mỗi bạn đọc nhận một email tổng hợp.</p>
+        <button id="run-due-reminders" type="button" class="btn btn-outline-primary">Chạy quét email nhắc hạn</button>
+        <div id="due-reminder-result" class="mt-2" role="status" aria-live="polite"></div>
+    </div>
+</section>
+
 @if (exportStaff?.Role == Project.Models.AccountRoles.LibraryManager)
 {
     <form id="overdue-export" action="@Url.Content("~/api/overdue-readers/export")" method="post" class="mb-3">
@@ -117,6 +127,29 @@
 @section Scripts {
 <script src="~/js/overdue-reader-export.js" asp-append-version="true"></script>
 <script>
+    (() => {
+        const button = document.getElementById('run-due-reminders');
+        const result = document.getElementById('due-reminder-result');
+        button.addEventListener('click', async () => {
+            button.disabled = true;
+            result.className = 'mt-2 text-muted';
+            result.textContent = 'Đang xử lý…';
+            try {
+                const token = document.querySelector('input[name="__RequestVerificationToken"]')?.value;
+                const response = await fetch('@Url.Content("~/api/loan-due-reminders/run")', {
+                    method: 'POST', credentials: 'same-origin',
+                    headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest', 'RequestVerificationToken': token || '' }
+                });
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.message || 'Không thể chạy quét nhắc hạn.');
+                result.className = 'mt-2 text-success';
+                result.textContent = `Đã quét ${data.scannedLoans} phiếu; ${data.eligibleLoans} phiếu cần nhắc; xử lý ${data.readersProcessed} bạn đọc; gửi thành công ${data.emailsSent}; thất bại ${data.emailsFailed}.`;
+            } catch (error) {
+                result.className = 'mt-2 text-danger';
+                result.textContent = error.message || 'Không thể chạy quét nhắc hạn.';
+            } finally { button.disabled = false; }
+        });
+    })();
     document.querySelectorAll('.contact-button').forEach(function (button) {
         button.addEventListener('click', function () {
             document.getElementById('contactLoanId').value = button.dataset.loanId;

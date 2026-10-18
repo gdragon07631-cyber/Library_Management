@@ -50,6 +50,7 @@ builder.Services.AddScoped<ICompensationService, CompensationService>();
 builder.Services.AddScoped<DirectLoanService>();
 builder.Services.AddScoped<OverdueReaderExportService>();
 builder.Services.AddScoped<ILoanContactHistoryService, LoanContactHistoryService>();
+builder.Services.AddScoped<ILoanDueReminderService, LoanDueReminderService>();
 builder.Services.AddScoped<IBookLoanDetailsService, BookLoanDetailsService>();
 builder.Services.AddScoped<ILoanLookupService, LoanLookupService>();
 builder.Services.AddScoped<IAuditLogService, AuditLogService>();
@@ -69,6 +70,7 @@ builder.Services.AddScoped<IReaderAccountAdminService, ReaderAccountAdminService
 builder.Services.AddSingleton<IPermissionMatrixService, PermissionMatrixService>();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddHostedService<HoldPickupExpiryScheduledWorker>();
+<<<<<<< HEAD
 builder.Services.AddHostedService<HoldReadyEmailWorker>();
 builder.Services.AddOptions<HoldPickupReminderOptions>()
     .Bind(builder.Configuration.GetSection(HoldPickupReminderOptions.SectionName))
@@ -78,6 +80,9 @@ builder.Services.AddOptions<HoldPickupReminderOptions>()
         "HoldPickupReminder:RetryIntervalSeconds must be between 30 and 3600.")
     .ValidateOnStart();
 builder.Services.AddHostedService<HoldPickupReminderScheduledWorker>();
+=======
+builder.Services.AddHostedService<LoanDueReminderWorker>();
+>>>>>>> origin/feature/nhac-den-han
 builder.Services.Configure<BookCopyLabelPrintOptions>(builder.Configuration.GetSection("BookCopyLabels"));
 builder.Services.AddDataProtection()
     .PersistKeysToFileSystem(new DirectoryInfo(Path.Combine(builder.Environment.ContentRootPath, "Data", "Keys")));
