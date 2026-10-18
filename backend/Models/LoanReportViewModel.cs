@@ -11,9 +11,12 @@ public sealed record LoanReportViewModel(
     bool HasActivityInRange);
 <<<<<<< HEAD:backend/Models/LoanReportViewModel.cs
 <<<<<<< HEAD:backend/Models/LoanReportViewModel.cs
+<<<<<<< HEAD:backend/Models/LoanReportViewModel.cs
 =======
 =======
 >>>>>>> origin/feature/S4-07/xem_10_dau_sach_duoc_muon:Models/LoanReportViewModel.cs
+=======
+>>>>>>> origin/feature/S4-07/xem_bieu_do_luot_muon_theo_ngay:Models/LoanReportViewModel.cs
 
 public sealed record TopBookReportRow(
     int Rank,
@@ -23,18 +26,27 @@ public sealed record TopBookReportRow(
     int PhysicalCopyCount);
 
 <<<<<<< HEAD:backend/Models/LoanReportViewModel.cs
+<<<<<<< HEAD:backend/Models/LoanReportViewModel.cs
+=======
+>>>>>>> origin/feature/S4-07/xem_bieu_do_luot_muon_theo_ngay:Models/LoanReportViewModel.cs
 public sealed record TopHeldBookReportRow(
     int Rank,
     int BookId,
     string BookTitle,
     int PendingHoldCount);
 
+<<<<<<< HEAD:backend/Models/LoanReportViewModel.cs
 =======
 >>>>>>> origin/feature/S4-07/xem_10_dau_sach_duoc_muon:Models/LoanReportViewModel.cs
+=======
+public sealed record DailyLoanReportRow(DateOnly Date, int LoanCount);
+
+>>>>>>> origin/feature/S4-07/xem_bieu_do_luot_muon_theo_ngay:Models/LoanReportViewModel.cs
 public sealed class LoanReportPageViewModel
 {
     public required LoanReportViewModel Summary { get; init; }
     public IReadOnlyList<TopBookReportRow> TopBooks { get; init; } = [];
+<<<<<<< HEAD:backend/Models/LoanReportViewModel.cs
 <<<<<<< HEAD:backend/Models/LoanReportViewModel.cs
     public IReadOnlyList<TopHeldBookReportRow> TopHeldBooks { get; init; } = [];
 }
@@ -42,3 +54,8 @@ public sealed class LoanReportPageViewModel
 =======
 }
 >>>>>>> origin/feature/S4-07/xem_10_dau_sach_duoc_muon:Models/LoanReportViewModel.cs
+=======
+    public IReadOnlyList<TopHeldBookReportRow> TopHeldBooks { get; init; } = [];
+    public IReadOnlyList<DailyLoanReportRow> DailyLoans { get; init; } = [];
+}
+>>>>>>> origin/feature/S4-07/xem_bieu_do_luot_muon_theo_ngay:Models/LoanReportViewModel.cs

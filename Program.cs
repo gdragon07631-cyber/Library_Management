@@ -28,6 +28,7 @@ builder.Services.AddScoped<IWorkingScheduleService, WorkingScheduleService>();
 builder.Services.AddScoped<IBookLoanService, BookLoanService>();
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 builder.Services.AddScoped<ILoanReportService, DemoLoanReportService>();
 =======
 builder.Services.AddScoped<ILoanReportService, LoanReportService>();
@@ -35,6 +36,9 @@ builder.Services.AddScoped<ILoanReportService, LoanReportService>();
 =======
 builder.Services.AddScoped<ILoanReportService, DemoLoanReportService>();
 >>>>>>> origin/feature/S4-07/xem_10_dau_sach_duoc_muon
+=======
+builder.Services.AddScoped<ILoanReportService, LoanReportService>();
+>>>>>>> origin/feature/S4-07/xem_bieu_do_luot_muon_theo_ngay
 builder.Services.AddScoped<IAuditLogService, AuditLogService>();
 builder.Services.AddScoped<IStaffAccountService, StaffAccountService>();
 builder.Services.AddDataProtection()

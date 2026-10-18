@@ -4,7 +4,11 @@ using Project.Models;
 
 namespace Project.Services;
 
+<<<<<<< HEAD:backend/Services/LoanReportService.cs
 /// <summary>Sample data for the practice summary and database-backed ranking queries.</summary>
+=======
+/// <summary>Sample data for the practice summary and database-backed report queries.</summary>
+>>>>>>> origin/feature/S4-07/xem_bieu_do_luot_muon_theo_ngay:Services/LoanReportService.cs
 public sealed class LoanReportService(ApplicationDbContext db) : ILoanReportService
 {
     private sealed record DemoLoan(DateOnly LoanDate, DateOnly DueDate, DateOnly? ReturnedDate);
@@ -74,6 +78,27 @@ public sealed class LoanReportService(ApplicationDbContext db) : ILoanReportServ
             index + 1, row.Id, row.Title, row.PendingHoldCount)).ToList();
     }
 
+<<<<<<< HEAD:backend/Services/LoanReportService.cs
+=======
+    public async Task<IReadOnlyList<DailyLoanReportRow>> GetDailyLoansAsync(
+        DateOnly startDate, DateOnly endDate, CancellationToken cancellationToken = default)
+    {
+        var counts = await db.BookLoans.AsNoTracking()
+            .Where(loan => loan.LoanDate >= startDate && loan.LoanDate <= endDate)
+            .GroupBy(loan => loan.LoanDate)
+            .Select(group => new { Date = group.Key, LoanCount = group.Count() })
+            .ToDictionaryAsync(group => group.Date, group => group.LoanCount, cancellationToken);
+
+        var dailyRows = new List<DailyLoanReportRow>();
+        for (var date = startDate; ; date = date.AddDays(1))
+        {
+            dailyRows.Add(new DailyLoanReportRow(date, counts.GetValueOrDefault(date)));
+            if (date == endDate) break;
+        }
+        return dailyRows;
+    }
+
+>>>>>>> origin/feature/S4-07/xem_bieu_do_luot_muon_theo_ngay:Services/LoanReportService.cs
     private static List<DemoLoan> CreateSamples(DateOnly today)
     {
         var start = today.AddDays(-29);
