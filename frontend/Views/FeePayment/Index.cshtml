@@ -31,6 +31,7 @@
         <section class="card border-0 shadow-sm p-4">
             <h2 class="h5">@debt.Reader.FullName · @debt.Reader.Code</h2>
             <p class="text-muted">@debt.Reader.Email · Thẻ: @debt.Reader.CardCode</p>
+            <p>Trạng thái thẻ: <strong>@(debt.CardStatus ?? "Chưa có thẻ")</strong></p>
             <p class="fs-5">Tổng số tiền còn nợ: <strong>@Money(debt.Balance)</strong></p>
             @if (!debt.IsConsistent)
             {
@@ -63,6 +64,30 @@
                     <div class="form-check mb-3"><input type="checkbox" name="Confirmed" value="true" id="fee-confirmed" required class="form-check-input" /><label for="fee-confirmed" class="form-check-label">Tôi xác nhận đã nhận đúng số tiền thực nộp trên.</label></div>
                     <button type="submit" class="btn btn-primary">Xác nhận thu tiền</button>
                 </form>
+            }
+            <h2 class="h5 mt-4">Lịch sử thanh toán</h2>
+            @if (Model.History.Count == 0)
+            {
+                <p class="text-muted">Chưa có giao dịch thanh toán.</p>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle" id="fee-payment-history">
+                        <thead class="table-light"><tr><th>Giao dịch</th><th>Thời điểm (UTC)</th><th>Người thu</th><th>Đã thu</th><th>Dư nợ sau giao dịch</th><th>Phân bổ</th></tr></thead>
+                        <tbody>
+                        @foreach (var payment in Model.History)
+                        {
+                            <tr><td>#@payment.Id</td><td>@payment.PaidAtUtc.ToString("dd/MM/yyyy HH:mm:ss")</td><td>@payment.CollectedBy</td><td>@Money(payment.Amount)</td><td>@Money(payment.BalanceAfter)</td><td>
+                                @foreach (var allocation in payment.Allocations)
+                                {
+                                    <div>Khoản phí #@allocation.ReaderFeeId: @Money(allocation.Amount)</div>
+                                }
+                            </td></tr>
+                        }
+                        </tbody>
+                    </table>
+                </div>
             }
         </section>
     }

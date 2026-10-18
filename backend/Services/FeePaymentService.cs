@@ -28,7 +28,7 @@ public sealed class FeePaymentService(ApplicationDbContext db) : IFeePaymentServ
         var fees = await db.ReaderFees.AsNoTracking().Where(f => f.ReaderAccountId == readerId)
             .OrderBy(f => f.CreatedAtUtc).ThenBy(f => f.Id).ToListAsync(cancellationToken);
         return new(new(reader.Id, reader.FullName, reader.StudentOrStaffCode, reader.Email, reader.LibraryCard?.CardCode),
-            reader.OutstandingBalance, fees);
+            reader.OutstandingBalance, fees) { CardStatus = reader.LibraryCard?.Status };
     }
 
     public async Task<FeePaymentResult> CollectAsync(CollectFeeViewModel request, int staffId, CancellationToken cancellationToken = default)
@@ -42,9 +42,9 @@ public sealed class FeePaymentService(ApplicationDbContext db) : IFeePaymentServ
         // Durable uniqueness and relational transactions are required; never emulate a payment in memory.
         if (!db.Database.IsRelational()) return new(false, "Thu phí yêu cầu cơ sở dữ liệu hỗ trợ giao dịch.");
 
-        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
         try
         {
+            await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
             var existing = await db.FeePayments.AsNoTracking().SingleOrDefaultAsync(p => p.RequestId == request.RequestId, cancellationToken);
             if (existing is not null)
                 return existing.ReaderAccountId == request.ReaderAccountId && existing.Amount == amount && existing.CollectedByAdminAccountId == staffId
@@ -82,6 +82,14 @@ public sealed class FeePaymentService(ApplicationDbContext db) : IFeePaymentServ
             var balanceUpdated = await db.ReaderAccounts.Where(r => r.Id == request.ReaderAccountId && r.OutstandingBalance == debt.Balance)
                 .ExecuteUpdateAsync(u => u.SetProperty(r => r.OutstandingBalance, debt.Balance - amount), cancellationToken);
             if (balanceUpdated != 1) throw new DbUpdateConcurrencyException();
+            // Only the standalone debt status may be cleared; other lock/status reasons remain intact.
+            if (payment.BalanceAfter == 0m && string.Equals(debt.CardStatus, "Nợ phí", StringComparison.Ordinal))
+            {
+                var cardUpdated = await db.LibraryCards
+                    .Where(card => card.ReaderAccountId == request.ReaderAccountId && card.Status == debt.CardStatus)
+                    .ExecuteUpdateAsync(u => u.SetProperty(card => card.Status, "Đang hoạt động"), cancellationToken);
+                if (cardUpdated != 1) throw new DbUpdateConcurrencyException();
+            }
             db.FeePayments.Add(payment);
             await db.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
@@ -89,9 +97,8 @@ public sealed class FeePaymentService(ApplicationDbContext db) : IFeePaymentServ
         }
         catch (Exception ex) when (ex is DbException or DbUpdateException)
         {
-            await transaction.RollbackAsync(CancellationToken.None);
             db.ChangeTracker.Clear();
-            return new(false, "Chưa thể xác nhận giao dịch. Vui lòng tải lại và gửi lại cùng mã yêu cầu để kiểm tra, tránh thu tiền hai lần.");
+            return new(false, "Chưa thể xác nhận giao dịch. Hãy gửi lại biểu mẫu này để kiểm tra cùng mã yêu cầu; không nhận thêm tiền từ bạn đọc.");
         }
     }
 }
