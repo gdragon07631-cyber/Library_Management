@@ -75,7 +75,9 @@ public sealed class LibraryDemoDataSeeder(ApplicationDbContext db)
         var booksAdded = 0;
         var copiesAdded = 0;
 
-        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        await using var transaction = db.Database.CurrentTransaction is null
+            ? await db.Database.BeginTransactionAsync(cancellationToken)
+            : null;
 
         foreach (var name in AuthorNames)
         {
@@ -138,7 +140,7 @@ public sealed class LibraryDemoDataSeeder(ApplicationDbContext db)
                     Title = seed.Title, Isbn = isbn, AuthorId = authors[AuthorNames[seed.AuthorIndex]].Id,
                     CategoryId = categories[CategoryNames[seed.CategoryIndex]].Id, Publisher = seed.Publisher,
                     PublicationYear = seed.Year, PageCount = seed.Pages,
-                    Description = seed.Description + " ISBN chỉ dùng để minh họa dữ liệu demo."
+                    Description = seed.Description + " ISBN chỉ dùng để minh họa dữ liệu demo. " + StagingDemoMarkers.BookDescription
                 };
                 book.BookAuthors.Add(new BookAuthor { AuthorId = book.AuthorId, SortOrder = 0 });
                 db.Books.Add(book);
@@ -162,7 +164,8 @@ public sealed class LibraryDemoDataSeeder(ApplicationDbContext db)
         }
 
         await db.SaveChangesAsync(cancellationToken);
-        await transaction.CommitAsync(cancellationToken);
+        if (transaction is not null)
+            await transaction.CommitAsync(cancellationToken);
         return new(authorsAdded, categoriesAdded, warehousesAdded, shelvesAdded, booksAdded, copiesAdded);
     }
 

@@ -1,0 +1,11 @@
+.git
+.vs
+.vscode
+**/bin
+**/obj
+**/TestResults
+.env
+.env.*
+!.env.example
+frontend/wwwroot/uploads
+backend/Data/Keys

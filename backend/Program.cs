@@ -153,6 +153,67 @@ if (args.Contains("--seed-library-demo", StringComparer.OrdinalIgnoreCase))
     return;
 }
 
+if (args.Contains("--seed-staging-demo", StringComparer.OrdinalIgnoreCase))
+{
+    StagingResetEnvironmentGuard.EnsureStaging(app.Environment);
+
+    await using var scope = app.Services.CreateAsyncScope();
+    var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+    var passwords = new Dictionary<string, string?>
+    {
+        ["SYSTEM_ADMIN"] = app.Configuration["STAGING_DEMO_SYSTEM_ADMIN_PASSWORD"],
+        ["LIBRARY_MANAGER"] = app.Configuration["STAGING_DEMO_LIBRARY_MANAGER_PASSWORD"],
+        ["LIBRARIAN"] = app.Configuration["STAGING_DEMO_LIBRARIAN_PASSWORD"],
+        ["READER"] = app.Configuration["STAGING_DEMO_READER_PASSWORD"]
+    };
+    try
+    {
+        await dbContext.Database.MigrateAsync();
+        var seeder = new StagingAcceptanceDataSeeder(
+            dbContext,
+            scope.ServiceProvider.GetRequiredService<IPasswordHasher<AdminAccount>>(),
+            scope.ServiceProvider.GetRequiredService<IPasswordHasher<ReaderAccount>>());
+        var result = await seeder.SeedAsync(passwords);
+        Console.WriteLine(
+            $"Staging sample reset complete: books={result.Books}, copies={result.Copies}, readers={result.Readers}, loans={result.Loans}.");
+        foreach (var state in result.LoanStates.OrderBy(item => item.Key, StringComparer.Ordinal))
+            Console.WriteLine($"  {state.Key}: {state.Value}");
+        foreach (var account in result.DemoAccounts.OrderBy(item => item.Key, StringComparer.Ordinal))
+            Console.WriteLine($"  account {account.Key}: {(account.Value ? "created" : "preserved")}");
+    }
+    catch (Exception exception)
+    {
+        Console.Error.WriteLine($"Staging sample reset failed; transaction was rolled back: {exception.Message}");
+        throw;
+    }
+    return;
+}
+
+if (args.Contains("--seed-staging-demo-accounts", StringComparer.OrdinalIgnoreCase))
+{
+    StagingResetEnvironmentGuard.EnsureStaging(app.Environment);
+
+    await using var scope = app.Services.CreateAsyncScope();
+    var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+    await dbContext.Database.MigrateAsync();
+    var accountSeeder = new StagingDemoAccountsSeeder(
+        dbContext,
+        scope.ServiceProvider.GetRequiredService<IPasswordHasher<AdminAccount>>(),
+        scope.ServiceProvider.GetRequiredService<IPasswordHasher<ReaderAccount>>());
+    var passwords = new Dictionary<string, string?>
+    {
+        ["SYSTEM_ADMIN"] = app.Configuration["STAGING_DEMO_SYSTEM_ADMIN_PASSWORD"],
+        ["LIBRARY_MANAGER"] = app.Configuration["STAGING_DEMO_LIBRARY_MANAGER_PASSWORD"],
+        ["LIBRARIAN"] = app.Configuration["STAGING_DEMO_LIBRARIAN_PASSWORD"],
+        ["READER"] = app.Configuration["STAGING_DEMO_READER_PASSWORD"]
+    };
+    var result = await accountSeeder.SeedAsync(passwords);
+    Console.WriteLine("Staging demo accounts checked (passwords omitted):");
+    foreach (var item in result.Created)
+        Console.WriteLine($"  {item.Key}: {(item.Value ? "created" : "already exists; unchanged")}");
+    return;
+}
+
 if (args.Contains("--seed-hold-pickup", StringComparer.OrdinalIgnoreCase))
 {
     await using var scope = app.Services.CreateAsyncScope();
@@ -290,6 +351,15 @@ if (string.IsNullOrWhiteSpace(jwtSigningKey) || System.Text.Encoding.UTF8.GetByt
         "Configure Jwt:SigningKey using dotnet user-secrets or the Jwt__SigningKey environment variable (minimum 32 bytes) before starting the web app.");
 }
 
+// Staging starts from an empty SQL Server volume on first launch. Apply the existing
+// migrations before serving requests; other environments retain their current behavior.
+if (app.Environment.IsStaging())
+{
+    await using var scope = app.Services.CreateAsyncScope();
+    var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+    await dbContext.Database.MigrateAsync();
+}
+
 // Configure the HTTP request pipeline.
 if (!app.Environment.IsDevelopment())
 {
@@ -305,6 +375,14 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.UseStaticFiles();
+
+app.MapGet("/health/ready", async Task<IResult> (ApplicationDbContext dbContext, CancellationToken cancellationToken) =>
+{
+    if (await dbContext.Database.CanConnectAsync(cancellationToken))
+        return Results.Ok(new { status = "ready" });
+
+    return Results.StatusCode(StatusCodes.Status503ServiceUnavailable);
+});
 
 app.MapControllerRoute(
     name: "default",

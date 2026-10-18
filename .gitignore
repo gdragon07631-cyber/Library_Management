@@ -6,6 +6,9 @@ artifacts/
 backend/Data/Keys/
 *.user
 *.suo
+.env
+.env.*
+!.env.example
 
 # Ảnh người dùng tải lên khi chạy app (mỗi máy một bộ khác nhau, không đưa lên Git)
 frontend/wwwroot/uploads/
