@@ -600,6 +600,80 @@ namespace Project.Migrations
                     b.ToTable("LibraryCards", (string)null);
                 });
 
+            modelBuilder.Entity("Project.Models.LibraryCardLockHistory", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("CardCode")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("EventType")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<bool>("IsLockUntilManualUnlock")
+                        .HasColumnType("bit");
+
+                    b.Property<int>("LibraryCardId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("LockExpiresAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("LockReason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<DateTime?>("LockedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("OccurredAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("PerformedBy")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<int?>("PerformedByAdminAccountId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("ReaderAccountId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("ReaderName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("UnlockReason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CardCode");
+
+                    b.HasIndex("OccurredAtUtc");
+
+                    b.HasIndex("ReaderAccountId", "OccurredAtUtc");
+
+                    b.ToTable("LibraryCardLockHistories", t =>
+                        {
+                            t.HasTrigger("TR_LibraryCardLockHistories_ReadOnly");
+                        });
+
+                    b.HasAnnotation("SqlServer:UseSqlOutputClause", false);
+                });
+
+
             modelBuilder.Entity("Project.Models.LibraryCardType", b =>
                 {
                     b.Property<int>("Id")

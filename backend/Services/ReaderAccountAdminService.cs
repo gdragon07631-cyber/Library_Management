@@ -8,6 +8,7 @@ namespace Project.Services;
 public sealed class ReaderAccountAdminService(ApplicationDbContext dbContext) : IReaderAccountAdminService
 {
     private const int HistoryLimit = 50;
+    private const int CardLockHistoryLimit = 200;
 
     public async Task<IReadOnlyList<ReaderAccount>> SearchAsync(
         string? keyword, string? status, int limit, CancellationToken cancellationToken = default)
@@ -66,12 +67,19 @@ public sealed class ReaderAccountAdminService(ApplicationDbContext dbContext) : 
             .Take(HistoryLimit)
             .ToListAsync(cancellationToken);
 
+        var cardLockHistory = await dbContext.LibraryCardLockHistories.AsNoTracking()
+            .Where(entry => entry.ReaderAccountId == id)
+            .OrderByDescending(entry => entry.OccurredAtUtc).ThenByDescending(entry => entry.Id)
+            .Take(CardLockHistoryLimit)
+            .ToListAsync(cancellationToken);
+
         return new ReaderAccountAdminDetailsViewModel
         {
             Reader = reader,
             Form = ToForm(reader),
             ActiveHolds = holds,
-            History = history
+            History = history,
+            CardLockHistory = cardLockHistory
         };
     }
 
@@ -194,6 +202,27 @@ public sealed class ReaderAccountAdminService(ApplicationDbContext dbContext) : 
         card.LockedByAdminAccountId = lockedByAdminAccountId;
         reader.UpdatedAtUtc = DateTime.UtcNow;
 
+        // Nhật ký khoá được lưu cùng giao dịch với trạng thái thẻ: không có thẻ bị khoá mà thiếu nhật ký.
+        var performedBy = await dbContext.AdminAccounts.AsNoTracking()
+            .Where(admin => admin.Id == lockedByAdminAccountId)
+            .Select(admin => admin.Email)
+            .SingleOrDefaultAsync(cancellationToken);
+        dbContext.LibraryCardLockHistories.Add(new LibraryCardLockHistory
+        {
+            LibraryCardId = card.Id,
+            CardCode = card.CardCode,
+            ReaderAccountId = reader.Id,
+            ReaderName = reader.FullName,
+            EventType = LibraryCardLockEvents.Lock,
+            OccurredAtUtc = lockStartedAtUtc,
+            PerformedByAdminAccountId = lockedByAdminAccountId,
+            PerformedBy = performedBy ?? $"Nhân sự #{lockedByAdminAccountId}",
+            LockReason = trimmedReason,
+            LockedAtUtc = lockStartedAtUtc,
+            LockExpiresAtUtc = card.LockExpiresAtUtc,
+            IsLockUntilManualUnlock = manualUnlock
+        });
+
         await dbContext.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return new(ReaderAccountAdminStatus.Success, Reader: reader);
@@ -213,7 +242,7 @@ public sealed class ReaderAccountAdminService(ApplicationDbContext dbContext) : 
         if (trimmedReason.Length > 1000)
             return new(ReaderAccountAdminStatus.MissingReason, "Lý do mở khoá thẻ không được vượt quá 1000 ký tự.");
 
-        var reader = await dbContext.ReaderAccounts
+        var reader = await dbContext.ReaderAccounts.AsNoTracking()
             .Include(item => item.LibraryCard)
             .SingleOrDefaultAsync(item => item.Id == readerId, cancellationToken);
         if (reader is null)
@@ -223,39 +252,105 @@ public sealed class ReaderAccountAdminService(ApplicationDbContext dbContext) : 
         if (card is null)
             return new(ReaderAccountAdminStatus.NotFound, "Bạn đọc chưa được cấp thẻ. Không thể mở khoá thẻ.");
 
-        if (!LibraryCardStatusHelper.IsCardLocked(card, DateTime.UtcNow))
-            return new(ReaderAccountAdminStatus.NoChange, "Thẻ đang hoạt động, không cần mở khoá thêm.", reader);
-
-        var previousReason = string.IsNullOrWhiteSpace(card.LockReason) ? "Không có lý do cụ thể." : card.LockReason.Trim();
         var now = DateTime.UtcNow;
+        if (!LibraryCardStatusHelper.IsCardLocked(card, now))
+        {
+            // Khoá có thời hạn đã tự hết hạn: không ghi thêm một lần mở khoá cho trạng thái đã hoạt động.
+            var message = card.LockExpiresAtUtc is { } expired && card.LockedAtUtc.HasValue
+                ? $"Thẻ đã hết hạn khoá từ {DateTime.SpecifyKind(expired, DateTimeKind.Utc).ToLocalTime():dd/MM/yyyy HH:mm} và đang hoạt động, không cần mở khoá."
+                : "Thẻ đang hoạt động, không cần mở khoá thêm.";
+            return new(ReaderAccountAdminStatus.NoChange, message, reader);
+        }
+
+        var previous = (card.Status, card.LockReason, card.LockedAtUtc, card.LockExpiresAtUtc, card.IsLockUntilManualUnlock);
+        var previousReason = string.IsNullOrWhiteSpace(previous.LockReason) ? "Không có lý do cụ thể." : previous.LockReason.Trim();
 
         await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
-        try
-        {
-            card.Status = "Đang hoạt động";
-            card.LockReason = null;
-            card.LockedAtUtc = null;
-            card.LockExpiresAtUtc = null;
-            card.IsLockUntilManualUnlock = false;
-            card.LockedByAdminAccountId = null;
-            reader.UpdatedAtUtc = now;
-
-            dbContext.AuditLogs.Add(AuditLogService.Create(
-                actorEmail,
-                AuditActions.UnlockCard,
-                $"Thẻ bạn đọc #{reader.Id} ({reader.Email}) – mã thẻ {card.CardCode} – lý do khóa trước đó: {previousReason} – lý do mở khóa: {trimmedReason}",
-                ipAddress));
-
-            await dbContext.SaveChangesAsync(cancellationToken);
-            await transaction.CommitAsync(cancellationToken);
-            return new(ReaderAccountAdminStatus.Success, Reader: reader);
-        }
-        catch
+        // Chỉ cập nhật khi thẻ vẫn đúng trạng thái khoá vừa đọc: hai yêu cầu mở khoá đồng thời chỉ một yêu cầu thành công,
+        // tránh ghi hai lần mở khoá cho cùng một lần khoá.
+        var affected = await dbContext.LibraryCards
+            .Where(item => item.Id == card.Id && item.Status == previous.Status && item.LockedAtUtc == previous.LockedAtUtc)
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(item => item.Status, "Đang hoạt động")
+                .SetProperty(item => item.LockReason, (string?)null)
+                .SetProperty(item => item.LockedAtUtc, (DateTime?)null)
+                .SetProperty(item => item.LockExpiresAtUtc, (DateTime?)null)
+                .SetProperty(item => item.IsLockUntilManualUnlock, false)
+                .SetProperty(item => item.LockedByAdminAccountId, (int?)null), cancellationToken);
+        if (affected != 1)
         {
             await transaction.RollbackAsync(cancellationToken);
-            throw;
+            return new(ReaderAccountAdminStatus.NoChange, "Thẻ vừa được cập nhật bởi thao tác khác. Vui lòng tải lại trang để xem trạng thái mới nhất.", reader);
         }
+
+        await dbContext.ReaderAccounts.Where(item => item.Id == reader.Id)
+            .ExecuteUpdateAsync(setters => setters.SetProperty(item => item.UpdatedAtUtc, now), cancellationToken);
+        dbContext.LibraryCardLockHistories.Add(new LibraryCardLockHistory
+        {
+            LibraryCardId = card.Id,
+            CardCode = card.CardCode,
+            ReaderAccountId = reader.Id,
+            ReaderName = reader.FullName,
+            EventType = LibraryCardLockEvents.Unlock,
+            OccurredAtUtc = now,
+            PerformedByAdminAccountId = unlockedByAdminAccountId,
+            PerformedBy = actorEmail,
+            LockReason = previous.LockReason?.Trim(),
+            UnlockReason = trimmedReason,
+            LockedAtUtc = previous.LockedAtUtc,
+            LockExpiresAtUtc = previous.LockExpiresAtUtc,
+            IsLockUntilManualUnlock = previous.IsLockUntilManualUnlock
+        });
+        dbContext.AuditLogs.Add(AuditLogService.Create(
+            actorEmail,
+            AuditActions.UnlockCard,
+            $"Thẻ bạn đọc #{reader.Id} ({reader.Email}) – mã thẻ {card.CardCode} – lý do khóa trước đó: {previousReason} – lý do mở khóa: {trimmedReason}",
+            ipAddress));
+
+        // Lỗi ở bất kỳ bước nào sẽ huỷ giao dịch: thẻ vẫn khoá và không có nhật ký mở khoá dở dang.
+        await dbContext.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+
+        card.Status = "Đang hoạt động";
+        card.LockReason = null;
+        card.LockedAtUtc = null;
+        card.LockExpiresAtUtc = null;
+        card.IsLockUntilManualUnlock = false;
+        card.LockedByAdminAccountId = null;
+        return new(ReaderAccountAdminStatus.Success, Reader: reader);
     }
+
+    public async Task<IReadOnlyList<LibraryCardLockHistory>> SearchCardLockHistoryAsync(
+        LibraryCardLockHistoryFilter filter, int limit, CancellationToken cancellationToken = default)
+    {
+        var query = dbContext.LibraryCardLockHistories.AsNoTracking();
+        if (filter.ReaderAccountId is int readerId)
+            query = query.Where(entry => entry.ReaderAccountId == readerId);
+        if (!string.IsNullOrWhiteSpace(filter.Q))
+        {
+            var term = filter.Q.Trim();
+            query = query.Where(entry => entry.CardCode.Contains(term) || entry.ReaderName.Contains(term));
+        }
+        if (!string.IsNullOrWhiteSpace(filter.EventType))
+            query = query.Where(entry => entry.EventType == filter.EventType);
+        // Ngày lọc theo giờ thư viện; dữ liệu lưu UTC.
+        if (filter.FromDate is DateOnly from)
+        {
+            var fromUtc = TimeZoneInfo.ConvertTimeToUtc(from.ToDateTime(TimeOnly.MinValue), TimeZoneInfo.Local);
+            query = query.Where(entry => entry.OccurredAtUtc >= fromUtc);
+        }
+        if (filter.ToDate is DateOnly to)
+        {
+            var toExclusiveUtc = TimeZoneInfo.ConvertTimeToUtc(to.AddDays(1).ToDateTime(TimeOnly.MinValue), TimeZoneInfo.Local);
+            query = query.Where(entry => entry.OccurredAtUtc < toExclusiveUtc);
+        }
+
+        return await query.OrderByDescending(entry => entry.OccurredAtUtc).ThenByDescending(entry => entry.Id)
+            .Take(limit).ToListAsync(cancellationToken);
+    }
+
+    public Task<LibraryCardLockHistory?> GetCardLockHistoryAsync(long id, CancellationToken cancellationToken = default) =>
+        dbContext.LibraryCardLockHistories.AsNoTracking().SingleOrDefaultAsync(entry => entry.Id == id, cancellationToken);
 
     public async Task<ReaderAccountAdminResult> RevokeSessionsAsync(int id, CancellationToken cancellationToken = default)
     {

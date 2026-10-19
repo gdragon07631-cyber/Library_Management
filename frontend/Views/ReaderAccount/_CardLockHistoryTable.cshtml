@@ -1,0 +1,36 @@
+@model IReadOnlyList<Project.Models.LibraryCardLockHistory>
+@{
+    string Local(DateTime utc) => DateTime.SpecifyKind(utc, DateTimeKind.Utc).ToLocalTime().ToString("dd/MM/yyyy HH:mm");
+}
+<div class="table-responsive">
+    <table class="table table-sm align-middle mb-0" id="cardLockHistoryTable">
+        <thead>
+            <tr>
+                <th>Thời điểm</th>
+                <th>Mã thẻ</th>
+                <th>Tên bạn đọc</th>
+                <th>Sự kiện</th>
+                <th>Người thực hiện</th>
+                <th>Lý do khoá</th>
+                <th>Lý do mở khoá</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var entry in Model)
+            {
+                var isUnlock = entry.EventType == LibraryCardLockEvents.Unlock;
+                <tr>
+                    <td class="text-nowrap">@Local(entry.OccurredAtUtc)</td>
+                    <td class="font-monospace">@entry.CardCode</td>
+                    <td><a asp-controller="ReaderAccount" asp-action="Details" asp-route-id="@entry.ReaderAccountId">@entry.ReaderName</a></td>
+                    <td><span class="badge @(isUnlock ? "bg-success-subtle text-success-emphasis" : "bg-danger-subtle text-danger-emphasis")">@entry.EventType</span></td>
+                    <td class="small">@entry.PerformedBy</td>
+                    <td class="small">@(string.IsNullOrWhiteSpace(entry.LockReason) ? "—" : entry.LockReason)</td>
+                    <td class="small">@(entry.UnlockReason ?? "—")</td>
+                    <td class="text-end"><a class="btn btn-sm btn-outline-secondary" asp-controller="ReaderAccount" asp-action="CardLockHistoryDetails" asp-route-id="@entry.Id">Chi tiết</a></td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>

@@ -47,4 +47,5 @@ public sealed class ReaderAccountAdminDetailsViewModel
     public required ReaderAccountAdminFormViewModel Form { get; init; }
     public IReadOnlyList<BookHold> ActiveHolds { get; init; } = [];
     public IReadOnlyList<AuditLog> History { get; init; } = [];
+    public IReadOnlyList<LibraryCardLockHistory> CardLockHistory { get; init; } = [];
 }

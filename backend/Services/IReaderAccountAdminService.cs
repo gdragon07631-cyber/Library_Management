@@ -53,6 +53,12 @@ public interface IReaderAccountAdminService
         string? ipAddress,
         CancellationToken cancellationToken = default);
 
+    /// <summary>Tra cứu nhật ký khoá/mở khoá thẻ, mới nhất trước.</summary>
+    Task<IReadOnlyList<LibraryCardLockHistory>> SearchCardLockHistoryAsync(
+        LibraryCardLockHistoryFilter filter, int limit, CancellationToken cancellationToken = default);
+
+    Task<LibraryCardLockHistory?> GetCardLockHistoryAsync(long id, CancellationToken cancellationToken = default);
+
     /// <summary>Đăng xuất bạn đọc khỏi mọi thiết bị (ví dụ khi nghi bị lộ mật khẩu).</summary>
     Task<ReaderAccountAdminResult> RevokeSessionsAsync(int id, CancellationToken cancellationToken = default);
 }

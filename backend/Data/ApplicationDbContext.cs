@@ -37,8 +37,10 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
     public DbSet<LoanPolicy> LoanPolicies => Set<LoanPolicy>();
     public DbSet<StaffPasswordSetupToken> StaffPasswordSetupTokens => Set<StaffPasswordSetupToken>();
+    public DbSet<LibraryCardLockHistory> LibraryCardLockHistories => Set<LibraryCardLockHistory>();
 
     public const string AuditLogReadOnlyTrigger = "TR_AuditLogs_ReadOnly";
+    public const string CardLockHistoryReadOnlyTrigger = "TR_LibraryCardLockHistories_ReadOnly";
 
     public override int SaveChanges(bool acceptAllChangesOnSuccess)
     {
@@ -57,6 +59,8 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     {
         if (ChangeTracker.Entries<AuditLog>().Any(entry => entry.State is EntityState.Modified or EntityState.Deleted))
             throw new InvalidOperationException("Nhật ký hoạt động là dữ liệu chỉ đọc, không được sửa hoặc xóa.");
+        if (ChangeTracker.Entries<LibraryCardLockHistory>().Any(entry => entry.State is EntityState.Modified or EntityState.Deleted))
+            throw new InvalidOperationException("Nhật ký khoá/mở khoá thẻ là dữ liệu chỉ đọc, không được sửa hoặc xóa.");
     }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -423,6 +427,18 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
             entity.Property(log => log.Action).HasMaxLength(100).IsRequired();
             entity.Property(log => log.Target).HasMaxLength(500).IsRequired();
             entity.Property(log => log.IpAddress).HasMaxLength(45).IsRequired();
+        });
+
+        modelBuilder.Entity<LibraryCardLockHistory>(entity =>
+        {
+            // Không đặt khoá ngoại: nhật ký phải giữ nguyên kể cả khi thẻ, bạn đọc hoặc nhân sự bị thay đổi/xoá.
+            entity.ToTable(table => table.HasTrigger(CardLockHistoryReadOnlyTrigger));
+            entity.HasIndex(history => history.OccurredAtUtc);
+            entity.HasIndex(history => new { history.ReaderAccountId, history.OccurredAtUtc });
+            entity.HasIndex(history => history.CardCode);
+            entity.Property(history => history.OccurredAtUtc).HasColumnType("datetime2");
+            entity.Property(history => history.LockedAtUtc).HasColumnType("datetime2");
+            entity.Property(history => history.LockExpiresAtUtc).HasColumnType("datetime2");
         });
 
         modelBuilder.Entity<LoanPolicy>(entity =>

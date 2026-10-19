@@ -1,0 +1,70 @@
+@model Project.Models.LibraryCardLockHistoryPageViewModel
+@{
+    ViewData["Title"] = "Lịch sử khoá/mở khoá thẻ";
+    var filter = Model.Filter;
+}
+<div class="container py-4">
+    <a asp-action="Index" class="small text-decoration-none">← Danh sách tài khoản bạn đọc</a>
+    <div class="mt-2 mb-4">
+        <h1 class="h3 mb-1 text-primary fw-bold">Lịch sử khoá/mở khoá thẻ</h1>
+        <p class="text-muted mb-0">Nhật ký chỉ đọc của mọi lần khoá và mở khoá thẻ bạn đọc, mới nhất trước.</p>
+    </div>
+
+    <form method="get" class="card shadow-sm border-0 mb-4" id="cardLockHistoryFilter">
+        <div class="card-body row g-3 align-items-end">
+            @if (filter.ReaderAccountId is int readerId)
+            {
+                <input type="hidden" name="ReaderAccountId" value="@readerId" />
+            }
+            <div class="col-md-4">
+                <label for="Q" class="form-label small text-muted mb-1">Mã thẻ hoặc tên bạn đọc</label>
+                <input type="search" id="Q" name="Q" value="@filter.Q" class="form-control" />
+            </div>
+            <div class="col-sm-6 col-md-2">
+                <label for="FromDate" class="form-label small text-muted mb-1">Từ ngày</label>
+                <input type="date" id="FromDate" name="FromDate" value="@filter.FromDate?.ToString("yyyy-MM-dd")" class="form-control" />
+            </div>
+            <div class="col-sm-6 col-md-2">
+                <label for="ToDate" class="form-label small text-muted mb-1">Đến ngày</label>
+                <input type="date" id="ToDate" name="ToDate" value="@filter.ToDate?.ToString("yyyy-MM-dd")" class="form-control" />
+            </div>
+            <div class="col-sm-6 col-md-2">
+                <label for="EventType" class="form-label small text-muted mb-1">Sự kiện</label>
+                <select id="EventType" name="EventType" class="form-select">
+                    <option value="" selected="@string.IsNullOrEmpty(filter.EventType)">Tất cả</option>
+                    @foreach (var eventType in LibraryCardLockEvents.All)
+                    {
+                        <option value="@eventType" selected="@(filter.EventType == eventType)">@eventType</option>
+                    }
+                </select>
+            </div>
+            <div class="col-sm-6 col-md-2 d-flex gap-2">
+                <button type="submit" class="btn btn-primary flex-grow-1">Lọc</button>
+                <a asp-action="CardLockHistory" class="btn btn-outline-secondary">Xoá lọc</a>
+            </div>
+        </div>
+    </form>
+
+    @if (filter.ReaderAccountId is int filteredReader)
+    {
+        <div class="alert alert-info small">Đang xem lịch sử của một bạn đọc (#@filteredReader). <a asp-action="CardLockHistory" class="alert-link">Xem tất cả bạn đọc</a></div>
+    }
+
+    @if (Model.ErrorMessage is string error)
+    {
+        <div class="alert alert-danger" role="alert">@error</div>
+    }
+    else if (Model.Entries.Count == 0)
+    {
+        <div class="alert alert-light border text-muted" role="status">Không có bản ghi khoá/mở khoá thẻ nào phù hợp.</div>
+    }
+    else
+    {
+        <div class="card shadow-sm border-0">
+            <div class="card-body">
+                <p class="small text-muted">@Model.Entries.Count bản ghi@(Model.Entries.Count >= Model.Limit ? $" (hiển thị {Model.Limit} bản ghi mới nhất, hãy thu hẹp bộ lọc)" : "").</p>
+                <partial name="_CardLockHistoryTable" model="Model.Entries" />
+            </div>
+        </div>
+    }
+</div>

@@ -196,7 +196,8 @@ public sealed class ReaderAccountController(
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> SetCardUnlocked(int id, string? reason, CancellationToken cancellationToken = default)
     {
-        var (admin, denied) = await RequireSystemAdminAsync(cancellationToken);
+        // Cùng quyền với khoá thẻ (Lát 1): Quản lý thư viện hoặc Quản trị hệ thống; người thực hiện lấy từ phiên đăng nhập.
+        var (admin, denied) = await RequireCardManagerAsync(cancellationToken);
         if (denied is not null) return denied;
 
         var details = await readerAccountService.GetDetailsAsync(id, cancellationToken);
@@ -212,12 +213,6 @@ public sealed class ReaderAccountController(
         if (string.IsNullOrWhiteSpace(reason))
         {
             TempData["ErrorMessage"] = "Vui lòng nhập lý do mở khoá thẻ.";
-            return RedirectToAction(nameof(Details), new { id });
-        }
-
-        if (!LibraryCardStatusHelper.IsCardLocked(card, DateTime.UtcNow))
-        {
-            TempData["ErrorMessage"] = "Thẻ đang hoạt động, không cần mở khoá thêm.";
             return RedirectToAction(nameof(Details), new { id });
         }
 
@@ -237,6 +232,73 @@ public sealed class ReaderAccountController(
 
         TempData["SuccessMessage"] = $"Đã mở khoá thẻ {card.CardCode}. Thẻ quay lại trạng thái hoạt động.";
         return RedirectToAction(nameof(Details), new { id });
+    }
+
+    private const int CardLockHistoryLimit = 500;
+
+    /// <summary>Lịch sử khoá/mở khoá thẻ: tìm theo mã thẻ hoặc tên bạn đọc, lọc theo khoảng ngày và loại sự kiện.</summary>
+    [HttpGet]
+    public async Task<IActionResult> CardLockHistory([FromQuery] LibraryCardLockHistoryFilter filter, CancellationToken cancellationToken = default)
+    {
+        var (_, denied) = await RequireCardManagerAsync(cancellationToken);
+        if (denied is not null) return denied;
+
+        var error = ValidateHistoryFilter(filter);
+        return View(new LibraryCardLockHistoryPageViewModel
+        {
+            Filter = filter,
+            Limit = CardLockHistoryLimit,
+            ErrorMessage = error,
+            Entries = error is null ? await readerAccountService.SearchCardLockHistoryAsync(filter, CardLockHistoryLimit, cancellationToken) : []
+        });
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> CardLockHistoryDetails(long id, CancellationToken cancellationToken = default)
+    {
+        var (_, denied) = await RequireCardManagerAsync(cancellationToken);
+        if (denied is not null) return denied;
+
+        var entry = await readerAccountService.GetCardLockHistoryAsync(id, cancellationToken);
+        return entry is null ? NotFound("Không tìm thấy bản ghi nhật ký khoá/mở khoá thẻ.") : View(entry);
+    }
+
+    [HttpGet("api/card-lock-history")]
+    public async Task<IActionResult> CardLockHistoryApi([FromQuery] LibraryCardLockHistoryFilter filter, CancellationToken cancellationToken = default)
+    {
+        if (await RequireCardManagerApiAsync(cancellationToken) is { } denied) return denied;
+
+        var error = ValidateHistoryFilter(filter);
+        if (error is not null) return BadRequest(new { message = error });
+        return Ok(await readerAccountService.SearchCardLockHistoryAsync(filter, CardLockHistoryLimit, cancellationToken));
+    }
+
+    [HttpGet("api/card-lock-history/{id:long}")]
+    public async Task<IActionResult> CardLockHistoryEntryApi(long id, CancellationToken cancellationToken = default)
+    {
+        if (await RequireCardManagerApiAsync(cancellationToken) is { } denied) return denied;
+
+        var entry = await readerAccountService.GetCardLockHistoryAsync(id, cancellationToken);
+        return entry is null ? NotFound(new { message = "Không tìm thấy bản ghi nhật ký khoá/mở khoá thẻ." }) : Ok(entry);
+    }
+
+    private static string? ValidateHistoryFilter(LibraryCardLockHistoryFilter filter)
+    {
+        if (filter.FromDate is { } from && filter.ToDate is { } to && from > to)
+            return "Từ ngày phải trước hoặc bằng đến ngày.";
+        if (!string.IsNullOrWhiteSpace(filter.EventType) && !LibraryCardLockEvents.All.Contains(filter.EventType))
+            return "Loại sự kiện không hợp lệ.";
+        return null;
+    }
+
+    /// <summary>API trả JSON 401/403 thay vì chuyển trang đăng nhập.</summary>
+    private async Task<IActionResult?> RequireCardManagerApiAsync(CancellationToken cancellationToken)
+    {
+        var staff = await auditLogService.GetSignedInStaffAsync(Request, cancellationToken);
+        if (staff is null) return Unauthorized(new { message = "Vui lòng đăng nhập tài khoản nhân sự." });
+        return staff.Role is AccountRoles.SystemAdmin or AccountRoles.LibraryManager
+            ? null
+            : StatusCode(StatusCodes.Status403Forbidden, new { message = "Chỉ Quản lý thư viện hoặc Quản trị hệ thống được xem nhật ký khoá/mở khoá thẻ." });
     }
 
     [HttpPost]

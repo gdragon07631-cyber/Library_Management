@@ -121,7 +121,8 @@ public sealed class AuditLogFilterTests : IDisposable
         Assert.Equal(
             [
                 AuditActions.Login, AuditActions.LoginFailed, AuditActions.Logout, AuditActions.CreateAccount, AuditActions.UpdateAccount,
-                AuditActions.ChangePassword, AuditActions.ResetPassword, AuditActions.IssueCard, AuditActions.CreateLoan,
+                AuditActions.ChangePassword, AuditActions.ResetPassword, AuditActions.IssueCard,
+                AuditActions.LockCard, AuditActions.UnlockCard, AuditActions.CreateLoan,
                 AuditActions.RenewLoan, AuditActions.PlaceHold, AuditActions.CancelHold, AuditActions.UpdateLoanPolicy
             ],
             new AuditLogIndexViewModel().Actions);

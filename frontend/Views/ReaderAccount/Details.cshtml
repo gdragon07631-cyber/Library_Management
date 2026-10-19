@@ -176,7 +176,11 @@
                         @if (LibraryCardStatusHelper.IsCardLocked(card, DateTime.UtcNow))
                         {
                             <div class="alert alert-danger small mt-3 mb-0" role="alert">
-                                <strong>Đang bị khoá.</strong> Lý do: @card.LockReason<br />
+                                <strong>Đang bị khoá.</strong> Lý do: @(string.IsNullOrWhiteSpace(card.LockReason) ? "Không có lý do cụ thể." : card.LockReason)<br />
+                                @if (card.LockedAtUtc is { } lockedAt)
+                                {
+                                    <text>Khoá lúc: @Local(lockedAt).<br /></text>
+                                }
                                 @(card.IsLockUntilManualUnlock || !card.LockExpiresAtUtc.HasValue
                                     ? "Tới khi được mở khoá thủ công."
                                     : $"Hạn khoá: {Local(card.LockExpiresAtUtc.Value)}.")
@@ -203,58 +207,17 @@
 
     <div class="card shadow-sm border-0 mt-4">
         <div class="card-body">
-            <h2 class="h5 fw-bold mb-3">Lịch sử khoá / mở khoá thẻ</h2>
-            @{
-                var cardHistory = Model.History
-                    .Where(log => log.Action == AuditActions.LockCard || log.Action == AuditActions.UnlockCard)
-                    .OrderByDescending(log => log.OccurredAtUtc)
-                    .ToList();
-            }
-            @if (cardHistory.Count == 0)
+            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+                <h2 class="h5 fw-bold mb-0">Lịch sử khoá / mở khoá thẻ</h2>
+                <a class="btn btn-sm btn-outline-secondary" asp-action="CardLockHistory" asp-route-ReaderAccountId="@reader.Id">Xem toàn bộ và lọc</a>
+            </div>
+            @if (Model.CardLockHistory.Count == 0)
             {
                 <p class="text-muted mb-0">Chưa có nhật ký khoá hoặc mở khoá thẻ.</p>
             }
             else
             {
-                <div class="table-responsive">
-                    <table class="table table-sm align-middle mb-0">
-                        <thead>
-                            <tr>
-                                <th>Thời điểm</th>
-                                <th>Mã thẻ</th>
-                                <th>Tên bạn đọc</th>
-                                <th>Sự kiện</th>
-                                <th>Người thực hiện</th>
-                                <th>Lý do khoá</th>
-                                <th>Lý do mở khoá</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @foreach (var log in cardHistory)
-                            {
-                                var lockReasonText = log.Action == AuditActions.UnlockCard
-                                    ? (log.Target.Contains("lý do khóa trước đó:", StringComparison.OrdinalIgnoreCase)
-                                        ? log.Target.Substring(log.Target.IndexOf("lý do khóa trước đó:", StringComparison.OrdinalIgnoreCase) + "lý do khóa trước đó:".Length).Trim()
-                                        : "—")
-                                    : (log.Target.Contains("lý do khóa:", StringComparison.OrdinalIgnoreCase)
-                                        ? log.Target.Substring(log.Target.IndexOf("lý do khóa:", StringComparison.OrdinalIgnoreCase) + "lý do khóa:".Length).Trim()
-                                        : "—");
-                                var unlockReasonText = log.Action == AuditActions.UnlockCard && log.Target.Contains("lý do mở khóa:", StringComparison.OrdinalIgnoreCase)
-                                    ? log.Target.Substring(log.Target.IndexOf("lý do mở khóa:", StringComparison.OrdinalIgnoreCase) + "lý do mở khóa:".Length).Trim()
-                                    : "—";
-                                <tr>
-                                    <td class="text-nowrap">@Local(log.OccurredAtUtc)</td>
-                                    <td class="font-monospace">@(reader.LibraryCard?.CardCode ?? "—")</td>
-                                    <td>@reader.FullName</td>
-                                    <td>@log.Action</td>
-                                    <td>@log.Actor</td>
-                                    <td>@lockReasonText</td>
-                                    <td>@unlockReasonText</td>
-                                </tr>
-                            }
-                        </tbody>
-                    </table>
-                </div>
+                <partial name="_CardLockHistoryTable" model="Model.CardLockHistory" />
             }
         </div>
     </div>
@@ -368,7 +331,7 @@
     <div class="modal fade" id="cardUnlockModal" tabindex="-1" aria-labelledby="cardUnlockModalLabel" aria-hidden="true">
         <div class="modal-dialog">
             <div class="modal-content">
-                <form asp-action="SetCardUnlocked" asp-route-id="@reader.Id" method="post">
+                <form asp-action="SetCardUnlocked" asp-route-id="@reader.Id" method="post" id="cardUnlockForm" novalidate>
                     @Html.AntiForgeryToken()
                     <div class="modal-header">
                         <h5 class="modal-title" id="cardUnlockModalLabel">Mở khoá thẻ</h5>
@@ -379,16 +342,21 @@
                             <dt class="col-4">Mã thẻ</dt><dd class="col-8 font-monospace">@unlockedCard.CardCode</dd>
                             <dt class="col-4">Bạn đọc</dt><dd class="col-8">@reader.FullName</dd>
                             <dt class="col-4">Lý do khóa</dt><dd class="col-8">@(string.IsNullOrWhiteSpace(unlockedCard.LockReason) ? "Không có lý do cụ thể." : unlockedCard.LockReason)</dd>
+                            @if (unlockedCard.LockedAtUtc is { } unlockLockedAt)
+                            {
+                                <dt class="col-4">Khoá lúc</dt><dd class="col-8">@Local(unlockLockedAt)</dd>
+                            }
+                            <dt class="col-4">Thời hạn</dt><dd class="col-8">@(unlockedCard.IsLockUntilManualUnlock || !unlockedCard.LockExpiresAtUtc.HasValue ? "Đến khi mở thủ công" : Local(unlockedCard.LockExpiresAtUtc.Value))</dd>
                         </dl>
                         <div class="mb-0">
                             <label for="cardUnlockReason" class="form-label">Lý do mở khoá</label>
                             <textarea id="cardUnlockReason" name="reason" class="form-control" rows="3" required maxlength="1000"></textarea>
-                            @Html.ValidationMessage("reason")
+                            <div class="invalid-feedback">Vui lòng nhập lý do mở khoá thẻ.</div>
                         </div>
                     </div>
                     <div class="modal-footer">
                         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Huỷ</button>
-                        <button type="submit" class="btn btn-success">Xác nhận mở khoá</button>
+                        <button type="submit" class="btn btn-success" id="cardUnlockSubmit">Xác nhận mở khoá</button>
                     </div>
                 </form>
             </div>
@@ -420,6 +388,20 @@
                 {
                     <text>bootstrap.Modal.getOrCreateInstance(lockModal).show();</text>
                 }
+            }
+
+            const unlockForm = document.getElementById('cardUnlockForm');
+            if (unlockForm) {
+                const unlockReason = document.getElementById('cardUnlockReason');
+                const unlockSubmit = document.getElementById('cardUnlockSubmit');
+                unlockForm.addEventListener('submit', event => {
+                    const invalid = unlockReason.value.trim() === '';
+                    unlockReason.classList.toggle('is-invalid', invalid);
+                    if (invalid) { event.preventDefault(); return; }
+                    // Chặn bấm lặp; giao diện chỉ đổi trạng thái sau khi backend xác nhận và tải lại trang.
+                    unlockSubmit.disabled = true;
+                    unlockSubmit.textContent = 'Đang mở khoá...';
+                });
             }
         })();
     </script>

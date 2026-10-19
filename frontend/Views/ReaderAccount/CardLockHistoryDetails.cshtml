@@ -1,0 +1,35 @@
+@model Project.Models.LibraryCardLockHistory
+@{
+    ViewData["Title"] = "Chi tiết nhật ký khoá/mở khoá thẻ";
+    string Local(DateTime utc) => DateTime.SpecifyKind(utc, DateTimeKind.Utc).ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss");
+    var isUnlock = Model.EventType == LibraryCardLockEvents.Unlock;
+}
+<div class="container py-4" style="max-width: 48rem">
+    <a asp-action="CardLockHistory" class="small text-decoration-none">← Lịch sử khoá/mở khoá thẻ</a>
+    <div class="d-flex flex-wrap align-items-center gap-2 mt-2 mb-4">
+        <h1 class="h3 mb-0 text-primary fw-bold">Nhật ký #@Model.Id</h1>
+        <span class="badge @(isUnlock ? "bg-success" : "bg-danger")">@Model.EventType</span>
+    </div>
+
+    <div class="card shadow-sm border-0">
+        <div class="card-body">
+            <dl class="row mb-0" id="cardLockHistoryEntry">
+                <dt class="col-sm-4">Thời điểm</dt><dd class="col-sm-8">@Local(Model.OccurredAtUtc)</dd>
+                <dt class="col-sm-4">Mã thẻ</dt><dd class="col-sm-8 font-monospace">@Model.CardCode</dd>
+                <dt class="col-sm-4">Bạn đọc</dt>
+                <dd class="col-sm-8"><a asp-action="Details" asp-route-id="@Model.ReaderAccountId">@Model.ReaderName</a> (#@Model.ReaderAccountId)</dd>
+                <dt class="col-sm-4">Người thực hiện</dt><dd class="col-sm-8">@Model.PerformedBy</dd>
+                <dt class="col-sm-4">Lý do khoá</dt><dd class="col-sm-8">@(string.IsNullOrWhiteSpace(Model.LockReason) ? "Không có lý do cụ thể." : Model.LockReason)</dd>
+                @if (isUnlock)
+                {
+                    <dt class="col-sm-4">Lý do mở khoá</dt><dd class="col-sm-8">@Model.UnlockReason</dd>
+                }
+                <dt class="col-sm-4">@(isUnlock ? "Lần khoá được mở" : "Thời gian khoá")</dt>
+                <dd class="col-sm-8">
+                    @(Model.LockedAtUtc is { } lockedAt ? $"Từ {Local(lockedAt)}" : "Không rõ thời điểm bắt đầu")
+                    – @(Model.IsLockUntilManualUnlock || !Model.LockExpiresAtUtc.HasValue ? "đến khi mở thủ công" : $"đến {Local(Model.LockExpiresAtUtc.Value)}")
+                </dd>
+            </dl>
+        </div>
+    </div>
+</div>
