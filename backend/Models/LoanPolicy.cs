@@ -38,14 +38,39 @@ public sealed class LoanPolicyViewModel
 
 public sealed class LockProposalViewModel
 {
+    /// <summary>Quá hạn được tính khi số ngày quá hạn lớn hơn mốc này (31 ngày trở lên).</summary>
+    public const int OverdueDaysLimit = 30;
+    public const string OverdueReason = "Quá hạn trả sách trên 30 ngày";
+    public const string DebtReason = "Nợ phí vượt ngưỡng";
+
     public int ReaderAccountId { get; set; }
+    public string ReaderCode { get; set; } = string.Empty;
     public string ReaderName { get; set; } = string.Empty;
     public string? CardCode { get; set; }
     public int MaxOverdueDays { get; set; }
     public decimal OutstandingDebt { get; set; }
     public decimal DebtThreshold { get; set; }
     public string Status { get; set; } = string.Empty;
+    public bool IsOverdueViolation { get; set; }
+    public bool IsDebtViolation { get; set; }
     public IReadOnlyList<string> Reasons { get; set; } = [];
+
+    /// <summary>Các phiếu chưa trả đang quá hạn trên 30 ngày (căn cứ của lý do quá hạn).</summary>
+    public IReadOnlyList<LockProposalLoanViewModel> OverdueLoans { get; set; } = [];
+}
+
+public sealed class UpdateDebtThresholdRequest
+{
+    public decimal? DebtLockThreshold { get; set; }
+}
+
+public sealed class LockProposalLoanViewModel
+{
+    public long LoanId { get; set; }
+    public string BookTitle { get; set; } = string.Empty;
+    public string? CopyCode { get; set; }
+    public DateOnly DueDate { get; set; }
+    public int OverdueDays { get; set; }
 }
 
 public sealed class CardTypeLoanDaysViewModel

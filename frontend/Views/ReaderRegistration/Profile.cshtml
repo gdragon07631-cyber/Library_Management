@@ -11,10 +11,14 @@
     var isActive = string.Equals(Model.Status, "Đang hoạt động", StringComparison.OrdinalIgnoreCase);
     var card = Model.LibraryCard;
     var isCardLocked = card is not null && LibraryCardStatusHelper.IsCardLocked(card);
-    var cardLockMessage = card is null ? string.Empty : LibraryCardStatusHelper.GetLockMessage(card);
-    var cardLockStartUtc = card?.LockedAtUtc?.ToLocalTime();
-    var cardLockExpiresUtc = card?.LockExpiresAtUtc?.ToLocalTime();
+    // Giá trị lưu theo UTC (EF trả về Kind = Unspecified) nên đánh dấu UTC trước khi đổi sang giờ thư viện.
+    DateTime? ToLocal(DateTime? utc) => utc.HasValue ? DateTime.SpecifyKind(utc.Value, DateTimeKind.Utc).ToLocalTime() : null;
+    var cardLockStartLocal = ToLocal(card?.LockedAtUtc);
+    var cardLockExpiresLocal = ToLocal(card?.LockExpiresAtUtc);
     var cardIsManualUnlock = card is not null && (card.IsLockUntilManualUnlock || !card.LockExpiresAtUtc.HasValue);
+    // Khoá có thời hạn đã hết: thẻ hoạt động lại nhưng thông tin lần khoá vẫn được giữ và hiển thị.
+    var hasExpiredLock = card is not null && !isCardLocked && card.LockedAtUtc.HasValue;
+    var isCardUsable = Model.CardStatus == "Đang hoạt động";
 }
 
 <section class="rd-hero">
@@ -115,32 +119,43 @@ else if (isRejected)
                     <h2 class="rd-card-title"><span class="rd-icon-chip is-gold"><i class="bi bi-shield-lock"></i></span><span>Thông tin khoá thẻ</span></h2>
                     @if (isCardLocked)
                     {
-                        <div class="alert alert-danger mb-3" role="alert">
+                        <div class="alert alert-danger mb-3" role="alert" id="cardLockAlert">
                             <strong>Đang bị khoá.</strong>
-                            @if (!string.IsNullOrWhiteSpace(cardLockMessage))
-                            {
-                                <div class="mt-2">@cardLockMessage</div>
-                            }
+                            <div class="mt-2">Bạn tạm thời không thể mượn mới, đặt giữ hoặc gia hạn sách. Bạn vẫn có thể trả sách và thanh toán phí tại quầy thư viện.</div>
                         </div>
-                        <dl class="rd-info-list mb-0">
-                            <div><dt>Lý do khoá</dt><dd>@(!string.IsNullOrWhiteSpace(card?.LockReason) ? card.LockReason : "Không có lý do cụ thể.")</dd></div>
-                            <div><dt>Thời điểm bắt đầu</dt><dd>@(cardLockStartUtc?.ToString("dd/MM/yyyy HH:mm") ?? "Không có thông tin")</dd></div>
+                        <dl class="rd-info-list mb-0" id="cardLockDetails">
+                            <div><dt>Lý do khoá</dt><dd>@(!string.IsNullOrWhiteSpace(card?.LockReason) ? card.LockReason : "Thư viện chưa ghi nhận lý do khoá. Vui lòng liên hệ quầy thư viện để được giải thích.")</dd></div>
+                            <div><dt>Thời điểm bắt đầu</dt><dd>@(cardLockStartLocal?.ToString("dd/MM/yyyy HH:mm") ?? "Không có thông tin")</dd></div>
                             @if (cardIsManualUnlock)
                             {
-                                <div><dt>Thời hạn</dt><dd>Khoá đến khi được mở khoá thủ công.</dd></div>
+                                <div><dt>Thời hạn</dt><dd>Khoá đến khi được mở thủ công</dd></div>
                             }
                             else
                             {
-                                <div><dt>Thời hạn</dt><dd>@(cardLockExpiresUtc?.ToString("dd/MM/yyyy HH:mm") ?? "Không có thông tin")</dd></div>
+                                <div><dt>Thời hạn</dt><dd>Đến @cardLockExpiresLocal!.Value.ToString("dd/MM/yyyy HH:mm")</dd></div>
                             }
                         </dl>
                     }
                     else
                     {
-                        <div class="alert alert-success mb-0" role="alert">
-                            <strong>Đang hoạt động.</strong>
-                            <div class="mt-2">Thẻ bạn đọc hiện không bị khoá và có thể sử dụng các dịch vụ thư viện bình thường.</div>
-                        </div>
+                        @if (isCardUsable)
+                        {
+                            <div class="alert alert-success mb-0" role="status" id="cardActiveAlert">
+                                <strong>Đang hoạt động.</strong>
+                                <div class="mt-2">Thẻ bạn đọc hiện không bị khoá và có thể sử dụng các dịch vụ thư viện bình thường.</div>
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="alert alert-secondary mb-0" role="status">Thẻ không bị khoá. Trạng thái hiện tại: <strong>@Model.CardStatus</strong>.</div>
+                        }
+                        @if (hasExpiredLock)
+                        {
+                            <div class="small text-muted mt-3" id="cardExpiredLockInfo">
+                                Lần khoá gần nhất (từ @cardLockStartLocal?.ToString("dd/MM/yyyy HH:mm") đến @cardLockExpiresLocal?.ToString("dd/MM/yyyy HH:mm")) đã hết hạn.
+                                Lý do: @(string.IsNullOrWhiteSpace(card!.LockReason) ? "không có thông tin" : card.LockReason)
+                            </div>
+                        }
                     }
                 </div>
             </div>

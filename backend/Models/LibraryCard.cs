@@ -51,20 +51,32 @@ public static class LibraryCardStatusHelper
         if (card is null) return false;
 
         var reference = referenceUtc ?? DateTime.UtcNow;
-        if (card.Status is not null && (card.Status.Contains("khóa", StringComparison.OrdinalIgnoreCase)
-            || card.Status.Contains("khoá", StringComparison.OrdinalIgnoreCase)))
-            return true;
-
         if (card.LockedAtUtc is not null)
         {
             if (card.IsLockUntilManualUnlock || !card.LockExpiresAtUtc.HasValue)
                 return true;
-            if (card.LockExpiresAtUtc.Value > reference)
-                return true;
+            return card.LockExpiresAtUtc.Value > reference;
         }
 
-        return false;
+        return card.Status is not null && (card.Status.Contains("khóa", StringComparison.OrdinalIgnoreCase)
+            || card.Status.Contains("khoá", StringComparison.OrdinalIgnoreCase));
     }
+
+    public static bool IsCardAvailable(LibraryCard? card, DateTime? referenceUtc = null)
+    {
+        if (card is null || IsCardLocked(card, referenceUtc)) return false;
+        if (string.Equals(card.Status, "Đang hoạt động", StringComparison.OrdinalIgnoreCase)) return true;
+        return IsTemporaryLockExpired(card, referenceUtc ?? DateTime.UtcNow);
+    }
+
+    public static string GetEffectiveStatus(LibraryCard card, DateTime? referenceUtc = null) =>
+        IsTemporaryLockExpired(card, referenceUtc ?? DateTime.UtcNow) ? "Đang hoạt động" : card.Status;
+
+    private static bool IsTemporaryLockExpired(LibraryCard card, DateTime referenceUtc) =>
+        card.LockedAtUtc.HasValue &&
+        !card.IsLockUntilManualUnlock &&
+        card.LockExpiresAtUtc.HasValue &&
+        card.LockExpiresAtUtc.Value <= referenceUtc;
 
     public static string GetLockMessage(LibraryCard? card, DateTime? referenceUtc = null)
     {
@@ -78,6 +90,8 @@ public static class LibraryCardStatusHelper
         if (card.IsLockUntilManualUnlock || !card.LockExpiresAtUtc.HasValue)
             return $"Thẻ bạn đọc đang bị khoá. Lý do: {reason}. Tới khi được mở khoá thủ công.";
 
-        return $"Thẻ bạn đọc đang bị khoá. Lý do: {reason}. Hạn khoá: {card.LockExpiresAtUtc.Value:dd/MM/yyyy HH:mm}.";
+        // Giá trị lưu theo UTC; hiển thị theo giờ thư viện để khớp với ngày giờ Quản lý đã chọn khi khoá.
+        var expiresLocal = DateTime.SpecifyKind(card.LockExpiresAtUtc.Value, DateTimeKind.Utc).ToLocalTime();
+        return $"Thẻ bạn đọc đang bị khoá. Lý do: {reason}. Hạn khoá: {expiresLocal:dd/MM/yyyy HH:mm}.";
     }
 }

@@ -17,9 +17,12 @@
     };
 }
 <div class="container py-4">
-    <div class="mb-4">
-        <h1 class="h3 mb-1 text-primary fw-bold">Tài khoản bạn đọc</h1>
-        <p class="text-muted mb-0">Tra cứu mọi tài khoản bạn đọc để hỗ trợ khi bạn đọc gặp sự cố: sửa thông tin, xác nhận email, gửi liên kết đặt lại mật khẩu, khoá hoặc mở khoá.</p>
+    <div class="mb-4 d-flex flex-wrap justify-content-between align-items-start gap-2">
+        <div>
+            <h1 class="h3 mb-1 text-primary fw-bold">Tài khoản bạn đọc</h1>
+            <p class="text-muted mb-0">Tra cứu mọi tài khoản bạn đọc để hỗ trợ khi bạn đọc gặp sự cố: sửa thông tin, xác nhận email, gửi liên kết đặt lại mật khẩu, khoá hoặc mở khoá.</p>
+        </div>
+        <a class="btn btn-outline-danger" id="lockProposalsLink" href="@(Url.Action("Index", "LoanPolicy") + "#lock-proposals")">Đề xuất khoá thẻ</a>
     </div>
 
     <form method="get" class="card shadow-sm border-0 mb-4" id="readerSearchForm">
@@ -76,7 +79,7 @@
                                 @if (reader.LibraryCard is { } card)
                                 {
                                     <span class="font-monospace">@card.CardCode</span>
-                                    <div class="small text-muted">@card.LibraryCardType?.Name · hết hạn @card.ExpiresOn.ToString("dd/MM/yyyy")</div>
+                                    <div class="small text-muted">@card.LibraryCardType?.Name · @LibraryCardStatusHelper.GetEffectiveStatus(card, DateTime.UtcNow) · hết hạn @card.ExpiresOn.ToString("dd/MM/yyyy")</div>
                                 }
                                 else
                                 {
@@ -87,7 +90,11 @@
                                 <span class="badge @(reader.Status == "Đang hoạt động" ? "bg-success-subtle text-success-emphasis" : reader.Status == "Từ chối" ? "bg-danger-subtle text-danger-emphasis" : "bg-secondary-subtle text-secondary-emphasis")">@reader.Status</span>
                                 @if (reader.IsLocked)
                                 {
-                                    <span class="badge bg-danger ms-1">Đã khoá</span>
+                                    <span class="badge bg-danger ms-1">Tài khoản bị khoá</span>
+                                }
+                                @if (reader.LibraryCard is { } statusCard && LibraryCardStatusHelper.IsCardLocked(statusCard, DateTime.UtcNow))
+                                {
+                                    <span class="badge bg-danger ms-1">Thẻ đang bị khoá</span>
                                 }
                             </td>
                             <td class="text-end"><a asp-action="Details" asp-route-id="@reader.Id" class="btn btn-sm btn-outline-primary">Xem / sửa</a></td>

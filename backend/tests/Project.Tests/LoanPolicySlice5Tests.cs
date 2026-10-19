@@ -218,6 +218,62 @@ public class LoanPolicySlice5Tests
         Assert.Single(loansInDb);
     }
 
+    [Fact]
+    public async Task CardLockCannotBeBypassedAndExpiredTimedLockAllowsLoansAgain()
+    {
+        var (db, service) = CreateTestEnvironment();
+        var (lockedReader, lockedBooks) = await SeedReaderAndBooksAsync(db, isCardLocked: true);
+        var today = DateOnly.FromDateTime(DateTime.Today);
+
+        var bypassed = await service.OverrideCreateAsync(
+            lockedBooks[0].Id, lockedReader.Id, today, "manager@thuvien.vn", "Cho phép ngoại lệ");
+
+        Assert.False(bypassed.IsSuccess);
+        Assert.Contains("khoá", bypassed.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+        Assert.Empty(await db.BookLoans.Where(loan => loan.ReaderAccountId == lockedReader.Id).ToListAsync());
+        Assert.Empty(await db.AuditLogs.Where(log => log.Action == AuditActions.OverrideBlockLoan).ToListAsync());
+
+        var (expiredReader, expiredBooks) = await SeedReaderAndBooksAsync(db);
+        expiredReader.LibraryCard!.Status = "Đang bị khoá";
+        expiredReader.LibraryCard.LockReason = "Khoá có thời hạn";
+        expiredReader.LibraryCard.LockedAtUtc = DateTime.UtcNow.AddHours(-2);
+        expiredReader.LibraryCard.LockExpiresAtUtc = DateTime.UtcNow.AddHours(-1);
+        expiredReader.LibraryCard.IsLockUntilManualUnlock = false;
+        await db.SaveChangesAsync();
+
+        var afterExpiry = await service.CreateAsync(expiredBooks[0].Id, expiredReader.Id, today);
+
+        Assert.True(afterExpiry.IsSuccess);
+        Assert.Single(await db.BookLoans.Where(loan => loan.ReaderAccountId == expiredReader.Id).ToListAsync());
+    }
+
+    [Fact]
+    public async Task LockedCardCannotRenewAndDoesNotChangeLoan()
+    {
+        var (db, service) = CreateTestEnvironment();
+        var (reader, books) = await SeedReaderAndBooksAsync(db, isCardLocked: true);
+        var dueDate = DateOnly.FromDateTime(DateTime.Today).AddDays(5);
+        var loan = new BookLoan
+        {
+            Book = books[0],
+            ReaderAccount = reader,
+            LoanDate = dueDate.AddDays(-10),
+            OriginalDueDate = dueDate,
+            DueDate = dueDate,
+            RenewalCount = 0
+        };
+        db.BookLoans.Add(loan);
+        await db.SaveChangesAsync();
+
+        var result = await service.RenewAsync(loan.Id, DateOnly.FromDateTime(DateTime.Today));
+
+        Assert.False(result.IsSuccess);
+        Assert.Contains("khoá", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+        var stored = await db.BookLoans.SingleAsync(item => item.Id == loan.Id);
+        Assert.Equal(dueDate, stored.DueDate);
+        Assert.Equal(0, stored.RenewalCount);
+    }
+
     // ---------- 3. Bắt buộc nhập lý do: không nhập hoặc chỉ chứa khoảng trắng ----------
 
     [Theory]

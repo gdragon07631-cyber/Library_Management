@@ -64,6 +64,9 @@
             @if (isAdmin)
             {
                 <a class="side-link @Active("StaffAccount")" aria-current="@Current("StaffAccount")" asp-controller="StaffAccount" asp-action="Index"><span>☺</span> Tài khoản nhân sự</a>
+            }
+            @if (canManageLibrary)
+            {
                 <a class="side-link @Active("ReaderAccount")" aria-current="@Current("ReaderAccount")" asp-controller="ReaderAccount" asp-action="Index"><span>☻</span> Tài khoản bạn đọc</a>
             }
             @if (canViewAuditLogs)

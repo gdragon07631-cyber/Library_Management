@@ -1,8 +1,14 @@
 @model Project.Models.ReaderAccountAdminDetailsViewModel
+@inject Project.Services.IAuditLogService StaffAccess
 @{
     var reader = Model.Reader;
+    // Quản lý thư viện chỉ được xem và khoá thẻ; các thao tác quản trị tài khoản vẫn dành cho Quản trị hệ thống.
+    var isSystemAdmin = (await StaffAccess.GetSignedInStaffAsync(Context.Request))?.Role == AccountRoles.SystemAdmin;
     ViewData["Title"] = "Bạn đọc " + reader.FullName;
     string Local(DateTime utc) => DateTime.SpecifyKind(utc, DateTimeKind.Utc).ToLocalTime().ToString("dd/MM/yyyy HH:mm");
+    var hasCardLockErrors = ViewData.ModelState.Any(entry =>
+        (entry.Key == "reason" || entry.Key == "lockType" || entry.Key == "lockExpiresAt" || entry.Key == string.Empty) &&
+        entry.Value?.Errors.Count > 0);
 }
 <div class="container py-4">
     <a asp-action="Index" class="small text-decoration-none">← Danh sách tài khoản bạn đọc</a>
@@ -54,6 +60,7 @@
                     <h2 class="h5 fw-bold mb-3">Thông tin tài khoản</h2>
                     <form asp-action="Edit" asp-route-id="@reader.Id" method="post" id="readerEditForm">
                         <div asp-validation-summary="ModelOnly" class="text-danger"></div>
+                        <fieldset disabled="@(!isSystemAdmin)">
                         <div class="row g-3">
                             <div class="col-sm-6">
                                 <label asp-for="Form.FullName" class="form-label"></label>
@@ -87,7 +94,11 @@
                                 <span asp-validation-for="Form.Address" class="text-danger small"></span>
                             </div>
                         </div>
-                        <button type="submit" class="btn btn-primary mt-3">Lưu thay đổi</button>
+                        </fieldset>
+                        @if (isSystemAdmin)
+                        {
+                            <button type="submit" class="btn btn-primary mt-3">Lưu thay đổi</button>
+                        }
                     </form>
                     @if (!string.IsNullOrWhiteSpace(reader.PendingEmail))
                     {
@@ -106,6 +117,8 @@
         </div>
 
         <div class="col-lg-5">
+            @if (isSystemAdmin)
+            {
             <div class="card shadow-sm border-0 mb-4">
                 <div class="card-body">
                     <h2 class="h5 fw-bold mb-3">Hỗ trợ nhanh</h2>
@@ -146,6 +159,7 @@
                     }
                 </div>
             </div>
+            }
 
             <div class="card shadow-sm border-0">
                 <div class="card-body">
@@ -156,7 +170,7 @@
                             <dt class="col-5">Mã thẻ</dt><dd class="col-7 font-monospace">@card.CardCode</dd>
                             <dt class="col-5">Loại thẻ</dt><dd class="col-7">@card.LibraryCardType?.Name</dd>
                             <dt class="col-5">Hiệu lực</dt><dd class="col-7">@card.IssuedOn.ToString("dd/MM/yyyy") – @card.ExpiresOn.ToString("dd/MM/yyyy")</dd>
-                            <dt class="col-5">Trạng thái</dt><dd class="col-7">@card.Status</dd>
+                            <dt class="col-5">Trạng thái</dt><dd class="col-7">@LibraryCardStatusHelper.GetEffectiveStatus(card, DateTime.UtcNow)</dd>
                         </dl>
 
                         @if (LibraryCardStatusHelper.IsCardLocked(card, DateTime.UtcNow))
@@ -165,7 +179,7 @@
                                 <strong>Đang bị khoá.</strong> Lý do: @card.LockReason<br />
                                 @(card.IsLockUntilManualUnlock || !card.LockExpiresAtUtc.HasValue
                                     ? "Tới khi được mở khoá thủ công."
-                                    : $"Hạn khoá: {card.LockExpiresAtUtc:dd/MM/yyyy HH:mm}.")
+                                    : $"Hạn khoá: {Local(card.LockExpiresAtUtc.Value)}.")
                             </div>
                             <button type="button" class="btn btn-success mt-3" data-bs-toggle="modal" data-bs-target="#cardUnlockModal">
                                 Mở khoá thẻ
@@ -319,22 +333,24 @@
                         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Đóng"></button>
                     </div>
                     <div class="modal-body">
+                        <div asp-validation-summary="ModelOnly" class="text-danger small"></div>
                         <div class="mb-3">
                             <label for="cardLockReason" class="form-label">Lý do khoá</label>
-                            <textarea id="cardLockReason" name="reason" class="form-control" rows="3" required maxlength="1000"></textarea>
-                            @Html.ValidationMessage("reason")
+                            @Html.TextArea("reason", null, new { id = "cardLockReason", @class = "form-control", rows = 3, required = true, maxlength = 1000 })
+                            @Html.ValidationMessage("reason", new { @class = "text-danger small" })
                         </div>
                         <div class="mb-3">
                             <label for="cardLockType" class="form-label">Hình thức khoá</label>
                             <select id="cardLockType" name="lockType" class="form-select">
-                                <option value="temporary">Có thời hạn</option>
-                                <option value="manual">Đến khi mở thủ công</option>
+                                <option value="temporary" selected="@(ViewData.ModelState["lockType"]?.AttemptedValue != "manual")">Có thời hạn</option>
+                                <option value="manual" selected="@(ViewData.ModelState["lockType"]?.AttemptedValue == "manual")">Đến khi mở thủ công</option>
                             </select>
+                            @Html.ValidationMessage("lockType", new { @class = "text-danger small" })
                         </div>
                         <div id="cardLockExpiryGroup" class="mb-0">
                             <label for="cardLockExpiry" class="form-label">Ngày và giờ hết hạn</label>
-                            <input id="cardLockExpiry" name="lockExpiresAtUtc" type="datetime-local" class="form-control" />
-                            @Html.ValidationMessage("lockExpiresAtUtc")
+                            @Html.TextBox("lockExpiresAt", null, new { id = "cardLockExpiry", type = "datetime-local", @class = "form-control" })
+                            @Html.ValidationMessage("lockExpiresAt", new { @class = "text-danger small" })
                         </div>
                     </div>
                     <div class="modal-footer">
@@ -400,6 +416,10 @@
                 };
                 typeSelect.addEventListener('change', sync);
                 sync();
+                @if (hasCardLockErrors)
+                {
+                    <text>bootstrap.Modal.getOrCreateInstance(lockModal).show();</text>
+                }
             }
         })();
     </script>
