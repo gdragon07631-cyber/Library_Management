@@ -252,13 +252,6 @@ public sealed class ReaderRegistrationService(
         }
 
         await using var transaction = await dbContext.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
-        var hasAvailableCopy = await dbContext.BookCopies.AnyAsync(copy =>
-            copy.BookId == documentId && copy.Status == BookCopyStatus.Available, cancellationToken);
-        if (!hasAvailableCopy)
-        {
-            await transaction.RollbackAsync(cancellationToken);
-            return DocumentHoldOutcome.Rejected("Tạm dừng đặt sách: hiện kho đã hết bản sao sẵn sàng. Vui lòng thử lại sau.");
-        }
 
         if (await dbContext.BookLoans.AnyAsync(loan =>
                 loan.ReaderAccountId == readerAccountId && loan.BookId == documentId && loan.ReturnedAtUtc == null, cancellationToken))

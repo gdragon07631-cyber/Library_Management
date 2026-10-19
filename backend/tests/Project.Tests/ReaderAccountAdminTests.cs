@@ -244,8 +244,7 @@ public sealed class ReaderAccountAdminTests : IDisposable
     [Theory]
     [InlineData(null)]
     [InlineData(AccountRoles.Librarian)]
-    [InlineData(AccountRoles.LibraryManager)]
-    public async Task OnlySystemAdminCanOpenReaderAccounts(string? role)
+    public async Task OnlySystemAdminAndLibraryManagerCanOpenReaderAccounts(string? role)
     {
         var controller = AdminController(role);
 
@@ -289,6 +288,86 @@ public sealed class ReaderAccountAdminTests : IDisposable
         Assert.Null(card.LockExpiresAtUtc);
         Assert.False(card.IsLockUntilManualUnlock);
         Assert.Contains(await db.AuditLogs.AsNoTracking().Select(log => log.Action).ToListAsync(), action => action == AuditActions.UnlockCard);
+    }
+
+    [Theory]
+    [InlineData(AccountRoles.LibraryManager)]
+    [InlineData(AccountRoles.SystemAdmin)]
+    public async Task LibraryManagerAndSystemAdminCanLockCardManuallyAndTemporarily(string role)
+    {
+        var reader = await AddReaderAsync($"lock-{role}@example.com", code: $"R-{role}");
+        var card = new LibraryCard
+        {
+            ReaderAccountId = reader.Id,
+            CardCode = $"CARD-{role}",
+            LibraryCardType = new LibraryCardType { Name = "Thẻ sinh viên" },
+            IssuedOn = new DateOnly(2026, 1, 1),
+            ExpiresOn = new DateOnly(2027, 1, 1),
+            Status = "Đang hoạt động"
+        };
+        db.LibraryCards.Add(card);
+        await db.SaveChangesAsync();
+
+        var controller = AdminController(role);
+
+        // 1. Khoá thẻ đến khi mở thủ công
+        var lockResult = await controller.SetCardLocked(reader.Id, "Ôm sách quá hạn", "manual", null);
+        Assert.IsType<RedirectToActionResult>(lockResult);
+
+        db.ChangeTracker.Clear();
+        var updatedCard = await db.LibraryCards.SingleAsync(c => c.ReaderAccountId == reader.Id);
+        Assert.Equal("Đang bị khoá", updatedCard.Status);
+        Assert.Equal("Ôm sách quá hạn", updatedCard.LockReason);
+        Assert.True(updatedCard.IsLockUntilManualUnlock);
+        Assert.Null(updatedCard.LockExpiresAtUtc);
+
+        // 2. Mở khoá thẻ
+        var unlockResult = await controller.SetCardUnlocked(reader.Id, "Đã nộp phạt đầy đủ");
+        Assert.IsType<RedirectToActionResult>(unlockResult);
+
+        db.ChangeTracker.Clear();
+        updatedCard = await db.LibraryCards.SingleAsync(c => c.ReaderAccountId == reader.Id);
+        Assert.Equal("Đang hoạt động", updatedCard.Status);
+        Assert.Null(updatedCard.LockReason);
+        Assert.False(updatedCard.IsLockUntilManualUnlock);
+
+        // Kiểm tra nhật ký ghi nhận lý do mở và lý do khóa trước đó
+        var unlockLog = await db.AuditLogs.AsNoTracking().FirstOrDefaultAsync(l => l.Action == AuditActions.UnlockCard && l.Target.Contains(card.CardCode));
+        Assert.NotNull(unlockLog);
+        Assert.Contains("lý do khóa trước đó: Ôm sách quá hạn", unlockLog.Target);
+        Assert.Contains("lý do mở khóa: Đã nộp phạt đầy đủ", unlockLog.Target);
+    }
+
+    [Fact]
+    public async Task CardLockedFilterSelectsOnlyReadersWithLockedCards()
+    {
+        var cardType = new LibraryCardType { Name = "Thẻ kiểm thử" };
+        var activeReader = await AddReaderAsync("active-card@example.com", code: "R-AC");
+        db.LibraryCards.Add(new LibraryCard
+        {
+            ReaderAccountId = activeReader.Id, CardCode = "CARD-AC",
+            LibraryCardType = cardType,
+            IssuedOn = new DateOnly(2026, 1, 1), ExpiresOn = new DateOnly(2027, 1, 1),
+            Status = "Đang hoạt động"
+        });
+
+        var lockedReader = await AddReaderAsync("locked-card@example.com", code: "R-LC");
+        db.LibraryCards.Add(new LibraryCard
+        {
+            ReaderAccountId = lockedReader.Id, CardCode = "CARD-LC",
+            LibraryCardType = cardType,
+            IssuedOn = new DateOnly(2026, 1, 1), ExpiresOn = new DateOnly(2027, 1, 1),
+            Status = "Đang bị khoá",
+            LockReason = "Vi phạm nợ phí",
+            LockedAtUtc = DateTime.UtcNow,
+            IsLockUntilManualUnlock = true
+        });
+
+        await db.SaveChangesAsync();
+
+        var lockedResults = await service.SearchAsync(null, ReaderAccountFilters.CardLocked, 200);
+        Assert.Single(lockedResults);
+        Assert.Equal(lockedReader.Id, lockedResults[0].Id);
     }
 
     [Fact]
@@ -357,6 +436,11 @@ public sealed class ReaderAccountAdminTests : IDisposable
 
     private ReaderAccountController AdminController(string? role)
     {
+        if (role is not null && !db.AdminAccounts.Any(a => a.Id == 1))
+        {
+            db.AdminAccounts.Add(new AdminAccount { Id = 1, Email = "admin@library.test", Role = role, IsActive = true, PasswordHash = "hash" });
+            db.SaveChanges();
+        }
         var context = new DefaultHttpContext();
         context.Connection.RemoteIpAddress = IPAddress.Parse("203.0.113.5");
         var emailSender = new NoEmailSender();

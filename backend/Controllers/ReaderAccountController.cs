@@ -150,7 +150,7 @@ public sealed class ReaderAccountController(
         }
 
         await WriteLogAsync(admin.Email, AuditActions.LockCard, details.Reader,
-            $"khóa thẻ {card.CardCode}, lý do: {reason.Trim()}{(useManualUnlock ? ", đến khi mở khoá thủ công" : $", hết hạn {lockExpiresAtUtc:dd/MM/yyyy HH:mm}")}", cancellationToken);
+            $"khóa thẻ {card.CardCode}, lý do khóa: {reason.Trim()}{(useManualUnlock ? ", đến khi mở khoá thủ công" : $", hết hạn {lockExpiresAtUtc:dd/MM/yyyy HH:mm}")}", cancellationToken);
         TempData["SuccessMessage"] = useManualUnlock
             ? $"Đã khoá thẻ {card.CardCode}. Thẻ sẽ tiếp tục bị khoá đến khi được mở thủ công."
             : $"Đã khoá thẻ {card.CardCode}. Thẻ sẽ bị khoá tới {lockExpiresAtUtc:dd/MM/yyyy HH:mm}.";
@@ -299,7 +299,7 @@ public sealed class ReaderAccountController(
         var staff = await auditLogService.GetSignedInStaffAsync(Request, cancellationToken);
         if (staff is null)
             return (null, RedirectToAction("Login", "Account", new { returnUrl = Request.Path.Value }));
-        if (staff.Role != AccountRoles.SystemAdmin)
+        if (staff.Role is not (AccountRoles.SystemAdmin or AccountRoles.LibraryManager))
         {
             Response.StatusCode = StatusCodes.Status403Forbidden;
             return (null, View("AccessDenied"));

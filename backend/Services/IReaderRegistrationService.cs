@@ -73,7 +73,7 @@ public sealed class DocumentHoldOutcome
             return new(true, message, queuePosition, true, fulfillment.CopyCode, fulfillment.PickupDeadlineUtc);
         }
 
-        var waitingMessage = $"Đặt giữ thành công. Trạng thái: {BookHoldStatus.Waiting}. Vị trí hiện tại trong hàng đợi: {queuePosition}.";
+        var waitingMessage = $"Đặt giữ thành công. Trạng thái: {BookHoldStatus.Waiting}. Vị trí hiện tại trong hàng đợi: {queuePosition}. Khi có sách trả về hoặc bản sao sẵn sàng, hệ thống sẽ tự động giữ sách để bạn đến nhận.";
         return new(true, waitingMessage, queuePosition);
     }
     public static DocumentHoldOutcome Rejected(string message) => new(false, message);

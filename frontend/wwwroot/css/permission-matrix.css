@@ -4,6 +4,7 @@
 .permission-matrix td:nth-child(2) { min-width: 180px; }
 .permission-matrix td:not(:first-child):not(:nth-child(2)) { min-width: 130px; }
 .matrix-match { color: #198754; background: #f5fbf7 !important; }
+.matrix-denied { color: #6c757d; background: #fcfcfd !important; }
 .matrix-missing { color: #8a5700; background: #fff3cd !important; }
 .matrix-excess { color: #b02a37; background: #f8d7da !important; }
 .permission-matrix.show-differences-only tbody tr[data-difference="false"] { display: none; }

@@ -24,15 +24,43 @@ public sealed class BookController(
     private const long MaxCoverBytes = 3 * 1024 * 1024;
 
     [HttpGet]
-    public async Task<IActionResult> Index(CancellationToken cancellationToken = default)
+    public async Task<IActionResult> Index(int page = 1, int pageSize = 20, string? q = null, CancellationToken cancellationToken = default)
     {
         if (!await IsLibrarianSignedInAsync(cancellationToken))
             return RedirectToAction("Login", "Account", new { returnUrl = Url.Action(nameof(Index)) });
 
-        var books = await bookService.GetAllBooksAsync(cancellationToken);
-        await EnsureExistingBookThumbnailsAsync(books, cancellationToken);
-        ViewData["CopyCounts"] = await bookService.GetCopyCountsAsync(books.Select(book => book.Id), cancellationToken);
-        return View(books);
+        var allBooks = await bookService.GetAllBooksAsync(cancellationToken);
+        var keyword = q?.Trim();
+        if (!string.IsNullOrWhiteSpace(keyword))
+        {
+            allBooks = allBooks.Where(book =>
+                book.Title.Contains(keyword, StringComparison.OrdinalIgnoreCase) ||
+                (!string.IsNullOrWhiteSpace(book.Subtitle) && book.Subtitle.Contains(keyword, StringComparison.OrdinalIgnoreCase)) ||
+                (!string.IsNullOrWhiteSpace(book.Isbn) && book.Isbn.Contains(keyword, StringComparison.OrdinalIgnoreCase)) ||
+                (!string.IsNullOrWhiteSpace(book.Publisher) && book.Publisher.Contains(keyword, StringComparison.OrdinalIgnoreCase)) ||
+                (book.Category != null && book.Category.Name.Contains(keyword, StringComparison.OrdinalIgnoreCase)) ||
+                BookAuthorList.For(book).Any(author => author.Name.Contains(keyword, StringComparison.OrdinalIgnoreCase)))
+                .ToList();
+        }
+
+        pageSize = Math.Clamp(pageSize, 10, 100);
+        var totalItems = allBooks.Count;
+        var totalPages = Math.Max(1, (int)Math.Ceiling(totalItems / (double)pageSize));
+        page = Math.Clamp(page, 1, totalPages);
+
+        var pagedBooks = allBooks
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToList();
+
+        await EnsureExistingBookThumbnailsAsync(pagedBooks, cancellationToken);
+        ViewData["CopyCounts"] = await bookService.GetCopyCountsAsync(pagedBooks.Select(book => book.Id), cancellationToken);
+        ViewData["Page"] = page;
+        ViewData["PageSize"] = pageSize;
+        ViewData["TotalItems"] = totalItems;
+        ViewData["TotalPages"] = totalPages;
+        ViewData["SearchKeyword"] = keyword;
+        return View(pagedBooks);
     }
 
     private async Task EnsureExistingBookThumbnailsAsync(IReadOnlyList<Book> books, CancellationToken cancellationToken)
@@ -210,11 +238,17 @@ public sealed class BookController(
                 hold.BookId == id && BookHoldStatus.ActiveStatuses.Contains(hold.Status));
             if (reader == null)
                 bookDetails.HoldBlockedReason = "Không tìm thấy tài khoản bạn đọc.";
+            else if (bookDetails.ExistingReaderHold != null)
+                bookDetails.CanHold = false;
             else if (!string.Equals(reader.Status, "Đang hoạt động", StringComparison.OrdinalIgnoreCase))
                 bookDetails.HoldBlockedReason = reader.Status.Contains("khóa", StringComparison.OrdinalIgnoreCase)
                     ? "Tài khoản của bạn đang bị khóa nên không thể đặt giữ."
                     : "Tài khoản bạn đọc chưa ở trạng thái hoạt động.";
-            else if (reader.LibraryCard == null || !string.Equals(reader.LibraryCard.Status, "Đang hoạt động", StringComparison.OrdinalIgnoreCase))
+            else if (reader.LibraryCard == null)
+                bookDetails.HoldBlockedReason = "Thẻ bạn đọc chưa được cấp hoặc không còn hiệu lực.";
+            else if (LibraryCardStatusHelper.IsCardLocked(reader.LibraryCard, DateTime.UtcNow))
+                bookDetails.HoldBlockedReason = LibraryCardStatusHelper.GetLockMessage(reader.LibraryCard, DateTime.UtcNow);
+            else if (!string.Equals(reader.LibraryCard.Status, "Đang hoạt động", StringComparison.OrdinalIgnoreCase))
                 bookDetails.HoldBlockedReason = "Thẻ bạn đọc chưa được cấp hoặc không còn hiệu lực.";
             else if (reader.LibraryCard.ExpiresOn < businessDate)
                 bookDetails.HoldBlockedReason = "Thẻ bạn đọc đã hết hạn.";
@@ -225,8 +259,6 @@ public sealed class BookController(
             else if (await dbContext.BookLoans.AnyAsync(loan =>
                          loan.ReaderAccountId == readerId && loan.BookId == id && loan.ReturnedAtUtc == null, cancellationToken))
                 bookDetails.HoldBlockedReason = "B\u1ea1n \u0111ang m\u01b0\u1ee3n \u0111\u1ea7u s\u00e1ch n\u00e0y. Vui l\u00f2ng tr\u1ea3 b\u1ea3n \u0111ang m\u01b0\u1ee3n tr\u01b0\u1edbc khi \u0111\u1eb7t gi\u1eef.";
-            else if (bookDetails.AvailableCopies <= 0)
-                bookDetails.HoldBlockedReason = "Tạm dừng đặt sách: hiện kho đã hết bản sao sẵn sàng. Vui lòng thử lại sau.";
             else
                 bookDetails.CanHold = true;
         }

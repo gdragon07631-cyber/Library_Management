@@ -27,9 +27,14 @@ public sealed class ReaderAccountAdminService(ApplicationDbContext dbContext) : 
                 (reader.LibraryCard != null && reader.LibraryCard.CardCode.Contains(term)));
         }
 
+        var now = DateTime.UtcNow;
         query = status switch
         {
             ReaderAccountFilters.Locked => query.Where(reader => reader.IsLocked),
+            ReaderAccountFilters.CardLocked => query.Where(reader => reader.LibraryCard != null && (
+                reader.LibraryCard.LockedAtUtc != null && (reader.LibraryCard.IsLockUntilManualUnlock || reader.LibraryCard.LockExpiresAtUtc == null || reader.LibraryCard.LockExpiresAtUtc > now)
+                || (reader.LibraryCard.Status != null && (reader.LibraryCard.Status.Contains("khóa") || reader.LibraryCard.Status.Contains("khoá")))
+            )),
             ReaderAccountFilters.UnconfirmedEmail => query.Where(reader => !reader.EmailConfirmed),
             ReaderAccountFilters.PendingEmailChange => query.Where(reader => reader.PendingEmail != null),
             null or "" => query,
@@ -282,6 +287,7 @@ public sealed class ReaderAccountAdminService(ApplicationDbContext dbContext) : 
 public static class ReaderAccountFilters
 {
     public const string Locked = "locked";
+    public const string CardLocked = "card-locked";
     public const string UnconfirmedEmail = "unconfirmed";
     public const string PendingEmailChange = "pending-email";
 }

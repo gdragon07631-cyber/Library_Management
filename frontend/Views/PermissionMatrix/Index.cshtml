@@ -3,46 +3,112 @@
     ViewData["Title"] = "Ma trận Phân quyền Hệ thống";
 }
 <div class="container-fluid py-4 permission-matrix-page">
+    @if (TempData["SuccessMessage"] is string successMsg)
+    {
+        <div class="alert alert-success alert-dismissible fade show" role="alert">
+            @successMsg
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Đóng"></button>
+        </div>
+    }
+
     <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-4">
         <div>
             <h1 class="h3 mb-1 text-primary fw-bold">Ma trận Phân quyền Hệ thống</h1>
-            <p class="text-muted mb-0">Đối chiếu quyền hiện hành với ma trận chuẩn. Màn hình chỉ đọc, không thay đổi quyền.</p>
+            <p class="text-muted mb-0">Quản lý, phân quyền theo vai trò và đối chiếu với ma trận chuẩn của hệ thống.</p>
         </div>
-        <div class="d-flex gap-2 align-items-center">
-            <span class="badge rounded-pill @(Model.DifferenceCount == 0 ? "text-bg-success" : "text-bg-warning") px-3 py-2" id="difference-count">@Model.DifferenceCount sai lệch</span>
+        <div class="d-flex flex-wrap gap-2 align-items-center">
+            <span class="badge rounded-pill @(Model.DifferenceCount == 0 ? "text-bg-success" : "text-bg-warning") px-3 py-2" id="difference-count">
+                @(Model.DifferenceCount == 0 ? "Khớp 100% chuẩn" : $"{Model.DifferenceCount} sai lệch so với chuẩn")
+            </span>
             <button type="button" class="btn btn-outline-secondary btn-sm" id="matrix-filter-toggle" aria-pressed="false">Chỉ xem sai lệch</button>
+            <form asp-action="Reset" method="post" class="d-inline" onsubmit="return confirm('Khôi phục toàn bộ ma trận phân quyền về chuẩn mặc định?');">
+                @Html.AntiForgeryToken()
+                <button type="submit" class="btn btn-outline-danger btn-sm">Khôi phục chuẩn mặc định</button>
+            </form>
         </div>
     </div>
+
     <div class="alert alert-light border d-flex flex-wrap gap-3 align-items-center small" role="note">
-        <span><i class="bi bi-check-circle-fill text-success"></i> Khớp với chuẩn</span>
-        <span><i class="bi bi-exclamation-triangle-fill text-warning"></i> Thiếu quyền</span>
-        <span><i class="bi bi-x-octagon-fill text-danger"></i> Thừa quyền</span>
+        <span><span class="badge bg-success-subtle text-success-emphasis border border-success-subtle">✓ Có quyền</span> Vai trò được phép thực hiện</span>
+        <span><span class="badge bg-secondary-subtle text-secondary-emphasis border">— Không</span> Vai trò không có quyền</span>
+        <span><span class="badge text-bg-warning">Thiếu quyền</span> Đang tắt so với chuẩn</span>
+        <span><span class="badge text-bg-danger">Thừa quyền</span> Đang bật thêm so với chuẩn</span>
         <span class="ms-auto text-muted">Cập nhật: @Model.GeneratedAtUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</span>
     </div>
-    <div class="card shadow-sm border-0"><div class="table-responsive">
-        <table class="table table-bordered align-middle mb-0 permission-matrix" id="permission-matrix">
-            <thead class="table-light"><tr><th>Phân hệ</th><th>Quyền / hành động</th>@foreach (var role in Model.Roles) { <th class="text-center">@role.Name</th> }</tr></thead>
-            <tbody>
-            @foreach (var row in Model.Rows)
-            {
-                var hasDifference = row.Roles.Values.Any(cell => cell.Status != "match");
-                <tr data-difference="@hasDifference.ToString().ToLowerInvariant()">
-                    <td><span class="fw-semibold">@row.ModuleName</span></td>
-                    <td>@row.PermissionName <span class="text-muted small">(@row.PermissionCode)</span></td>
-                    @foreach (var role in Model.Roles)
+
+    <form asp-action="Save" method="post" id="permission-matrix-form">
+        @Html.AntiForgeryToken()
+        <div class="card shadow-sm border-0">
+            <div class="table-responsive">
+                <table class="table table-bordered align-middle mb-0 permission-matrix" id="permission-matrix">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Phân hệ</th>
+                            <th>Quyền / Hành động</th>
+                            @foreach (var role in Model.Roles)
+                            {
+                                <th class="text-center">@role.Name<div class="small fw-normal text-muted">@role.Code</div></th>
+                            }
+                        </tr>
+                    </thead>
+                    <tbody>
+                    @foreach (var row in Model.Rows)
                     {
-                        var cell = row.Roles[role.Code];
-                        var css = cell.Status == "match" ? "matrix-match" : cell.Status == "missing" ? "matrix-missing" : "matrix-excess";
-                        var icon = cell.Status == "match" ? "bi-check-circle-fill" : cell.Status == "missing" ? "bi-exclamation-triangle-fill" : "bi-x-octagon-fill";
-                        <td class="text-center @css" title="Chuẩn: @(cell.Expected ? "Có" : "Không"); Hiện tại: @(cell.Current ? "Có" : "Không")">
-                            <i class="bi @icon" aria-hidden="true"></i><span class="visually-hidden">@cell.StatusLabel</span>
-                            @if (cell.Status != "match") { <span class="badge ms-1 @((cell.Status == "missing") ? "text-bg-warning" : "text-bg-danger")">@cell.StatusLabel</span> }
-                        </td>
+                        var hasDifference = row.Roles.Values.Any(cell => cell.Status != "match");
+                        <tr data-difference="@hasDifference.ToString().ToLowerInvariant()">
+                            <td><span class="fw-semibold">@row.ModuleName</span></td>
+                            <td>
+                                <div class="fw-medium">@row.PermissionName</div>
+                                <div class="text-muted small">Mã: <code>@row.ModuleCode.@row.PermissionCode</code></div>
+                            </td>
+                            @foreach (var role in Model.Roles)
+                            {
+                                var cell = row.Roles[role.Code];
+                                var css = cell.Status == "missing"
+                                    ? "matrix-missing"
+                                    : cell.Status == "excess"
+                                        ? "matrix-excess"
+                                        : cell.Current
+                                            ? "matrix-match"
+                                            : "matrix-denied";
+                                var inputKey = $"{row.ModuleCode}:{row.PermissionCode}:{role.Code}";
+                                var isLockedAdminMatrix = row.ModuleCode == "matrix" && role.Code == Project.Models.AccountRoles.SystemAdmin;
+                                <td class="text-center @css" title="Chuẩn: @(cell.Expected ? "Có quyền" : "Không"); Hiện tại: @(cell.Current ? "Có quyền" : "Không")">
+                                    <label class="d-inline-flex flex-column align-items-center gap-1 m-0" style="cursor: pointer;">
+                                        @if (isLockedAdminMatrix)
+                                        {
+                                            <input type="hidden" name="permissions" value="@inputKey" />
+                                            <input type="checkbox" class="form-check-input m-0" checked disabled title="Quản trị hệ thống luôn giữ quyền truy cập ma trận phân quyền" />
+                                        }
+                                        else
+                                        {
+                                            <input type="checkbox" class="form-check-input m-0 matrix-checkbox" name="permissions" value="@inputKey" checked="@cell.Current" />
+                                        }
+                                        @if (cell.Current)
+                                        {
+                                            <span class="badge bg-success-subtle text-success-emphasis border border-success-subtle">✓ Có quyền</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="badge bg-secondary-subtle text-secondary-emphasis border">— Không</span>
+                                        }
+                                        @if (cell.Status != "match")
+                                        {
+                                            <span class="badge @(cell.Status == "missing" ? "text-bg-warning" : "text-bg-danger")">@cell.StatusLabel</span>
+                                        }
+                                    </label>
+                                </td>
+                            }
+                        </tr>
                     }
-                </tr>
-            }
-            </tbody>
-        </table>
-    </div></div>
+                    </tbody>
+                </table>
+            </div>
+            <div class="card-footer bg-white d-flex justify-content-between align-items-center py-3">
+                <span class="text-muted small">Tích chọn hoặc bỏ chọn các ô quyền theo từng vai trò, sau đó nhấn <strong>Lưu phân quyền</strong> để áp dụng.</span>
+                <button type="submit" class="btn btn-primary px-4">Lưu phân quyền</button>
+            </div>
+        </div>
+    </form>
 </div>
 @section Scripts { <script src="~/js/permission-matrix.js" asp-append-version="true"></script> }

@@ -16,10 +16,12 @@
         new { Group = "Vận hành", Name = "Mượn trả", Description = "Lập và theo dõi phiếu mượn.", Controller = "Loan", Action = "Index", Roles = library },
         new { Group = "Vận hành", Name = "Lịch làm việc", Description = "Cập nhật lịch tuần và ngày nghỉ.", Controller = "WorkingSchedule", Action = "Index", Roles = library },
         new { Group = "Bạn đọc", Name = "Đăng ký bạn đọc", Description = "Tạo hồ sơ bạn đọc mới.", Controller = "ReaderRegistration", Action = "Register", Roles = everyone },
-        new { Group = "Hệ thống", Name = "Chính sách mượn", Description = "Thiết lập số ngày mượn.", Controller = "LoanPolicy", Action = "Index", Roles = library },
+        new { Group = "Hệ thống", Name = "Chính sách mượn", Description = "Thiết lập số ngày mượn và ngưỡng khoá thẻ.", Controller = "LoanPolicy", Action = "Index", Roles = library },
+        new { Group = "Hệ thống", Name = "Hệ số bồi thường", Description = "Cấu hình tỷ lệ bồi thường sách mất/hỏng.", Controller = "CompensationPolicy", Action = "Index", Roles = library },
+        new { Group = "Hệ thống", Name = "Tài khoản bạn đọc", Description = "Tra cứu, sửa, khoá và mở khoá thẻ bạn đọc.", Controller = "ReaderAccount", Action = "Index", Roles = library },
         new { Group = "Hệ thống", Name = "Tài khoản nhân sự", Description = "Tạo tài khoản, gán vai trò, khoá tài khoản.", Controller = "StaffAccount", Action = "Index", Roles = adminOnly },
-        new { Group = "Hệ thống", Name = "Tài khoản bạn đọc", Description = "Tra cứu, sửa, khoá tài khoản bạn đọc khi cần hỗ trợ.", Controller = "ReaderAccount", Action = "Index", Roles = adminOnly },
-        new { Group = "Hệ thống", Name = "Nhật ký hoạt động", Description = "Tra ai đã thao tác gì, lúc nào, từ IP nào.", Controller = "AuditLog", Action = "Index", Roles = adminOnly },
+        new { Group = "Hệ thống", Name = "Ma trận phân quyền", Description = "Xem, đối chiếu và cấu hình phân quyền theo vai trò.", Controller = "PermissionMatrix", Action = "Index", Roles = adminOnly },
+        new { Group = "Hệ thống", Name = "Nhật ký hoạt động", Description = "Tra ai đã thao tác gì, lúc nào, từ IP nào.", Controller = "AuditLog", Action = "Index", Roles = library },
     }
     .Where(module => role is not null && module.Roles.Contains(role))
     .Select((module, index) => new { module.Group, module.Name, module.Description, module.Controller, module.Action, Icon = (index + 1).ToString("00") })

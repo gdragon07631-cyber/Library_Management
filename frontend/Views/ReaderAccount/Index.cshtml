@@ -11,15 +11,24 @@
         ("Đang hoạt động", "Đang hoạt động"),
         ("Chờ duyệt", "Chờ duyệt"),
         ("Từ chối", "Từ chối"),
+        (ReaderAccountFilters.CardLocked, "Thẻ thư viện bị khoá"),
+        (ReaderAccountFilters.Locked, "Tài khoản bị khoá"),
         (ReaderAccountFilters.UnconfirmedEmail, "Chưa xác nhận email"),
-        (ReaderAccountFilters.PendingEmailChange, "Đang chờ đổi email"),
-        (ReaderAccountFilters.Locked, "Đã khoá")
+        (ReaderAccountFilters.PendingEmailChange, "Đang chờ đổi email")
     };
 }
 <div class="container py-4">
     <div class="mb-4">
         <h1 class="h3 mb-1 text-primary fw-bold">Tài khoản bạn đọc</h1>
-        <p class="text-muted mb-0">Tra cứu mọi tài khoản bạn đọc để hỗ trợ khi bạn đọc gặp sự cố: sửa thông tin, xác nhận email, gửi liên kết đặt lại mật khẩu, khoá hoặc mở khoá.</p>
+        <p class="text-muted mb-0">Quản lý và tra cứu tài khoản bạn đọc, khoá và mở khoá thẻ bạn đọc vi phạm mượn sách hoặc nợ phí.</p>
+    </div>
+
+    <div class="alert alert-info d-flex align-items-center justify-content-between mb-4">
+        <div>
+            <i class="bi bi-shield-exclamation me-2"></i>
+            <strong>Đề xuất khoá thẻ tự động:</strong> Xem danh sách bạn đọc quá hạn trả sách trên 30 ngày hoặc nợ phí vượt ngưỡng quy định.
+        </div>
+        <a asp-controller="LoanPolicy" asp-action="Index" class="btn btn-sm btn-primary text-nowrap ms-3">Xem đề xuất khoá thẻ</a>
     </div>
 
     <form method="get" class="card shadow-sm border-0 mb-4" id="readerSearchForm">
@@ -47,15 +56,17 @@
         <div class="table-responsive">
             <table class="table table-hover align-middle mb-0" id="readerTable">
                 <thead class="table-light">
-                    <tr><th>#</th><th>Họ và tên</th><th>Email</th><th>Số điện thoại</th><th>Mã SV/CB</th><th>Thẻ</th><th>Trạng thái</th><th class="text-end"></th></tr>
+                    <tr><th>#</th><th>Họ và tên</th><th>Email</th><th>Số điện thoại</th><th>Mã SV/CB</th><th>Thẻ</th><th>Tài khoản</th><th>Trạng thái thẻ</th><th class="text-end">Thao tác</th></tr>
                 </thead>
                 <tbody>
                     @if (Model.Count == 0)
                     {
-                        <tr><td colspan="8" class="text-center text-muted py-4">Không tìm thấy tài khoản bạn đọc nào.</td></tr>
+                        <tr><td colspan="9" class="text-center text-muted py-4">Không tìm thấy tài khoản bạn đọc nào.</td></tr>
                     }
                     @foreach (var reader in Model)
                     {
+                        var card = reader.LibraryCard;
+                        var isCardLocked = card != null && LibraryCardStatusHelper.IsCardLocked(card, DateTime.UtcNow);
                         <tr>
                             <td class="text-muted">@reader.Id</td>
                             <td class="fw-semibold">@reader.FullName</td>
@@ -73,7 +84,7 @@
                             <td>@reader.PhoneNumber</td>
                             <td>@reader.StudentOrStaffCode</td>
                             <td>
-                                @if (reader.LibraryCard is { } card)
+                                @if (card is not null)
                                 {
                                     <span class="font-monospace">@card.CardCode</span>
                                     <div class="small text-muted">@card.LibraryCardType?.Name · hết hạn @card.ExpiresOn.ToString("dd/MM/yyyy")</div>
@@ -90,7 +101,38 @@
                                     <span class="badge bg-danger ms-1">Đã khoá</span>
                                 }
                             </td>
-                            <td class="text-end"><a asp-action="Details" asp-route-id="@reader.Id" class="btn btn-sm btn-outline-primary">Xem / sửa</a></td>
+                            <td>
+                                @if (card is null)
+                                {
+                                    <span class="text-muted small">Chưa cấp thẻ</span>
+                                }
+                                else if (isCardLocked)
+                                {
+                                    <span class="badge bg-danger">Đang bị khoá</span>
+                                    @if (!string.IsNullOrWhiteSpace(card.LockReason))
+                                    {
+                                        <div class="small text-danger text-truncate" style="max-width: 160px;" title="@card.LockReason">@card.LockReason</div>
+                                    }
+                                }
+                                else
+                                {
+                                    <span class="badge bg-success-subtle text-success-emphasis">Đang hoạt động</span>
+                                }
+                            </td>
+                            <td class="text-end text-nowrap">
+                                <a asp-action="Details" asp-route-id="@reader.Id" class="btn btn-sm btn-outline-primary">Chi tiết</a>
+                                @if (card is not null)
+                                {
+                                    if (isCardLocked)
+                                    {
+                                        <a asp-action="Details" asp-route-id="@reader.Id" asp-route-action="unlock" class="btn btn-sm btn-success ms-1">Mở khoá</a>
+                                    }
+                                    else
+                                    {
+                                        <a asp-action="Details" asp-route-id="@reader.Id" asp-route-action="lock" class="btn btn-sm btn-outline-danger ms-1">Khoá thẻ</a>
+                                    }
+                                }
+                            </td>
                         </tr>
                     }
                 </tbody>

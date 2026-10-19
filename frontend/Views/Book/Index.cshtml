@@ -2,6 +2,13 @@
 @{
     ViewData["Title"] = "Danh mục sách";
     var copyCounts = ViewData["CopyCounts"] as IReadOnlyDictionary<int, int> ?? new Dictionary<int, int>();
+    var currentPage = ViewData["Page"] as int? ?? 1;
+    var pageSize = ViewData["PageSize"] as int? ?? 20;
+    var totalItems = ViewData["TotalItems"] as int? ?? Model.Count;
+    var totalPages = ViewData["TotalPages"] as int? ?? 1;
+    var searchKeyword = ViewData["SearchKeyword"] as string;
+    var startItem = totalItems == 0 ? 0 : (currentPage - 1) * pageSize + 1;
+    var endItem = Math.Min(currentPage * pageSize, totalItems);
 }
 
 <div class="container py-4">
@@ -26,9 +33,29 @@
     }
 
     <div class="card shadow-sm border-0">
-        <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
-            <h2 class="h5 mb-0 fw-semibold text-secondary">Danh sách Sách đã biên mục</h2>
-            <span class="badge bg-primary rounded-pill">Tổng số: @Model.Count</span>
+        <div class="card-header bg-white py-3">
+            <div class="d-flex flex-wrap justify-content-between align-items-center gap-3">
+                <div class="d-flex align-items-center gap-2">
+                    <h2 class="h5 mb-0 fw-semibold text-secondary">Danh sách Sách đã biên mục</h2>
+                    <span class="badge bg-primary rounded-pill">Tổng số: @totalItems</span>
+                </div>
+                <form asp-action="Index" method="get" class="d-flex flex-wrap align-items-center gap-2 m-0">
+                    <input type="hidden" name="page" value="1" />
+                    <div class="input-group input-group-sm" style="width: 280px;">
+                        <input type="search" name="q" value="@searchKeyword" class="form-control" placeholder="Tìm nhan đề, ISBN, tác giả..." />
+                        <button type="submit" class="btn btn-outline-primary">Tìm</button>
+                        @if (!string.IsNullOrWhiteSpace(searchKeyword))
+                        {
+                            <a asp-action="Index" asp-route-pageSize="@pageSize" class="btn btn-outline-secondary">Xóa</a>
+                        }
+                    </div>
+                    <select name="pageSize" class="form-select form-select-sm" style="width: auto;" onchange="this.form.submit()" aria-label="Số dòng mỗi trang">
+                        <option value="10" selected="@(pageSize == 10)">10 / trang</option>
+                        <option value="20" selected="@(pageSize == 20)">20 / trang</option>
+                        <option value="50" selected="@(pageSize == 50)">50 / trang</option>
+                    </select>
+                </form>
+            </div>
         </div>
         <div class="card-body p-0">
             <div class="table-responsive">
@@ -52,13 +79,20 @@
                         {
                             <tr>
                                 <td colspan="10" class="text-center py-4 text-muted">
-                                    Chưa có cuốn sách nào được biên mục. Hãy nhấn <strong>Biên mục sách mới</strong> để thêm.
+                                    @if (!string.IsNullOrWhiteSpace(searchKeyword))
+                                    {
+                                        <span>Không tìm thấy đầu sách nào khớp với từ khóa <strong>"@searchKeyword"</strong>.</span>
+                                    }
+                                    else
+                                    {
+                                        <span>Chưa có cuốn sách nào được biên mục. Hãy nhấn <strong>Biên mục sách mới</strong> để thêm.</span>
+                                    }
                                 </td>
                             </tr>
                         }
                         else
                         {
-                            var index = 1;
+                            var index = startItem;
                             foreach (var book in Model)
                             {
                                 <tr>
@@ -115,5 +149,60 @@
                 </table>
             </div>
         </div>
+        @if (totalItems > 0)
+        {
+            <div class="card-footer bg-white py-3 d-flex flex-wrap justify-content-between align-items-center gap-2">
+                <div class="small text-muted">
+                    Hiển thị <strong>@startItem – @endItem</strong> trong tổng số <strong>@totalItems</strong> đầu sách (Trang @currentPage / @totalPages)
+                </div>
+                @if (totalPages > 1)
+                {
+                    <nav aria-label="Phân trang danh mục sách">
+                        <ul class="pagination pagination-sm mb-0">
+                            <li class="page-item @(currentPage <= 1 ? "disabled" : "")">
+                                <a class="page-link" asp-action="Index" asp-route-page="@(currentPage - 1)" asp-route-pageSize="@pageSize" asp-route-q="@searchKeyword" aria-label="Trang trước">‹ Trước</a>
+                            </li>
+                            @{
+                                var startPage = Math.Max(1, currentPage - 2);
+                                var endPage = Math.Min(totalPages, startPage + 4);
+                                if (endPage - startPage < 4)
+                                {
+                                    startPage = Math.Max(1, endPage - 4);
+                                }
+                            }
+                            @if (startPage > 1)
+                            {
+                                <li class="page-item">
+                                    <a class="page-link" asp-action="Index" asp-route-page="1" asp-route-pageSize="@pageSize" asp-route-q="@searchKeyword">1</a>
+                                </li>
+                                @if (startPage > 2)
+                                {
+                                    <li class="page-item disabled"><span class="page-link">…</span></li>
+                                }
+                            }
+                            @for (var p = startPage; p <= endPage; p++)
+                            {
+                                <li class="page-item @(p == currentPage ? "active" : "")">
+                                    <a class="page-link" asp-action="Index" asp-route-page="@p" asp-route-pageSize="@pageSize" asp-route-q="@searchKeyword" aria-current="@(p == currentPage ? "page" : null)">@p</a>
+                                </li>
+                            }
+                            @if (endPage < totalPages)
+                            {
+                                @if (endPage < totalPages - 1)
+                                {
+                                    <li class="page-item disabled"><span class="page-link">…</span></li>
+                                }
+                                <li class="page-item">
+                                    <a class="page-link" asp-action="Index" asp-route-page="@totalPages" asp-route-pageSize="@pageSize" asp-route-q="@searchKeyword">@totalPages</a>
+                                </li>
+                            }
+                            <li class="page-item @(currentPage >= totalPages ? "disabled" : "")">
+                                <a class="page-link" asp-action="Index" asp-route-page="@(currentPage + 1)" asp-route-pageSize="@pageSize" asp-route-q="@searchKeyword" aria-label="Trang sau">Sau ›</a>
+                            </li>
+                        </ul>
+                    </nav>
+                }
+            </div>
+        }
     </div>
 </div>

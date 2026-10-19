@@ -224,7 +224,9 @@
                                         : "—")
                                     : (log.Target.Contains("lý do khóa:", StringComparison.OrdinalIgnoreCase)
                                         ? log.Target.Substring(log.Target.IndexOf("lý do khóa:", StringComparison.OrdinalIgnoreCase) + "lý do khóa:".Length).Trim()
-                                        : "—");
+                                        : log.Target.Contains("lý do:", StringComparison.OrdinalIgnoreCase)
+                                            ? log.Target.Substring(log.Target.IndexOf("lý do:", StringComparison.OrdinalIgnoreCase) + "lý do:".Length).Trim()
+                                            : "—");
                                 var unlockReasonText = log.Action == AuditActions.UnlockCard && log.Target.Contains("lý do mở khóa:", StringComparison.OrdinalIgnoreCase)
                                     ? log.Target.Substring(log.Target.IndexOf("lý do mở khóa:", StringComparison.OrdinalIgnoreCase) + "lý do mở khóa:".Length).Trim()
                                     : "—";
@@ -384,8 +386,9 @@
     <partial name="_ValidationScriptsPartial" />
     <script>
         (function () {
-            const lockModal = document.getElementById('cardLockModal');
-            if (lockModal) {
+            const urlParams = new URLSearchParams(window.location.search);
+            const lockModalEl = document.getElementById('cardLockModal');
+            if (lockModalEl) {
                 const typeSelect = document.getElementById('cardLockType');
                 const expiryGroup = document.getElementById('cardLockExpiryGroup');
                 const expiryInput = document.getElementById('cardLockExpiry');
@@ -400,6 +403,26 @@
                 };
                 typeSelect.addEventListener('change', sync);
                 sync();
+
+                if (urlParams.get('action') === 'lock' || urlParams.get('triggerLock') === '1') {
+                    const reason = urlParams.get('reason');
+                    if (reason) {
+                        const reasonInput = document.getElementById('cardLockReason');
+                        if (reasonInput && !reasonInput.value) {
+                            reasonInput.value = reason;
+                        }
+                    }
+                    const modal = new bootstrap.Modal(lockModalEl);
+                    modal.show();
+                }
+            }
+
+            const unlockModalEl = document.getElementById('cardUnlockModal');
+            if (unlockModalEl) {
+                if (urlParams.get('action') === 'unlock' || urlParams.get('triggerUnlock') === '1') {
+                    const modal = new bootstrap.Modal(unlockModalEl);
+                    modal.show();
+                }
             }
         })();
     </script>

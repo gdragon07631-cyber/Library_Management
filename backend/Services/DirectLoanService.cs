@@ -46,7 +46,7 @@ public sealed partial class DirectLoanService(ApplicationDbContext db, IBookLoan
                         || card.Status.Contains("khoá", StringComparison.OrdinalIgnoreCase)
                         ? LibraryCardStatusHelper.GetLockMessage(card, DateTime.UtcNow) ?? "Thẻ bạn đọc đang bị khóa."
                         : "Tài khoản bạn đọc đang bị khóa.";
-                    model.CanOverrideBlock = true;
+                    model.CanOverrideBlock = false;
                 }
                 else if (reader.Status != "Đang hoạt động" || card.Status != "Đang hoạt động")
                     model.ReaderError = "Thẻ hoặc tài khoản bạn đọc không ở trạng thái hoạt động.";

@@ -63,14 +63,17 @@
             <a class="side-link" asp-controller="ReaderRegistration" asp-action="Register"><span>＋</span> Đăng ký bạn đọc</a>
             @if (canManageLibrary)
             {
+                <a class="side-link @Active("ReaderAccount")" aria-current="@Current("ReaderAccount")" asp-controller="ReaderAccount" asp-action="Index"><span>☻</span> Tài khoản bạn đọc (Khoá/Mở thẻ)</a>
+            }
+            @if (canManageLibrary)
+            {
                 <div class="side-label">HỆ THỐNG</div>
-                <a class="side-link @Active("LoanPolicy")" aria-current="@Current("LoanPolicy")" asp-controller="LoanPolicy" asp-action="Index"><span>⚙</span> Chính sách mượn</a>
+                <a class="side-link @Active("LoanPolicy")" aria-current="@Current("LoanPolicy")" asp-controller="LoanPolicy" asp-action="Index"><span>⚙</span> Chính sách &amp; Đề xuất khoá thẻ</a>
                 <a class="side-link @Active("CompensationPolicy")" aria-current="@Current("CompensationPolicy")" asp-controller="CompensationPolicy" asp-action="Index"><span>⚙</span> Hệ số bồi thường</a>
             }
             @if (isAdmin)
             {
                 <a class="side-link @Active("StaffAccount")" aria-current="@Current("StaffAccount")" asp-controller="StaffAccount" asp-action="Index"><span>☺</span> Tài khoản nhân sự</a>
-                <a class="side-link @Active("ReaderAccount")" aria-current="@Current("ReaderAccount")" asp-controller="ReaderAccount" asp-action="Index"><span>☻</span> Tài khoản bạn đọc</a>
                 <a class="side-link @Active("PermissionMatrix")" aria-current="@Current("PermissionMatrix")" asp-controller="PermissionMatrix" asp-action="Index"><span>⊞</span> Ma trận phân quyền</a>
             }
             @if (canViewAuditLogs)

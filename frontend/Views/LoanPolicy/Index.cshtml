@@ -55,7 +55,7 @@
         </div>
     </div>
 
-    <div class="card shadow-sm border-0 mt-4">
+    <div class="card shadow-sm border-0 mt-4" id="de-xuat-khoa-the">
         <div class="card-header bg-white">
             <h2 class="h5 mb-1">Đề xuất khoá thẻ</h2>
             <p class="text-muted small mb-0">Danh sách bạn đọc đủ điều kiện đề xuất khoá theo quá hạn trên 30 ngày hoặc nợ phí vượt ngưỡng.</p>
@@ -71,12 +71,13 @@
                         <th>Số tiền nợ</th>
                         <th>Lý do đề xuất</th>
                         <th>Trạng thái thẻ</th>
+                        <th class="text-end">Thao tác</th>
                     </tr>
                 </thead>
                 <tbody>
                 @if (Model.LockProposals.Count == 0)
                 {
-                    <tr><td colspan="7" class="text-center text-muted py-4">Không có bạn đọc nào đang đủ điều kiện đề xuất khoá thẻ.</td></tr>
+                    <tr><td colspan="8" class="text-center text-muted py-4">Không có bạn đọc nào đang đủ điều kiện đề xuất khoá thẻ.</td></tr>
                 }
                 @foreach (var proposal in Model.LockProposals)
                 {
@@ -93,6 +94,9 @@
                             }
                         </td>
                         <td>@proposal.Status</td>
+                        <td class="text-end">
+                            <a asp-controller="ReaderAccount" asp-action="Details" asp-route-id="@proposal.ReaderAccountId" asp-route-action="lock" asp-route-reason="@string.Join("; ", proposal.Reasons)" class="btn btn-sm btn-outline-danger">Xem &amp; Khoá thẻ</a>
+                        </td>
                     </tr>
                 }
                 </tbody>
