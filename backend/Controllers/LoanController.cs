@@ -477,6 +477,18 @@ public sealed class LoanController(IBookLoanService loans, ApplicationDbContext 
             .Select(l => l.ReaderAccountId)
             .ToHashSet();
 
+        var lateCounts = new Dictionary<int, int>();
+        var lateRates = new Dictionary<int, decimal>();
+        var frequentLateIds = new HashSet<int>();
+        foreach (var group in allLoans.GroupBy(l => l.ReaderAccountId))
+        {
+            var eval = ReaderLoanHistoryViewModel.Evaluate(group.ToList(), today);
+            lateCounts[group.Key] = eval.LateReturnCount;
+            lateRates[group.Key] = eval.LateReturnRate;
+            if (eval.IsFrequentLateReturner)
+                frequentLateIds.Add(group.Key);
+        }
+
         var staff = await GetSignedInStaffAsync(ct);
         var canOverride = staff != null && HasOverridePermission(staff.Role);
 
@@ -491,6 +503,9 @@ public sealed class LoanController(IBookLoanService loans, ApplicationDbContext 
             Readers = readers,
             ReaderLoanCounts = loanCounts,
             ReaderHasOverdue = overdueReaderIds,
+            ReaderLateReturnCounts = lateCounts,
+            ReaderLateReturnRates = lateRates,
+            ReaderFrequentLateIds = frequentLateIds,
             BlockedLoanLogs = await loans.GetBlockedLoanLogsAsync(null, ct),
             NewLoan = new CreateBookLoanViewModel { LoanDate = today },
             CanOverride = canOverride

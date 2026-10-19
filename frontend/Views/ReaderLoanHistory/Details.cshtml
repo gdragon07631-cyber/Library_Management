@@ -35,13 +35,52 @@
     {
         <div class="alert alert-danger" role="alert">@Model.DateFilterError</div>
     }
-    <h1 class="h3 fw-bold">Lịch sử mượn trả</h1>
-    <p class="text-muted">@Model.Reader.FullName · Mã bạn đọc: @Model.Reader.StudentOrStaffCode</p>
+    <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
+        <h1 class="h3 fw-bold mb-0">Lịch sử mượn trả</h1>
+        @if (Model.IsFrequentLateReturner)
+        {
+            <span id="frequentLateBadge" class="badge bg-warning text-dark fs-6">⚠ Thường xuyên trả trễ</span>
+        }
+    </div>
+    <p class="text-muted">
+        @Model.Reader.FullName · Mã bạn đọc: @Model.Reader.StudentOrStaffCode
+        @if (Model.Reader.LibraryCard is { } card)
+        {
+            <span> · Mã thẻ: <strong class="font-monospace">@card.CardCode</strong></span>
+        }
+    </p>
+
+    @if (Model.IsFrequentLateReturner && !string.IsNullOrWhiteSpace(Model.FrequentLateWarningMessage))
+    {
+        <div id="frequentLateWarningAlert" class="alert alert-warning border-warning d-flex align-items-start gap-2 mb-4" role="alert">
+            <span class="fs-4 lh-1" aria-hidden="true">⚠</span>
+            <div>
+                <div class="fw-bold">Cảnh báo: Bạn đọc thường xuyên trả trễ</div>
+                <div>@Model.FrequentLateWarningMessage</div>
+            </div>
+        </div>
+    }
 
     <div class="row g-3 mb-4">
-        <div class="col-sm-4"><div class="card h-100"><div class="card-body"><div class="text-muted small">Phiếu đang mở</div><div class="fs-3 fw-bold">@Model.OpenLoanCount</div></div></div></div>
+        <div class="col-sm-4"><div class="card h-100"><div class="card-body"><div class="text-muted small">Phiếu đang mở</div><div class="fs-3 fw-bold">@Model.OpenLoanCount</div>@if (Model.OverdueOpenLoanCount > 0) { <div class="small text-danger fw-semibold">Đang quá hạn: @Model.OverdueOpenLoanCount phiếu</div> }</div></div></div>
         <div class="col-sm-4"><div class="card h-100"><div class="card-body"><div class="text-muted small">Tổng lượt mượn</div><div class="fs-3 fw-bold">@Model.TotalLoanCount</div></div></div></div>
-        <div class="col-sm-4"><div class="card h-100"><div class="card-body"><div class="text-muted small">Lượt trả trễ</div><div class="fs-3 fw-bold">@Model.LateReturnCount</div><div class="small text-muted">Tính theo ngày trả thực tế tại Việt Nam muộn hơn hạn trả.</div></div></div></div>
+        <div class="col-sm-4">
+            <div class="card h-100 @(Model.IsFrequentLateReturner ? "border-warning bg-warning-subtle" : "")">
+                <div class="card-body">
+                    <div class="text-muted small">Lượt trả trễ</div>
+                    <div class="fs-3 fw-bold @(Model.LateReturnCount > 0 ? "text-warning-emphasis" : "")">@Model.LateReturnCount</div>
+                    <div class="small text-muted">
+                        Tính theo ngày trả thực tế tại Việt Nam muộn hơn hạn trả.
+                        @if (Model.AllTimeTotalLoanCount > 0)
+                        {
+                            <span class="d-block mt-1 fw-semibold @(Model.IsFrequentLateReturner ? "text-danger" : "")">
+                                Tỷ lệ trễ toàn kỳ: @Model.LateReturnRate.ToString("0.#")% (@Model.AllTimeLateReturnCount/@Model.AllTimeTotalLoanCount lượt trả trễ@(Model.AllTimeOverdueOpenLoanCount > 0 ? $", {Model.AllTimeOverdueOpenLoanCount} đang quá hạn" : ""))
+                            </span>
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 
     <div class="card shadow-sm border-0">
@@ -57,27 +96,35 @@
                 @foreach (var loan in Model.Loans)
                 {
                     var isIncidentClosed = loan.CloseReason is Project.Models.BookLoanCloseReason.Lost or Project.Models.BookLoanCloseReason.Damaged;
-                    var isReturned = loan.ReturnedAtUtc.HasValue && !isIncidentClosed;
-                    var returnedDate = isReturned && loan.ReturnedAtUtc is DateTime returnedAt
-                        ? DateOnly.FromDateTime(Project.Services.HoldPickupExpirySchedule.GetVietnamLocalTime(returnedAt))
-                        : (DateOnly?)null;
+                    var returnedDate = Project.Models.ReaderLoanHistoryViewModel.GetLocalReturnDate(loan);
+                    var isReturned = (loan.ReturnedAtUtc.HasValue || loan.ReturnDate.HasValue) && !isIncidentClosed;
+                    var isLateReturn = Project.Models.ReaderLoanHistoryViewModel.IsLateReturn(loan);
                     var isOverdue = !isReturned && !isIncidentClosed && loan.DueDate < Project.Services.HoldPickupExpirySchedule.GetBusinessDate(DateTime.UtcNow);
                     var loanStatus = loan.CloseReason switch
                     {
                         Project.Models.BookLoanCloseReason.Lost => "Đã đóng - mất",
                         Project.Models.BookLoanCloseReason.Damaged => "Đã đóng - hỏng nặng",
                         _ => isReturned
-                            ? returnedDate.HasValue && returnedDate.Value > loan.DueDate ? "Đã trả trễ hạn" : "Đã trả đúng hạn"
+                            ? isLateReturn ? "Đã trả trễ hạn" : "Đã trả đúng hạn"
                             : isOverdue ? "Quá hạn, chưa trả" : "Đang mượn"
                     };
-                    <tr>
+                    var badgeClass = loan.CloseReason is Project.Models.BookLoanCloseReason.Lost or Project.Models.BookLoanCloseReason.Damaged
+                        ? "bg-secondary"
+                        : isLateReturn
+                            ? "bg-warning text-dark"
+                            : isOverdue
+                                ? "bg-danger"
+                                : isReturned
+                                    ? "bg-success-subtle text-success-emphasis"
+                                    : "bg-primary-subtle text-primary-emphasis";
+                    <tr class="@(isLateReturn || isOverdue ? "table-warning" : "")">
                         <td>#@loan.Id</td>
                         <td>@loan.Book?.Title</td>
                         <td>@(loan.BookCopy?.CopyCode ?? "—")</td>
                         <td>@loan.LoanDate.ToString("dd/MM/yyyy")</td>
                         <td>@loan.DueDate.ToString("dd/MM/yyyy")</td>
                         <td>@(returnedDate?.ToString("dd/MM/yyyy") ?? "—")</td>
-                        <td>@loanStatus</td>
+                        <td><span class="badge @badgeClass">@loanStatus</span></td>
                     </tr>
                 }
                 </tbody>
@@ -85,3 +132,4 @@
         </div>
     </div>
 </div>
+

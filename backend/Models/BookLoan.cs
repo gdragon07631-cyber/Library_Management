@@ -170,6 +170,9 @@ public sealed class LoanIndexViewModel
     public IReadOnlyList<ReaderAccount> Readers { get; set; } = [];
     public IReadOnlyDictionary<int, int> ReaderLoanCounts { get; set; } = new Dictionary<int, int>();
     public IReadOnlySet<int> ReaderHasOverdue { get; set; } = new HashSet<int>();
+    public IReadOnlyDictionary<int, int> ReaderLateReturnCounts { get; set; } = new Dictionary<int, int>();
+    public IReadOnlyDictionary<int, decimal> ReaderLateReturnRates { get; set; } = new Dictionary<int, decimal>();
+    public IReadOnlySet<int> ReaderFrequentLateIds { get; set; } = new HashSet<int>();
     public IReadOnlyList<BlockedLoanLogEntry> BlockedLoanLogs { get; set; } = [];
     public CreateBookLoanViewModel NewLoan { get; set; } = new();
     public bool CanOverride { get; set; }

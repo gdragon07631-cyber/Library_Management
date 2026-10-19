@@ -48,7 +48,7 @@ public sealed class LoanLookupService(ApplicationDbContext db) : ILoanLookupServ
         var totalPages = total == 0 ? 0 : (int)Math.Ceiling(total / (double)PageSize);
         page = totalPages == 0 ? 1 : Math.Clamp(page, 1, totalPages);
 
-        var items = await query
+        var rawItems = await query
             .OrderBy(loan => loan.ReturnedAtUtc != null)
             .ThenByDescending(loan => loan.LoanDate).ThenByDescending(loan => loan.Id)
             .Skip((page - 1) * PageSize).Take(PageSize)
@@ -60,13 +60,45 @@ public sealed class LoanLookupService(ApplicationDbContext db) : ILoanLookupServ
                 loan.ReaderAccount!.FullName,
                 loan.LoanDate,
                 loan.DueDate,
-                loan.ReturnedAtUtc == null ? LoanLookupStatus.Open : LoanLookupStatus.Returned))
+                loan.ReturnedAtUtc == null ? LoanLookupStatus.Open : LoanLookupStatus.Returned)
+            {
+                ReaderAccountId = loan.ReaderAccountId
+            })
             .ToListAsync(cancellationToken);
+
+        var readerIds = rawItems.Select(item => item.ReaderAccountId).Where(id => id > 0).Distinct().ToList();
+        var evaluations = new Dictionary<int, ReaderLateReturnEvaluation>();
+        if (readerIds.Count > 0)
+        {
+            var today = HoldPickupExpirySchedule.GetBusinessDate(DateTime.UtcNow);
+            var readerLoans = await db.BookLoans.AsNoTracking()
+                .Where(loan => readerIds.Contains(loan.ReaderAccountId))
+                .ToListAsync(cancellationToken);
+            foreach (var group in readerLoans.GroupBy(loan => loan.ReaderAccountId))
+                evaluations[group.Key] = ReaderLoanHistoryViewModel.Evaluate(group.ToList(), today);
+        }
+
+        var items = rawItems.Select(item =>
+        {
+            if (evaluations.TryGetValue(item.ReaderAccountId, out var eval))
+                return item with { ReaderLateReturnCount = eval.LateReturnCount, IsFrequentLateReturner = eval.IsFrequentLateReturner };
+            return item;
+        }).ToList();
+
+        int? matchedReaderId = readerIds.Count == 1 ? readerIds[0] : null;
+        string? matchedReaderName = matchedReaderId.HasValue ? items.FirstOrDefault()?.ReaderName : null;
+        var matchedEval = matchedReaderId.HasValue && evaluations.TryGetValue(matchedReaderId.Value, out var singleEval)
+            ? singleEval
+            : null;
 
         return new LoanLookupPage(term, items, page, PageSize, total)
         {
             Filter = filter,
-            EmptyReason = total > 0 ? null : await FindEmptyReasonAsync(codeOnlyQuery, filter, cancellationToken)
+            EmptyReason = total > 0 ? null : await FindEmptyReasonAsync(codeOnlyQuery, filter, cancellationToken),
+            MatchedReaderId = matchedReaderId,
+            MatchedReaderName = matchedReaderName,
+            IsFrequentLateReturner = matchedEval?.IsFrequentLateReturner ?? false,
+            FrequentLateWarningMessage = matchedEval?.WarningMessage
         };
     }
 

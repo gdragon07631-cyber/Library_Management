@@ -1,10 +1,13 @@
 using System;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
+using Project.Data;
 
 #nullable disable
 
 namespace Project.Migrations;
 
+[DbContext(typeof(ApplicationDbContext))]
 [Migration("20261015190000_AddCompensationPolicyAndIncidentCompensation")]
 public partial class AddCompensationPolicyAndIncidentCompensation : Migration
 {

@@ -50,11 +50,8 @@ builder.Services.AddScoped<ICompensationService, CompensationService>();
 builder.Services.AddScoped<DirectLoanService>();
 builder.Services.AddScoped<OverdueReaderExportService>();
 builder.Services.AddScoped<ILoanContactHistoryService, LoanContactHistoryService>();
-<<<<<<< HEAD
 builder.Services.AddScoped<ILoanDueReminderService, LoanDueReminderService>();
-=======
 builder.Services.AddScoped<IOverdueReminderService, OverdueReminderService>();
->>>>>>> origin/feature/nhac-qua-han
 builder.Services.AddScoped<IBookLoanDetailsService, BookLoanDetailsService>();
 builder.Services.AddScoped<ILoanLookupService, LoanLookupService>();
 builder.Services.AddScoped<IAuditLogService, AuditLogService>();
@@ -74,8 +71,6 @@ builder.Services.AddScoped<IReaderAccountAdminService, ReaderAccountAdminService
 builder.Services.AddSingleton<IPermissionMatrixService, PermissionMatrixService>();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddHostedService<HoldPickupExpiryScheduledWorker>();
-<<<<<<< HEAD
-<<<<<<< HEAD
 builder.Services.AddHostedService<HoldReadyEmailWorker>();
 builder.Services.AddOptions<HoldPickupReminderOptions>()
     .Bind(builder.Configuration.GetSection(HoldPickupReminderOptions.SectionName))
@@ -85,12 +80,8 @@ builder.Services.AddOptions<HoldPickupReminderOptions>()
         "HoldPickupReminder:RetryIntervalSeconds must be between 30 and 3600.")
     .ValidateOnStart();
 builder.Services.AddHostedService<HoldPickupReminderScheduledWorker>();
-=======
 builder.Services.AddHostedService<LoanDueReminderWorker>();
->>>>>>> origin/feature/nhac-den-han
-=======
 builder.Services.AddHostedService<OverdueReminderWorker>();
->>>>>>> origin/feature/nhac-qua-han
 builder.Services.Configure<BookCopyLabelPrintOptions>(builder.Configuration.GetSection("BookCopyLabels"));
 builder.Services.AddDataProtection()
     .PersistKeysToFileSystem(new DirectoryInfo(Path.Combine(builder.Environment.ContentRootPath, "Data", "Keys")));
@@ -364,9 +355,9 @@ if (string.IsNullOrWhiteSpace(jwtSigningKey) || System.Text.Encoding.UTF8.GetByt
         "Configure Jwt:SigningKey using dotnet user-secrets or the Jwt__SigningKey environment variable (minimum 32 bytes) before starting the web app.");
 }
 
-// Staging starts from an empty SQL Server volume on first launch. Apply the existing
-// migrations before serving requests; other environments retain their current behavior.
-if (app.Environment.IsStaging())
+// Apply pending migrations automatically on startup in Development and Staging
+// so newly merged tables (e.g., EmailSendHistories) exist before serving requests.
+if (app.Environment.IsDevelopment() || app.Environment.IsStaging())
 {
     await using var scope = app.Services.CreateAsyncScope();
     var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();

@@ -30,7 +30,7 @@ public sealed class LoanDueReminderTests
         var result = await service.RunAsync(new DateOnly(2026, 10, 15));
 
         Assert.Equal(1, sender.Messages.Count);
-        Assert.Equal(3, result.EligibleLoans);
+        Assert.Equal(2, result.EligibleLoans);
         Assert.Equal(1, result.EmailsSent);
         Assert.Equal(0, result.EmailsFailed);
         Assert.Contains("Còn 2 ngày", sender.Messages[0].Body);

@@ -33,13 +33,23 @@ public sealed class ReaderLoanHistoryController(ApplicationDbContext db) : Contr
             loans = await GetLoansQuery(id, startDate, endDate).ToListAsync(cancellationToken);
         }
 
+        var today = HoldPickupExpirySchedule.GetBusinessDate(DateTime.UtcNow);
+        var evaluation = ReaderLoanHistoryViewModel.Evaluate(allLoans, today);
+
         return View(new ReaderLoanHistoryViewModel
         {
             Reader = reader,
             Loans = loans,
-            OpenLoanCount = allLoans.Count(loan => loan.ReturnedAtUtc is null),
-            TotalLoanCount = allLoans.Count,
-            LateReturnCount = allLoans.Count(IsLateReturn),
+            OpenLoanCount = loans.Count(loan => !loan.IsReturned && loan.ReturnedAtUtc is null && loan.CloseReason is null),
+            TotalLoanCount = loans.Count,
+            LateReturnCount = loans.Count(ReaderLoanHistoryViewModel.IsLateReturn),
+            OverdueOpenLoanCount = loans.Count(loan => !loan.IsReturned && loan.ReturnedAtUtc is null && loan.CloseReason is null && loan.DueDate < today),
+            AllTimeTotalLoanCount = evaluation.TotalLoanCount,
+            AllTimeLateReturnCount = evaluation.LateReturnCount,
+            AllTimeOverdueOpenLoanCount = evaluation.OverdueOpenLoanCount,
+            LateReturnRate = evaluation.LateReturnRate,
+            IsFrequentLateReturner = evaluation.IsFrequentLateReturner,
+            FrequentLateWarningMessage = evaluation.WarningMessage,
             StartDate = startDate,
             EndDate = endDate,
             DateFilterError = dateFilterError
@@ -66,13 +76,13 @@ public sealed class ReaderLoanHistoryController(ApplicationDbContext db) : Contr
         foreach (var loan in loans)
         {
             var isIncidentClosed = loan.CloseReason is BookLoanCloseReason.Lost or BookLoanCloseReason.Damaged;
-            var returnDate = isIncidentClosed ? null : GetLocalReturnDate(loan.ReturnedAtUtc);
+            var returnDate = isIncidentClosed ? null : ReaderLoanHistoryViewModel.GetLocalReturnDate(loan);
             var status = loan.CloseReason switch
             {
                 BookLoanCloseReason.Lost => "Đã đóng - mất",
                 BookLoanCloseReason.Damaged => "Đã đóng - hỏng nặng",
                 _ => returnDate.HasValue
-                    ? returnDate.Value > loan.DueDate ? "Đã trả trễ hạn" : "Đã trả đúng hạn"
+                    ? ReaderLoanHistoryViewModel.IsLateReturn(loan) ? "Đã trả trễ hạn" : "Đã trả đúng hạn"
                     : loan.DueDate < today ? "Quá hạn, chưa trả" : "Đang mượn"
             };
             AppendCsvRow(csv,
@@ -105,13 +115,19 @@ public sealed class ReaderLoanHistoryController(ApplicationDbContext db) : Contr
 
         var allLoans = await GetLoansQuery(id, null, null).ToListAsync(cancellationToken);
         var loans = await GetLoansQuery(id, startDate, endDate).ToListAsync(cancellationToken);
+        var today = HoldPickupExpirySchedule.GetBusinessDate(DateTime.UtcNow);
+        var evaluation = ReaderLoanHistoryViewModel.Evaluate(allLoans, today);
         return Ok(new
         {
             readerId = reader.Id,
             readerName = reader.FullName,
-            openLoanCount = allLoans.Count(loan => loan.ReturnedAtUtc is null),
+            openLoanCount = allLoans.Count(loan => loan.ReturnedAtUtc is null && !loan.IsReturned),
             totalLoanCount = allLoans.Count,
-            lateReturnCount = allLoans.Count(IsLateReturn),
+            lateReturnCount = evaluation.LateReturnCount,
+            overdueOpenLoanCount = evaluation.OverdueOpenLoanCount,
+            lateReturnRate = evaluation.LateReturnRate,
+            isFrequentLateReturner = evaluation.IsFrequentLateReturner,
+            frequentLateWarningMessage = evaluation.WarningMessage,
             items = loans.Select(loan => new
             {
                 loanId = loan.Id,
@@ -121,6 +137,7 @@ public sealed class ReaderLoanHistoryController(ApplicationDbContext db) : Contr
                 dueDate = loan.DueDate,
                 returnedAtUtc = loan.ReturnedAtUtc,
                 isReturned = loan.IsReturned,
+                isLateReturn = ReaderLoanHistoryViewModel.IsLateReturn(loan),
                 closeReason = loan.CloseReason
             })
         });
@@ -136,16 +153,6 @@ public sealed class ReaderLoanHistoryController(ApplicationDbContext db) : Contr
             .OrderByDescending(loan => loan.LoanDate)
             .ThenByDescending(loan => loan.Id);
     }
-
-    private static bool IsLateReturn(BookLoan loan)
-    {
-        var returnedDate = GetLocalReturnDate(loan.ReturnedAtUtc);
-        return returnedDate.HasValue && returnedDate.Value > loan.DueDate;
-    }
-
-    private static DateOnly? GetLocalReturnDate(DateTime? returnedAtUtc) => returnedAtUtc.HasValue
-        ? DateOnly.FromDateTime(HoldPickupExpirySchedule.GetVietnamLocalTime(returnedAtUtc.Value))
-        : null;
 
     private static void AppendCsvRow(StringBuilder csv, params string[] fields)
     {

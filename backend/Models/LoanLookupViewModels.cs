@@ -85,7 +85,12 @@ public static class LoanLookupEmptyReasonCodes
 }
 
 public sealed record LoanLookupItem(
-    long LoanId, string? CardCode, string? CopyCode, string ReaderName, DateOnly LoanDate, DateOnly DueDate, string Status);
+    long LoanId, string? CardCode, string? CopyCode, string ReaderName, DateOnly LoanDate, DateOnly DueDate, string Status)
+{
+    public int ReaderAccountId { get; init; }
+    public int ReaderLateReturnCount { get; init; }
+    public bool IsFrequentLateReturner { get; init; }
+}
 
 public sealed record LoanLookupPage(
     string Code, IReadOnlyList<LoanLookupItem> Items, int Page, int PageSize, int TotalItems)
@@ -95,6 +100,10 @@ public sealed record LoanLookupPage(
     public LoanLookupFilter Filter { get; init; } = LoanLookupFilter.None;
     /// <summary>Vì sao không có kết quả; null khi có kết quả (hoặc dịch vụ tra cứu không xác định nguyên nhân).</summary>
     public LoanLookupEmptyReason? EmptyReason { get; init; }
+    public int? MatchedReaderId { get; init; }
+    public string? MatchedReaderName { get; init; }
+    public bool IsFrequentLateReturner { get; init; }
+    public string? FrequentLateWarningMessage { get; init; }
 }
 
 public sealed class LoanLookupViewModel

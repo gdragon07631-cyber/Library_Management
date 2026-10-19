@@ -28,6 +28,11 @@ public sealed class DirectLoanViewModel
     public int RemainingLoans { get; set; }
     public int MaxBooks { get; set; }
     public decimal OutstandingDebt { get; set; }
+    public int LateReturnCount { get; set; }
+    public int TotalHistoricalLoans { get; set; }
+    public decimal LateReturnRate { get; set; }
+    public bool IsFrequentLateReturner { get; set; }
+    public string? FrequentLateWarningMessage { get; set; }
     public bool CanOverride { get; set; }
     public bool CanOverrideBlock { get; set; }
     public string? ReaderError { get; set; }

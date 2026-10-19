@@ -62,6 +62,30 @@ public sealed class LibraryReportTests : IAsyncLifetime
         Console.WriteLine($"REPORT_SQLITE_500 measured_runs={samples.Count} average_ms={samples.Average():F2} max_ms={samples.Max():F2}");
     }
 
+    [Fact]
+    public async Task SummaryCountsReturnedLoansInVietnamDateRangeAndExcludesClosedFromOpenAndOverdue()
+    {
+        var overdueLoans = await db.BookLoans
+            .Where(loan => loan.DueDate < Today)
+            .OrderBy(loan => loan.Id)
+            .Take(3)
+            .ToListAsync();
+        overdueLoans[0].ReturnedAtUtc = HoldPickupExpirySchedule.ToUtc(Start, new TimeOnly(8, 0));
+        overdueLoans[0].CloseReason = BookLoanCloseReason.Returned;
+        overdueLoans[1].ReturnedAtUtc = HoldPickupExpirySchedule.ToUtc(Today, new TimeOnly(16, 30));
+        overdueLoans[1].CloseReason = BookLoanCloseReason.Returned;
+        overdueLoans[2].CloseReason = BookLoanCloseReason.Lost;
+        await db.SaveChangesAsync();
+
+        var summary = await service.GetSummaryAsync(Start, Today, Today);
+
+        Assert.Equal(500, summary.TotalLoans);
+        Assert.Equal(2, summary.TotalReturns);
+        Assert.Equal(497, summary.OpenLoans);
+        Assert.Equal(247, summary.OverdueLoans);
+        Assert.Equal(Math.Round(247m * 100m / 497m, 2), summary.OverdueRate);
+    }
+
     private async Task SeedAsync()
     {
         var author = new Author { Name = "Performance fixture author" };

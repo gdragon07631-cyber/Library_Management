@@ -219,9 +219,9 @@ public sealed class StagingAcceptanceDataSeeder(
         await db.BookIncidents.Where(incident => incidentIds.Contains(incident.Id)).ExecuteDeleteAsync(cancellationToken);
         await db.DirectLoanOperationItems.Where(item => operationIds.Contains(item.RequestId)).ExecuteDeleteAsync(cancellationToken);
         await db.DirectLoanOperations.Where(operation => operationIds.Contains(operation.RequestId)).ExecuteDeleteAsync(cancellationToken);
+        await db.ReaderFees.Where(fee => feeIds.Contains(fee.Id)).ExecuteDeleteAsync(cancellationToken);
         await db.BookLoans.Where(loan => loanIds.Contains(loan.Id)).ExecuteDeleteAsync(cancellationToken);
         await db.BookHolds.Where(hold => holdIds.Contains(hold.Id)).ExecuteDeleteAsync(cancellationToken);
-        await db.ReaderFees.Where(fee => feeIds.Contains(fee.Id)).ExecuteDeleteAsync(cancellationToken);
         await db.LibraryCards.Where(card => readerIds.Contains(card.ReaderAccountId)).ExecuteDeleteAsync(cancellationToken);
         await db.BookCopyStatusHistories.Where(history => sampleCopyIds.Contains(history.BookCopyId)).ExecuteDeleteAsync(cancellationToken);
         await db.BookCopies.Where(copy => sampleCopyIds.Contains(copy.Id)).ExecuteDeleteAsync(cancellationToken);

@@ -19,18 +19,35 @@
             @if (Model.ReaderName != null)
             {
                 <dl class="row">
-                    <dt class="col-sm-4">Họ và tên</dt><dd class="col-sm-8">@Model.ReaderName</dd>
+                    <dt class="col-sm-4">Họ và tên</dt>
+                    <dd class="col-sm-8">
+                        @Model.ReaderName
+                        @if (Model.IsFrequentLateReturner)
+                        {
+                            <span class="badge bg-warning text-dark ms-1">⚠ Thường xuyên trả trễ</span>
+                        }
+                    </dd>
                     <dt class="col-sm-4">Loại thẻ</dt><dd class="col-sm-8">@Model.CardTypeName</dd>
                     <dt class="col-sm-4">Số sách đang mượn</dt><dd class="col-sm-8" id="currentLoans">@Model.CurrentLoans / @Model.MaxBooks</dd>
                     <dt class="col-sm-4">Còn được mượn thêm</dt><dd class="col-sm-8" id="remainingLoans">@Model.RemainingLoans</dd>
+                    <dt class="col-sm-4">Lịch sử trả trễ</dt>
+                    <dd class="col-sm-8 @(Model.IsFrequentLateReturner ? "text-warning-emphasis fw-semibold" : "")">
+                        @Model.LateReturnCount / @Model.TotalHistoricalLoans lượt mượn (@Model.LateReturnRate.ToString("0.#")%)
+                    </dd>
                     @if (Model.OutstandingDebt > 0)
                     {
                         <dt class="col-sm-4">Nợ chưa thanh toán</dt><dd class="col-sm-8 text-danger fw-semibold">@Project.Services.BookLoanService.FormatVnd(Model.OutstandingDebt)</dd>
                     }
                 </dl>
+                @if (Model.IsFrequentLateReturner && !string.IsNullOrWhiteSpace(Model.FrequentLateWarningMessage))
+                {
+                    <div class="alert alert-warning border-warning mb-3" role="alert">
+                        <strong>⚠ Cảnh báo trả trễ thường xuyên:</strong> @Model.FrequentLateWarningMessage
+                    </div>
+                }
                 @if (Model.ReaderAccountId is int readerId)
                 {
-                    <a class="btn btn-sm btn-outline-secondary" asp-controller="ReaderLoanHistory" asp-action="Details" asp-route-id="@readerId">Xem hồ sơ và lịch sử mượn trả</a>
+                    <a class="btn btn-sm btn-outline-secondary mb-2" asp-controller="ReaderLoanHistory" asp-action="Details" asp-route-id="@readerId">Xem hồ sơ và lịch sử mượn trả</a>
                 }
             }
             @if (Model.ReaderError != null) { <div class="alert alert-warning">@Model.ReaderError</div> }

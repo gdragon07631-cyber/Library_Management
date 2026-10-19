@@ -78,14 +78,21 @@ public sealed class LoanDueReminderService(
     {
         var rows = new StringBuilder();
         foreach (var item in items)
-            rows.Append("<tr><td>").Append(WebUtility.HtmlEncode(item.BookTitle)).Append("</td><td>")
+            rows.Append("<tr><td>").Append(EscapeHtml(item.BookTitle)).Append("</td><td>")
                 .Append(item.DueDate.ToString("dd/MM/yyyy")).Append("</td><td>")
-                .Append(WebUtility.HtmlEncode(item.Status)).Append("</td><td>#")
+                .Append(EscapeHtml(item.Status)).Append("</td><td>#")
                 .Append(item.LoanId).Append("</td></tr>");
-        return $"<p>Xin chào {WebUtility.HtmlEncode(readerName)},</p><p>Thư viện xin nhắc bạn về các sách đang mượn có hạn trả hôm nay hoặc còn 2 ngày đến hạn.</p>" +
+        return $"<p>Xin chào {EscapeHtml(readerName)},</p><p>Thư viện xin nhắc bạn về các sách đang mượn có hạn trả hôm nay hoặc còn 2 ngày đến hạn.</p>" +
             "<table border=\"1\" cellpadding=\"6\" cellspacing=\"0\"><thead><tr><th>Tên sách</th><th>Hạn trả</th><th>Trạng thái</th><th>Mã phiếu</th></tr></thead><tbody>" + rows +
             "</tbody></table><p>Vui lòng sắp xếp trả sách đúng hạn theo quy định của thư viện.</p><p>Trân trọng,<br>Thư viện</p>";
     }
+
+    private static string EscapeHtml(string value) =>
+        value.Replace("&", "&amp;", StringComparison.Ordinal)
+             .Replace("<", "&lt;", StringComparison.Ordinal)
+             .Replace(">", "&gt;", StringComparison.Ordinal)
+             .Replace("\"", "&quot;", StringComparison.Ordinal)
+             .Replace("'", "&#39;", StringComparison.Ordinal);
 }
 
 public sealed class LoanDueReminderWorker(IServiceScopeFactory scopeFactory, TimeProvider timeProvider,

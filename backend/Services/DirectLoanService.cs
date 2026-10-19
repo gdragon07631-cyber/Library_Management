@@ -26,12 +26,18 @@ public sealed partial class DirectLoanService(ApplicationDbContext db, IBookLoan
                 readerId = reader.Id;
                 model.ReaderAccountId = reader.Id;
                 var existing = await db.BookLoans.AsNoTracking().Where(l => l.ReaderAccountId == reader.Id).ToListAsync(ct);
+                var lateEval = ReaderLoanHistoryViewModel.Evaluate(existing, today);
                 model.ReaderName = reader.FullName;
                 model.CardTypeName = card.LibraryCardType.Name;
                 model.MaxBooks = card.LibraryCardType.MaxBooks;
                 model.CurrentLoans = existing.Count(l => !l.IsReturned);
                 model.RemainingLoans = Math.Max(0, model.MaxBooks - model.CurrentLoans);
                 model.OutstandingDebt = reader.TotalDebt;
+                model.LateReturnCount = lateEval.LateReturnCount;
+                model.TotalHistoricalLoans = lateEval.TotalLoanCount;
+                model.LateReturnRate = lateEval.LateReturnRate;
+                model.IsFrequentLateReturner = lateEval.IsFrequentLateReturner;
+                model.FrequentLateWarningMessage = lateEval.WarningMessage;
                 if (reader.IsLocked || LibraryCardStatusHelper.IsCardLocked(card, DateTime.UtcNow) || card.Status.Contains("khóa", StringComparison.OrdinalIgnoreCase)
                     || card.Status.Contains("khoá", StringComparison.OrdinalIgnoreCase))
                 {

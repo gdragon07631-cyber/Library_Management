@@ -12,23 +12,17 @@
     </div>
 </div>
 
-<<<<<<< HEAD
 <section class="card shadow-sm border-0 mb-3" aria-labelledby="due-reminder-heading">
     <div class="card-body">
         @Html.AntiForgeryToken()
-        <h2 id="due-reminder-heading" class="h5">Email nhắc hạn trả sách</h2>
-        <p class="text-muted">Chạy thử quét nhắc hạn cho hôm nay; mỗi bạn đọc nhận một email tổng hợp.</p>
-        <button id="run-due-reminders" type="button" class="btn btn-outline-primary">Chạy quét email nhắc hạn</button>
+        <h2 id="due-reminder-heading" class="h5">Email nhắc hạn và quá hạn</h2>
+        <p class="text-muted">Quét nhắc hạn hôm nay/còn 2 ngày và các mốc quá hạn 1, 7, 30 ngày; mỗi bạn đọc nhận một email tổng hợp.</p>
+        <div class="d-flex flex-wrap gap-2">
+            <button id="run-due-reminders" type="button" class="btn btn-outline-primary">Chạy quét email nhắc hạn</button>
+            <button id="run-reminders" type="button" class="btn btn-outline-danger">Chạy quét email quá hạn</button>
+        </div>
         <div id="due-reminder-result" class="mt-2" role="status" aria-live="polite"></div>
-=======
-<section class="card shadow-sm border-0 mb-3">
-    <div class="card-body">
-        @Html.AntiForgeryToken()
-        <h2 class="h5">Email nhắc hạn và quá hạn</h2>
-        <p class="text-muted">Quét nhắc hạn hôm nay/còn 2 ngày và các mốc quá hạn 1, 7, 30 ngày.</p>
-        <button id="run-reminders" type="button" class="btn btn-outline-primary">Chạy quét email nhắc hạn</button>
         <div id="reminders-result" class="mt-2" role="status" aria-live="polite"></div>
->>>>>>> origin/feature/nhac-qua-han
     </div>
 </section>
 
@@ -138,11 +132,10 @@
 <script src="~/js/overdue-reader-export.js" asp-append-version="true"></script>
 <script>
     (() => {
-<<<<<<< HEAD
-        const button = document.getElementById('run-due-reminders');
+        const dueButton = document.getElementById('run-due-reminders');
         const result = document.getElementById('due-reminder-result');
-        button.addEventListener('click', async () => {
-            button.disabled = true;
+        dueButton?.addEventListener('click', async () => {
+            dueButton.disabled = true;
             result.className = 'mt-2 text-muted';
             result.textContent = 'Đang xử lý…';
             try {
@@ -158,12 +151,13 @@
             } catch (error) {
                 result.className = 'mt-2 text-danger';
                 result.textContent = error.message || 'Không thể chạy quét nhắc hạn.';
-            } finally { button.disabled = false; }
-=======
-        const button = document.getElementById('run-reminders');
+            } finally { dueButton.disabled = false; }
+        });
+
+        const overdueButton = document.getElementById('run-reminders');
         const output = document.getElementById('reminders-result');
-        button.addEventListener('click', async () => {
-            button.disabled = true; output.className = 'mt-2 text-muted'; output.textContent = 'Đang xử lý…';
+        overdueButton?.addEventListener('click', async () => {
+            overdueButton.disabled = true; output.className = 'mt-2 text-muted'; output.textContent = 'Đang xử lý…';
             try {
                 const token = document.querySelector('input[name="__RequestVerificationToken"]')?.value;
                 const response = await fetch('@Url.Content("~/api/overdue-reminders/run")', { method: 'POST', credentials: 'same-origin',
@@ -173,8 +167,7 @@
                 output.className = 'mt-2 text-success';
                 output.textContent = `Quá hạn: ${data.eligibleLoans} phiếu; ${data.emailsSent} email thành công, ${data.emailsFailed} thất bại.`;
             } catch (error) { output.className = 'mt-2 text-danger'; output.textContent = error.message; }
-            finally { button.disabled = false; }
->>>>>>> origin/feature/nhac-qua-han
+            finally { overdueButton.disabled = false; }
         });
     })();
     document.querySelectorAll('.contact-button').forEach(function (button) {

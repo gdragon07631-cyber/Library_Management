@@ -74,6 +74,18 @@
         }
         else
         {
+            @if (result.IsFrequentLateReturner && !string.IsNullOrWhiteSpace(result.FrequentLateWarningMessage))
+            {
+                <div class="alert alert-warning border-warning d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3" role="alert">
+                    <div>
+                        <strong>⚠ Cảnh báo (@result.MatchedReaderName):</strong> @result.FrequentLateWarningMessage
+                    </div>
+                    @if (result.MatchedReaderId is int matchedId && matchedId > 0)
+                    {
+                        <a asp-controller="ReaderLoanHistory" asp-action="Details" asp-route-id="@matchedId" class="btn btn-sm btn-warning fw-semibold">Xem toàn bộ lịch sử mượn trả</a>
+                    }
+                </div>
+            }
             <div class="card shadow-sm border-0">
                 <div class="card-header bg-white d-flex flex-wrap justify-content-between gap-2">
                     <h2 class="h5 mb-0">Kết quả cho “@result.Code”</h2>
@@ -96,7 +108,20 @@
                             <td class="fw-semibold">#@item.LoanId</td>
                             <td>@(item.CardCode ?? "—")</td>
                             <td>@(item.CopyCode ?? "—")</td>
-                            <td>@item.ReaderName</td>
+                            <td>
+                                @if (item.ReaderAccountId > 0)
+                                {
+                                    <a asp-controller="ReaderLoanHistory" asp-action="Details" asp-route-id="@item.ReaderAccountId" class="text-decoration-none fw-semibold">@item.ReaderName</a>
+                                }
+                                else
+                                {
+                                    @item.ReaderName
+                                }
+                                @if (item.IsFrequentLateReturner)
+                                {
+                                    <span class="badge bg-warning text-dark ms-1">⚠ Thường xuyên trả trễ (@item.ReaderLateReturnCount lần)</span>
+                                }
+                            </td>
                             <td>@item.LoanDate.ToString("dd/MM/yyyy")</td>
                             <td>@item.DueDate.ToString("dd/MM/yyyy")</td>
                             <td><span class="badge @(item.Status == Project.Models.LoanLookupStatus.Open ? "bg-primary-subtle text-primary-emphasis" : "bg-secondary-subtle text-secondary-emphasis")">@item.Status</span></td>

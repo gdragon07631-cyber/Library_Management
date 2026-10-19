@@ -8,13 +8,20 @@ public sealed class LibraryReportService(ApplicationDbContext db) : ILibraryRepo
 {
     public async Task<LoanReportSummary> GetSummaryAsync(DateOnly startDate, DateOnly endDate, DateOnly today, CancellationToken cancellationToken = default)
     {
-        var inRange = db.BookLoans.Where(loan => loan.LoanDate >= startDate && loan.LoanDate <= endDate);
-        var total = await inRange.CountAsync(cancellationToken);
-        var overdue = await db.BookLoans.CountAsync(loan => loan.DueDate < today, cancellationToken);
-        // BookLoan has no returned/closed state; the existing loan workflow treats every saved loan as open.
-        var open = await db.BookLoans.CountAsync(cancellationToken);
+        var total = await db.BookLoans.AsNoTracking()
+            .CountAsync(loan => loan.LoanDate >= startDate && loan.LoanDate <= endDate, cancellationToken);
+        var returnStartUtc = HoldPickupExpirySchedule.ToUtc(startDate, TimeOnly.MinValue);
+        var returnEndExclusiveUtc = HoldPickupExpirySchedule.ToUtc(endDate.AddDays(1), TimeOnly.MinValue);
+        var returns = await db.BookLoans.AsNoTracking()
+            .CountAsync(loan => loan.ReturnedAtUtc != null &&
+                loan.ReturnedAtUtc >= returnStartUtc &&
+                loan.ReturnedAtUtc < returnEndExclusiveUtc, cancellationToken);
+        var openQuery = db.BookLoans.AsNoTracking()
+            .Where(loan => loan.ReturnedAtUtc == null && loan.CloseReason == null);
+        var open = await openQuery.CountAsync(cancellationToken);
+        var overdue = await openQuery.CountAsync(loan => loan.DueDate < today, cancellationToken);
         var rate = open == 0 ? 0m : Math.Round((decimal)overdue * 100m / open, 2);
-        return new LoanReportSummary(total, 0, open, overdue, rate);
+        return new LoanReportSummary(total, returns, open, overdue, rate);
     }
 
     public async Task<IReadOnlyList<TopBorrowedBook>> GetTopBorrowedBooksAsync(DateOnly startDate, DateOnly endDate, CancellationToken cancellationToken = default)

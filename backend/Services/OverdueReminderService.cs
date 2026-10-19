@@ -25,9 +25,10 @@ public sealed class OverdueReminderService(ApplicationDbContext db, IEmailSender
         try
         {
             var date = today ?? HoldPickupExpirySchedule.GetBusinessDate(clock.GetUtcNow().UtcDateTime);
-            var policy = await db.LoanPolicies.AsNoTracking().SingleOrDefaultAsync(x => x.Id == LoanPolicy.SingletonId, cancellationToken)
-                ?? throw new InvalidOperationException("Chưa cấu hình mức phí trễ hạn trong chính sách mượn.");
-            if (policy.DailyOverdueFee < 0) throw new InvalidOperationException("Mức phí trễ hạn không hợp lệ.");
+            var policy = await db.LoanPolicies.AsNoTracking().SingleOrDefaultAsync(x => x.Id == LoanPolicy.SingletonId, cancellationToken);
+            if (policy?.DailyOverdueFee is not { } dailyFee)
+                throw new InvalidOperationException("Chưa cấu hình mức phí trễ hạn trong chính sách mượn.");
+            if (dailyFee < 0) throw new InvalidOperationException("Mức phí trễ hạn không hợp lệ.");
             var candidates = await db.BookLoans.AsNoTracking()
                 .Where(x => x.ReturnedAtUtc == null && x.CloseReason == null && x.DueDate < date &&
                     (x.DueDate == date.AddDays(-1) || x.DueDate == date.AddDays(-7) || x.DueDate == date.AddDays(-30)))
@@ -86,8 +87,8 @@ public sealed class OverdueReminderService(ApplicationDbContext db, IEmailSender
                     var openDates = await calendar.GetConfiguredOpenDatesAsync(minDate, date, cancellationToken);
                     var items = runItems.Select(x =>
                     {
-                        var fee = OverdueFeeCalculator.Calculate(x.Loan.DueDate, date, policy.DailyOverdueFee, openDates);
-                        return new OverdueEmailItem(x.Loan.Title, x.Loan.Id, x.Loan.DueDate, x.Days, policy.DailyOverdueFee, fee.EstimatedFee);
+                        var fee = OverdueFeeCalculator.Calculate(x.Loan.DueDate, date, dailyFee, openDates);
+                        return new OverdueEmailItem(x.Loan.Title, x.Loan.Id, x.Loan.DueDate, x.Days, dailyFee, fee.EstimatedFee);
                     }).ToList();
                     var body = BuildHtml(group.First().Name, items);
                     await email.SendAsync(emailAddress, $"[Thư viện] Nhắc trả sách quá hạn - {date:dd/MM/yyyy}", body, cancellationToken);

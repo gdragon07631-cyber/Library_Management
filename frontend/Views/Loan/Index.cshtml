@@ -30,6 +30,9 @@
                         var isExpired = reader.LibraryCard != null && reader.LibraryCard.ExpiresOn < DateOnly.FromDateTime(DateTime.Today);
                         var isLocked = reader.IsLocked || (reader.LibraryCard != null && reader.LibraryCard.IsLocked);
                         var hasOverdue = Model.ReaderHasOverdue.Contains(reader.Id);
+                        var lateCount = Model.ReaderLateReturnCounts.TryGetValue(reader.Id, out var lc) ? lc : 0;
+                        var lateRate = Model.ReaderLateReturnRates.TryGetValue(reader.Id, out var lr) ? lr : 0m;
+                        var isFrequentLate = Model.ReaderFrequentLateIds.Contains(reader.Id);
                         var totalDebt = reader.TotalDebt;
                         var debtText = Project.Services.BookLoanService.FormatVnd(totalDebt);
                         <option value="@reader.Id"
@@ -38,13 +41,17 @@
                                 data-is-expired="@(isExpired ? "true" : "false")"
                                 data-is-locked="@(isLocked ? "true" : "false")"
                                 data-has-overdue="@(hasOverdue ? "true" : "false")"
+                                data-late-count="@lateCount"
+                                data-late-rate="@lateRate.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture)"
+                                data-is-frequent-late="@(isFrequentLate ? "true" : "false")"
                                 data-debt="@totalDebt"
                                 data-debt-text="@debtText">
-                            @reader.FullName (@reader.StudentOrStaffCode) - Đang mượn: @currentLoans/@limit sách
+                            @reader.FullName (@reader.StudentOrStaffCode) - Đang mượn: @currentLoans/@limit sách@(isFrequentLate ? $" [⚠ Thường xuyên trả trễ: {lateCount} lần]" : "")
                         </option>
                     }
                 </select>
                 <div id="readerLoanLimitInfo" class="form-text mt-1 text-muted" style="min-height: 20px;"></div>
+                <div id="readerFrequentLateAlert" class="alert alert-warning border-warning py-2 px-3 mt-2 mb-1 small" role="alert" hidden></div>
                 <a id="readerLoanHistoryLink" class="small" href="#" hidden>Xem hồ sơ và lịch sử mượn</a>
             </div>
             <div class="col-md-2"><label class="form-label">Ngày mượn</label><input class="form-control" type="date" name="LoanDate" id="loanDateInput" value="@Model.NewLoan.LoanDate?.ToString("yyyy-MM-dd")" required /></div>
@@ -54,7 +61,24 @@
     <div class="card shadow-sm border-0"><div class="card-header bg-white"><h2 class="h5 mb-0">Danh sách phiếu mượn</h2></div><div class="table-responsive"><table class="table table-hover align-middle mb-0">
         <thead class="table-light"><tr><th>Sách</th><th>Bạn đọc</th><th>Ngày mượn</th><th>Hạn trả</th><th>Thao tác</th></tr></thead><tbody>
         @if (Model.Loans.Count == 0) { <tr><td colspan="5" class="text-center text-muted py-4">Chưa có phiếu mượn.</td></tr> }
-        @foreach (var loan in Model.Loans) { var renewalLimit = loan.ReaderAccount?.LibraryCard?.LibraryCardType?.MaxRenewals ?? 0; <tr><td>@loan.Book?.Title</td><td>@loan.ReaderAccount?.FullName</td><td>@loan.LoanDate.ToString("dd/MM/yyyy")</td><td class="fw-semibold">@loan.DueDate.ToString("dd/MM/yyyy") @if (loan.DueDate != loan.OriginalDueDate) { <span class="badge bg-info text-dark">Đã điều chỉnh</span> }<div class="small text-muted">Số lần gia hạn: @loan.RenewalCount / @renewalLimit</div></td><td>@if (!loan.IsReturned && loan.DueDate >= DateOnly.FromDateTime(DateTime.Today)) { <form asp-action="Renew" method="post" class="d-inline">@Html.AntiForgeryToken()<input type="hidden" name="id" value="@loan.Id" /><button class="btn btn-sm btn-outline-primary" type="submit">Gia hạn</button></form> }</td></tr> }
+        @foreach (var loan in Model.Loans) {
+            var renewalLimit = loan.ReaderAccount?.LibraryCard?.LibraryCardType?.MaxRenewals ?? 0;
+            var readerIsFrequentLate = Model.ReaderFrequentLateIds.Contains(loan.ReaderAccountId);
+            var readerLateCount = Model.ReaderLateReturnCounts.TryGetValue(loan.ReaderAccountId, out var rlc) ? rlc : 0;
+            <tr>
+                <td>@loan.Book?.Title</td>
+                <td>
+                    <a asp-controller="ReaderLoanHistory" asp-action="Details" asp-route-id="@loan.ReaderAccountId" class="text-decoration-none fw-semibold">@loan.ReaderAccount?.FullName</a>
+                    @if (readerIsFrequentLate)
+                    {
+                        <span class="badge bg-warning text-dark ms-1" title="Bạn đọc thường xuyên trả trễ (@readerLateCount lần)">⚠ Thường xuyên trả trễ</span>
+                    }
+                </td>
+                <td>@loan.LoanDate.ToString("dd/MM/yyyy")</td>
+                <td class="fw-semibold">@loan.DueDate.ToString("dd/MM/yyyy") @if (loan.DueDate != loan.OriginalDueDate) { <span class="badge bg-info text-dark">Đã điều chỉnh</span> }<div class="small text-muted">Số lần gia hạn: @loan.RenewalCount / @renewalLimit</div></td>
+                <td>@if (!loan.IsReturned && loan.DueDate >= DateOnly.FromDateTime(DateTime.Today)) { <form asp-action="Renew" method="post" class="d-inline">@Html.AntiForgeryToken()<input type="hidden" name="id" value="@loan.Id" /><button class="btn btn-sm btn-outline-primary" type="submit">Gia hạn</button></form> }</td>
+            </tr>
+        }
     </tbody></table></div></div>
 
 
@@ -175,6 +199,7 @@
     (function () {
         var readerSelect = document.getElementById('readerSelect');
         var info = document.getElementById('readerLoanLimitInfo');
+        var frequentLateAlert = document.getElementById('readerFrequentLateAlert');
         var historyLink = document.getElementById('readerLoanHistoryLink');
         var canOverride = @(Model.CanOverride ? "true" : "false");
         if (!readerSelect || !info) return;
@@ -191,6 +216,9 @@
                 var isExpired = selected.getAttribute('data-is-expired') === 'true';
                 var isLocked = selected.getAttribute('data-is-locked') === 'true';
                 var hasOverdue = selected.getAttribute('data-has-overdue') === 'true';
+                var lateCount = parseInt(selected.getAttribute('data-late-count') || '0', 10);
+                var lateRate = selected.getAttribute('data-late-rate') || '0';
+                var isFrequentLate = selected.getAttribute('data-is-frequent-late') === 'true';
                 var debt = parseFloat(selected.getAttribute('data-debt') || '0');
                 var debtText = selected.getAttribute('data-debt-text') || '';
                 var isReached = current >= max;
@@ -202,6 +230,21 @@
                     'Đang mượn: ' + current + '/' + max + ' sách' +
                     (isReached ? ' (Đã đạt hạn mức)' : '') +
                     '</span>';
+
+                if (isFrequentLate) {
+                    html += ' <span class="badge bg-warning text-dark">⚠ Thường xuyên trả trễ (' + lateCount + ' lần · ' + lateRate + '%)</span>';
+                }
+
+                if (frequentLateAlert) {
+                    if (isFrequentLate) {
+                        frequentLateAlert.hidden = false;
+                        frequentLateAlert.innerHTML = '<strong>⚠ Cảnh báo: Bạn đọc thường xuyên trả trễ</strong> (' +
+                            lateCount + ' lần trả trễ, tỷ lệ trễ ' + lateRate + '%). Hãy bấm <em>Xem hồ sơ và lịch sử mượn</em> để cân nhắc trước khi quyết định cho mượn tiếp.';
+                    } else {
+                        frequentLateAlert.hidden = true;
+                        frequentLateAlert.innerHTML = '';
+                    }
+                }
 
                 if (isReached) {
                     reasons.push('Bạn đang mượn ' + current + '/' + max + ' sách, không thể mượn thêm.');
@@ -253,6 +296,10 @@
                 }
             } else {
                 info.textContent = '';
+                if (frequentLateAlert) {
+                    frequentLateAlert.hidden = true;
+                    frequentLateAlert.innerHTML = '';
+                }
             }
         }
 

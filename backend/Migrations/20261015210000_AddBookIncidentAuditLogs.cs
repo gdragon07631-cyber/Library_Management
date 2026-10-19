@@ -1,11 +1,15 @@
 using System;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
+using Project.Data;
 
 #nullable disable
 
 namespace Project.Migrations
 {
     /// <inheritdoc />
+    [DbContext(typeof(ApplicationDbContext))]
+    [Migration("20261015210000_AddBookIncidentAuditLogs")]
     public partial class AddBookIncidentAuditLogs : Migration
     {
         /// <inheritdoc />
