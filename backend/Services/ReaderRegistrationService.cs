@@ -233,7 +233,7 @@ public sealed class ReaderRegistrationService(
             return DocumentHoldOutcome.Rejected("Thẻ bạn đọc chưa được cấp hoặc không còn hiệu lực.");
         if (LibraryCardStatusHelper.IsCardLocked(card, DateTime.UtcNow))
             return DocumentHoldOutcome.Rejected(LibraryCardStatusHelper.GetLockMessage(card, DateTime.UtcNow));
-        if (!string.Equals(card.Status, "Đang hoạt động", StringComparison.OrdinalIgnoreCase))
+        if (!LibraryCardStatusHelper.IsCardAvailable(card, DateTime.UtcNow))
             return DocumentHoldOutcome.Rejected("Thẻ bạn đọc chưa được cấp hoặc không còn hiệu lực.");
         var today = HoldPickupExpirySchedule.GetBusinessDate(DateTime.UtcNow);
         if (card.ExpiresOn < today)

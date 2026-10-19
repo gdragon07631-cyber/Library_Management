@@ -214,7 +214,7 @@ public sealed class BookController(
                 bookDetails.HoldBlockedReason = reader.Status.Contains("khóa", StringComparison.OrdinalIgnoreCase)
                     ? "Tài khoản của bạn đang bị khóa nên không thể đặt giữ."
                     : "Tài khoản bạn đọc chưa ở trạng thái hoạt động.";
-            else if (reader.LibraryCard == null || !string.Equals(reader.LibraryCard.Status, "Đang hoạt động", StringComparison.OrdinalIgnoreCase))
+            else if (reader.LibraryCard is null || !LibraryCardStatusHelper.IsCardAvailable(reader.LibraryCard, DateTime.UtcNow))
                 bookDetails.HoldBlockedReason = "Thẻ bạn đọc chưa được cấp hoặc không còn hiệu lực.";
             else if (reader.LibraryCard.ExpiresOn < businessDate)
                 bookDetails.HoldBlockedReason = "Thẻ bạn đọc đã hết hạn.";

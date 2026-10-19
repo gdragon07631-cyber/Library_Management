@@ -1,9 +1,13 @@
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
+using Project.Data;
 
 #nullable disable
 
 namespace Project.Migrations
 {
+    [DbContext(typeof(ApplicationDbContext))]
+    [Migration("20261016000000_AddLibraryCardLockMetadata")]
     public partial class AddLibraryCardLockMetadata : Migration
     {
         protected override void Up(MigrationBuilder migrationBuilder)

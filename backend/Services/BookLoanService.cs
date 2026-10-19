@@ -126,7 +126,7 @@ public sealed class BookLoanService(ApplicationDbContext db, IWorkingScheduleSer
         var today = DateOnly.FromDateTime(DateTime.Today);
         var checkDate = loanDate != default ? loanDate : today;
 
-        var referenceUtc = DateTime.SpecifyKind(checkDate.ToDateTime(TimeOnly.MinValue), DateTimeKind.Utc);
+        var referenceUtc = DateTime.UtcNow;
         var isCardLocked = reader.IsLocked
             || LibraryCardStatusHelper.IsCardLocked(reader.LibraryCard, referenceUtc)
             || reader.Status.Contains("khóa", StringComparison.OrdinalIgnoreCase)
@@ -499,11 +499,16 @@ public sealed class BookLoanService(ApplicationDbContext db, IWorkingScheduleSer
         }
 
         var checkDate = loanDate;
-        var referenceUtc = DateTime.SpecifyKind(checkDate.ToDateTime(TimeOnly.MinValue), DateTimeKind.Utc);
+        var referenceUtc = DateTime.UtcNow;
         var isCardLocked = reader.IsLocked
             || LibraryCardStatusHelper.IsCardLocked(reader.LibraryCard, referenceUtc)
             || reader.Status.Contains("khóa", StringComparison.OrdinalIgnoreCase)
             || reader.Status.Contains("khoá", StringComparison.OrdinalIgnoreCase);
+
+        if (LibraryCardStatusHelper.IsCardLocked(reader.LibraryCard, referenceUtc))
+        {
+            return new(false, LibraryCardStatusHelper.GetLockMessage(reader.LibraryCard, referenceUtc), []);
+        }
 
         var isCardExpired = reader.LibraryCard != null && reader.LibraryCard.ExpiresOn < checkDate;
 
