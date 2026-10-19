@@ -20,7 +20,7 @@ public sealed class ReaderAccountController(
     [HttpGet]
     public async Task<IActionResult> Index(string? q, string? status, CancellationToken cancellationToken = default)
     {
-        var (_, denied) = await RequireSystemAdminAsync(cancellationToken);
+        var (_, denied) = await RequireCardManagerAsync(cancellationToken);
         if (denied is not null) return denied;
 
         ViewBag.Query = q;
@@ -32,7 +32,7 @@ public sealed class ReaderAccountController(
     [HttpGet]
     public async Task<IActionResult> Details(int id, CancellationToken cancellationToken = default)
     {
-        var (_, denied) = await RequireSystemAdminAsync(cancellationToken);
+        var (_, denied) = await RequireCardManagerAsync(cancellationToken);
         if (denied is not null) return denied;
 
         var details = await readerAccountService.GetDetailsAsync(id, cancellationToken);
@@ -108,9 +108,9 @@ public sealed class ReaderAccountController(
 
     [HttpPost]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> SetCardLocked(int id, string? reason, string lockType, DateTime? lockExpiresAtUtc, CancellationToken cancellationToken = default)
+    public async Task<IActionResult> SetCardLocked(int id, string? reason, string? lockType, DateTime? lockExpiresAt, CancellationToken cancellationToken = default)
     {
-        var (admin, denied) = await RequireSystemAdminAsync(cancellationToken);
+        var (admin, denied) = await RequireCardManagerAsync(cancellationToken);
         if (denied is not null) return denied;
 
         var details = await readerAccountService.GetDetailsAsync(id, cancellationToken);
@@ -124,36 +124,52 @@ public sealed class ReaderAccountController(
         }
 
         var useManualUnlock = string.Equals(lockType, "manual", StringComparison.OrdinalIgnoreCase);
+        var useTimedLock = string.Equals(lockType, "temporary", StringComparison.OrdinalIgnoreCase);
         if (string.IsNullOrWhiteSpace(reason))
         {
             ModelState.AddModelError(nameof(reason), "Vui lòng nhập lý do khoá thẻ.");
-            return View(nameof(Details), details);
         }
 
-        if (!useManualUnlock && !lockExpiresAtUtc.HasValue)
+        if (!useManualUnlock && !useTimedLock)
+            ModelState.AddModelError(nameof(lockType), "Vui lòng chọn hình thức khoá hợp lệ.");
+
+        DateTime? lockExpiresAtUtc = null;
+        if (useTimedLock && !lockExpiresAt.HasValue)
         {
-            ModelState.AddModelError(nameof(lockExpiresAtUtc), "Vui lòng chọn ngày và giờ hết hạn khoá.");
-            return View(nameof(Details), details);
+            ModelState.AddModelError(nameof(lockExpiresAt), "Vui lòng chọn ngày và giờ hết hạn khoá.");
+        }
+        else if (useTimedLock && lockExpiresAt.HasValue)
+        {
+            var localExpiry = DateTime.SpecifyKind(lockExpiresAt.Value, DateTimeKind.Unspecified);
+            if (TimeZoneInfo.Local.IsInvalidTime(localExpiry))
+                ModelState.AddModelError(nameof(lockExpiresAt), "Ngày và giờ hết hạn không hợp lệ theo múi giờ hiện tại.");
+            else
+            {
+                lockExpiresAtUtc = TimeZoneInfo.ConvertTimeToUtc(localExpiry, TimeZoneInfo.Local);
+                if (lockExpiresAtUtc.Value <= DateTime.UtcNow)
+                    ModelState.AddModelError(nameof(lockExpiresAt), "Thời hạn khoá phải sau thời điểm bắt đầu khoá.");
+            }
         }
 
-        if (!useManualUnlock && lockExpiresAtUtc.HasValue && lockExpiresAtUtc.Value <= DateTime.UtcNow)
-        {
-            ModelState.AddModelError(nameof(lockExpiresAtUtc), "Thời hạn khoá phải sau thời điểm bắt đầu khoá.");
-            return View(nameof(Details), details);
-        }
+        if (!ModelState.IsValid) return View(nameof(Details), details);
 
         var result = await readerAccountService.SetCardLockedAsync(id, reason, useManualUnlock ? null : lockExpiresAtUtc, useManualUnlock, admin!.Id, cancellationToken);
         if (!result.IsSuccess)
         {
+            if (result.Status == ReaderAccountAdminStatus.NoChange)
+            {
+                TempData["ErrorMessage"] = result.ErrorMessage ?? "Thẻ hiện không thể khoá lại.";
+                return RedirectToAction(nameof(Details), new { id });
+            }
             ModelState.AddModelError(string.Empty, result.ErrorMessage ?? "Không thể khoá thẻ.");
             return View(nameof(Details), details);
         }
 
         await WriteLogAsync(admin.Email, AuditActions.UpdateAccount, details.Reader,
-            $"khoá thẻ {card.CardCode}, lý do: {reason.Trim()}{(useManualUnlock ? ", đến khi mở khoá thủ công" : $", hết hạn {lockExpiresAtUtc:dd/MM/yyyy HH:mm}")}", cancellationToken);
+            $"khoá thẻ {card.CardCode}, lý do: {reason!.Trim()}{(useManualUnlock ? ", đến khi mở khoá thủ công" : $", hết hạn {lockExpiresAtUtc!.Value.ToLocalTime():dd/MM/yyyy HH:mm}")}", cancellationToken);
         TempData["SuccessMessage"] = useManualUnlock
             ? $"Đã khoá thẻ {card.CardCode}. Thẻ sẽ tiếp tục bị khoá đến khi được mở thủ công."
-            : $"Đã khoá thẻ {card.CardCode}. Thẻ sẽ bị khoá tới {lockExpiresAtUtc:dd/MM/yyyy HH:mm}.";
+            : $"Đã khoá thẻ {card.CardCode}. Thẻ sẽ bị khoá tới {lockExpiresAtUtc!.Value.ToLocalTime():dd/MM/yyyy HH:mm}.";
         return RedirectToAction(nameof(Details), new { id });
     }
 
@@ -247,12 +263,19 @@ public sealed class ReaderAccountController(
         return RedirectToAction(nameof(Details), new { id });
     }
 
-    private async Task<(AdminAccount? Admin, IActionResult? Denied)> RequireSystemAdminAsync(CancellationToken cancellationToken)
+    private Task<(AdminAccount? Admin, IActionResult? Denied)> RequireSystemAdminAsync(CancellationToken cancellationToken) =>
+        RequireRoleAsync(cancellationToken, AccountRoles.SystemAdmin);
+
+    /// <summary>Xem danh sách/chi tiết bạn đọc và khoá thẻ: Quản lý thư viện hoặc Quản trị hệ thống.</summary>
+    private Task<(AdminAccount? Admin, IActionResult? Denied)> RequireCardManagerAsync(CancellationToken cancellationToken) =>
+        RequireRoleAsync(cancellationToken, AccountRoles.SystemAdmin, AccountRoles.LibraryManager);
+
+    private async Task<(AdminAccount? Admin, IActionResult? Denied)> RequireRoleAsync(CancellationToken cancellationToken, params string[] roles)
     {
         var staff = await auditLogService.GetSignedInStaffAsync(Request, cancellationToken);
         if (staff is null)
             return (null, RedirectToAction("Login", "Account", new { returnUrl = Request.Path.Value }));
-        if (staff.Role != AccountRoles.SystemAdmin)
+        if (!roles.Contains(staff.Role))
         {
             Response.StatusCode = StatusCodes.Status403Forbidden;
             return (null, View("AccessDenied"));

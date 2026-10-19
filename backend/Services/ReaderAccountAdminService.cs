@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using System.Data;
 using Project.Data;
 using Project.Models;
 
@@ -158,6 +159,7 @@ public sealed class ReaderAccountAdminService(ApplicationDbContext dbContext) : 
         if (trimmedReason.Length > 1000)
             return new(ReaderAccountAdminStatus.MissingReason, "Lý do khoá thẻ không được vượt quá 1000 ký tự.");
 
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
         var reader = await dbContext.ReaderAccounts
             .Include(item => item.LibraryCard)
             .SingleOrDefaultAsync(item => item.Id == readerId, cancellationToken);
@@ -193,6 +195,7 @@ public sealed class ReaderAccountAdminService(ApplicationDbContext dbContext) : 
         reader.UpdatedAtUtc = DateTime.UtcNow;
 
         await dbContext.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
         return new(ReaderAccountAdminStatus.Success, Reader: reader);
     }
 

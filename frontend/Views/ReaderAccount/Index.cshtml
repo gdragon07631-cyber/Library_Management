@@ -76,7 +76,7 @@
                                 @if (reader.LibraryCard is { } card)
                                 {
                                     <span class="font-monospace">@card.CardCode</span>
-                                    <div class="small text-muted">@card.LibraryCardType?.Name · hết hạn @card.ExpiresOn.ToString("dd/MM/yyyy")</div>
+                                    <div class="small text-muted">@card.LibraryCardType?.Name · @LibraryCardStatusHelper.GetEffectiveStatus(card, DateTime.UtcNow) · hết hạn @card.ExpiresOn.ToString("dd/MM/yyyy")</div>
                                 }
                                 else
                                 {
@@ -87,7 +87,11 @@
                                 <span class="badge @(reader.Status == "Đang hoạt động" ? "bg-success-subtle text-success-emphasis" : reader.Status == "Từ chối" ? "bg-danger-subtle text-danger-emphasis" : "bg-secondary-subtle text-secondary-emphasis")">@reader.Status</span>
                                 @if (reader.IsLocked)
                                 {
-                                    <span class="badge bg-danger ms-1">Đã khoá</span>
+                                    <span class="badge bg-danger ms-1">Tài khoản bị khoá</span>
+                                }
+                                @if (reader.LibraryCard is { } statusCard && LibraryCardStatusHelper.IsCardLocked(statusCard, DateTime.UtcNow))
+                                {
+                                    <span class="badge bg-danger ms-1">Thẻ đang bị khoá</span>
                                 }
                             </td>
                             <td class="text-end"><a asp-action="Details" asp-route-id="@reader.Id" class="btn btn-sm btn-outline-primary">Xem / sửa</a></td>
