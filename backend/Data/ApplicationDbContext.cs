@@ -429,6 +429,7 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
         {
             entity.Property(policy => policy.Id).ValueGeneratedNever();
             entity.Property(policy => policy.UpdatedAtUtc).HasColumnType("datetime2");
+            entity.Property(policy => policy.DebtLockThreshold).HasColumnType("decimal(18,2)").HasDefaultValue(LoanPolicy.DefaultDebtLockThreshold);
             entity.HasData(new LoanPolicy
             {
                 Id = LoanPolicy.SingletonId,

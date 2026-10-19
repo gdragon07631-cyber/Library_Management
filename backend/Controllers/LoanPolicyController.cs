@@ -70,10 +70,16 @@ public sealed class LoanPolicyController(
         policy.DebtLockThreshold = model.DebtLockThreshold;
         policy.UpdatedAtUtc = DateTime.UtcNow;
         await dbContext.SaveChangesAsync(cancellationToken);
+        // Chỉ ghi phần thực sự thay đổi, giữ nguyên định dạng nhật ký số ngày mượn đã có.
+        var changes = new List<string>();
+        if (previousLoanDays != policy.LoanDays)
+            changes.Add($"số ngày mượn {previousLoanDays} → {policy.LoanDays}");
+        if (previousThreshold != policy.DebtLockThreshold)
+            changes.Add($"ngưỡng nợ phí {previousThreshold:0.##} → {policy.DebtLockThreshold:0.##}");
         await auditLogService.WriteAsync(
             admin.Email,
             AuditActions.UpdateLoanPolicy,
-            $"Chính sách mượn: số ngày mượn {previousLoanDays} → {policy.LoanDays}; ngưỡng nợ phí {previousThreshold:0.##} → {policy.DebtLockThreshold:0.##}",
+            $"Chính sách mượn: {(changes.Count == 0 ? $"số ngày mượn {previousLoanDays} → {policy.LoanDays}" : string.Join("; ", changes))}",
             AuditLogService.ClientIp(HttpContext),
             cancellationToken);
 
@@ -84,25 +90,60 @@ public sealed class LoanPolicyController(
     [HttpGet("api/loan-policy/debt-threshold")]
     public async Task<IActionResult> GetDebtThresholdApi(CancellationToken cancellationToken = default)
     {
+        // Dự án không đăng ký authentication scheme nên Forbid() sẽ ném lỗi; trả mã 403 trực tiếp.
         if (await GetSignedInAdminAsync(cancellationToken) is null)
-            return Forbid();
+            return ManagerOnly();
 
         var policy = await dbContext.LoanPolicies.AsNoTracking()
             .SingleOrDefaultAsync(item => item.Id == LoanPolicy.SingletonId, cancellationToken);
         return Ok(new { debtLockThreshold = policy?.DebtLockThreshold ?? LoanPolicy.DefaultDebtLockThreshold });
     }
 
+    [HttpPut("api/loan-policy/debt-threshold")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> UpdateDebtThresholdApi([FromBody] UpdateDebtThresholdRequest? request, CancellationToken cancellationToken = default)
+    {
+        var admin = await GetSignedInAdminAsync(cancellationToken);
+        if (admin is null)
+            return ManagerOnly();
+        if (request?.DebtLockThreshold is not decimal threshold || threshold < 0m)
+            return BadRequest(new { message = "Ngưỡng nợ phí phải là số không âm." });
+
+        var policy = await dbContext.LoanPolicies
+            .SingleOrDefaultAsync(item => item.Id == LoanPolicy.SingletonId, cancellationToken);
+        if (policy is null)
+        {
+            policy = new LoanPolicy { Id = LoanPolicy.SingletonId };
+            dbContext.LoanPolicies.Add(policy);
+        }
+
+        var previousThreshold = policy.DebtLockThreshold;
+        policy.DebtLockThreshold = threshold;
+        policy.UpdatedAtUtc = DateTime.UtcNow;
+        await dbContext.SaveChangesAsync(cancellationToken);
+        await auditLogService.WriteAsync(
+            admin.Email,
+            AuditActions.UpdateLoanPolicy,
+            $"Chính sách mượn: ngưỡng nợ phí {previousThreshold:0.##} → {policy.DebtLockThreshold:0.##}",
+            AuditLogService.ClientIp(HttpContext),
+            cancellationToken);
+        return Ok(new { debtLockThreshold = policy.DebtLockThreshold });
+    }
+
     [HttpGet("api/loan-policy/lock-proposals")]
     public async Task<IActionResult> GetLockProposalsApi(CancellationToken cancellationToken = default)
     {
         if (await GetSignedInAdminAsync(cancellationToken) is null)
-            return Forbid();
+            return ManagerOnly();
 
         var policy = await dbContext.LoanPolicies.AsNoTracking()
             .SingleOrDefaultAsync(item => item.Id == LoanPolicy.SingletonId, cancellationToken);
         var threshold = policy?.DebtLockThreshold ?? LoanPolicy.DefaultDebtLockThreshold;
         return Ok(await GetLockProposalsAsync(threshold, cancellationToken));
     }
+
+    private ObjectResult ManagerOnly() =>
+        StatusCode(StatusCodes.Status403Forbidden, new { message = "Chỉ Quản lý thư viện hoặc Quản trị hệ thống được thực hiện thao tác này." });
 
     [HttpPost]
     [ValidateAntiForgeryToken]
@@ -144,18 +185,35 @@ public sealed class LoanPolicyController(
     private async Task<List<LockProposalViewModel>> GetLockProposalsAsync(decimal threshold, CancellationToken cancellationToken)
     {
         var now = DateTime.UtcNow;
-        var today = DateOnly.FromDateTime(now);
-        var overdueByReader = await dbContext.BookLoans.AsNoTracking()
-            .Where(loan => !loan.IsReturned && loan.DueDate < today)
-            .Select(loan => new { loan.ReaderAccountId, loan.DueDate })
+        // Cùng mốc "hôm nay" theo giờ thư viện như khi mượn/gia hạn (BookLoanService), tránh lệch ngày do UTC.
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        // Phiếu chưa trả = chưa ghi nhận ReturnedAtUtc (cột mà chức năng nhận trả sách cập nhật).
+        var overdueLoans = await dbContext.BookLoans.AsNoTracking()
+            .Where(loan => loan.ReturnedAtUtc == null && loan.DueDate < today)
+            .Select(loan => new
+            {
+                loan.Id,
+                loan.ReaderAccountId,
+                loan.DueDate,
+                BookTitle = loan.Book != null ? loan.Book.Title : string.Empty,
+                CopyCode = loan.BookCopy != null ? loan.BookCopy.CopyCode : null
+            })
             .ToListAsync(cancellationToken);
 
-        var maxOverdueDaysByReader = overdueByReader
-            .GroupBy(item => item.ReaderAccountId)
-            .ToDictionary(group => group.Key, group => group.Max(item => today.DayNumber - item.DueDate.DayNumber));
+        var overdueByReader = overdueLoans
+            .GroupBy(loan => loan.ReaderAccountId)
+            .ToDictionary(group => group.Key, group => group.Select(loan => new LockProposalLoanViewModel
+            {
+                LoanId = loan.Id,
+                BookTitle = loan.BookTitle,
+                CopyCode = loan.CopyCode,
+                DueDate = loan.DueDate,
+                OverdueDays = today.DayNumber - loan.DueDate.DayNumber
+            }).ToList());
 
         var readers = await dbContext.ReaderAccounts.AsNoTracking()
             .Include(reader => reader.LibraryCard)
+            .Where(reader => reader.LibraryCard != null)
             .OrderBy(reader => reader.FullName)
             .ToListAsync(cancellationToken);
 
@@ -163,29 +221,42 @@ public sealed class LoanPolicyController(
         foreach (var reader in readers)
         {
             var card = reader.LibraryCard;
+            // Thẻ đang bị khoá không được đề xuất khoá lại; việc đề xuất không thay đổi trạng thái thẻ.
             if (card is null || LibraryCardStatusHelper.IsCardLocked(card, now))
                 continue;
 
-            var maxOverdueDays = maxOverdueDaysByReader.TryGetValue(reader.Id, out var value) ? value : 0;
-            var reasons = new List<string>();
-            if (maxOverdueDays > 30)
-                reasons.Add("Quá hạn trả sách trên 30 ngày");
-            if (reader.OutstandingBalance > threshold)
-                reasons.Add("Nợ phí vượt ngưỡng");
-
-            if (reasons.Count == 0)
+            var readerOverdueLoans = overdueByReader.TryGetValue(reader.Id, out var loans) ? loans : [];
+            var maxOverdueDays = readerOverdueLoans.Count == 0 ? 0 : readerOverdueLoans.Max(loan => loan.OverdueDays);
+            // Tái sử dụng cách tính nợ mà chức năng mượn/gia hạn đang dùng để chặn bạn đọc còn nợ phí.
+            var debt = reader.TotalDebt;
+            var isOverdueViolation = maxOverdueDays > LockProposalViewModel.OverdueDaysLimit;
+            var isDebtViolation = debt > threshold;
+            if (!isOverdueViolation && !isDebtViolation)
                 continue;
+
+            var reasons = new List<string>();
+            if (isOverdueViolation)
+                reasons.Add(LockProposalViewModel.OverdueReason);
+            if (isDebtViolation)
+                reasons.Add(LockProposalViewModel.DebtReason);
 
             proposals.Add(new LockProposalViewModel
             {
                 ReaderAccountId = reader.Id,
+                ReaderCode = reader.StudentOrStaffCode,
                 ReaderName = reader.FullName,
                 CardCode = card.CardCode,
                 MaxOverdueDays = maxOverdueDays,
-                OutstandingDebt = reader.OutstandingBalance,
+                OutstandingDebt = debt,
                 DebtThreshold = threshold,
-                Status = card.Status,
-                Reasons = reasons
+                Status = LibraryCardStatusHelper.GetEffectiveStatus(card, now),
+                IsOverdueViolation = isOverdueViolation,
+                IsDebtViolation = isDebtViolation,
+                Reasons = reasons,
+                OverdueLoans = readerOverdueLoans
+                    .Where(loan => loan.OverdueDays > LockProposalViewModel.OverdueDaysLimit)
+                    .OrderByDescending(loan => loan.OverdueDays)
+                    .ToList()
             });
         }
 

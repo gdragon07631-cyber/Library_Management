@@ -56,6 +56,51 @@ public sealed class BookHoldCreationTests : IDisposable
     }
 
     [Fact]
+    public async Task LockedCardPreventsHoldWithoutCreatingARequest()
+    {
+        var book = await AddBookAsync();
+        var reader = await AddReaderAsync("locked-card@example.com", DateOnly.FromDateTime(DateTime.Today.AddDays(30)));
+        reader.LibraryCard!.Status = "Đang bị khoá";
+        reader.LibraryCard.LockReason = "Vi phạm nội quy";
+        reader.LibraryCard.LockedAtUtc = DateTime.UtcNow;
+        reader.LibraryCard.LockExpiresAtUtc = DateTime.UtcNow.AddHours(2);
+        await db.SaveChangesAsync();
+
+        var outcome = await service.HoldDocumentAsync(reader.Id, book.Id);
+
+        Assert.False(outcome.IsAllowed);
+        Assert.Contains("Vi phạm nội quy", outcome.Message);
+        Assert.Contains("Hạn khoá", outcome.Message);
+        Assert.Empty(await db.BookHolds.ToListAsync());
+    }
+
+    [Fact]
+    public async Task ExpiredTimedCardLockAllowsHoldAgain()
+    {
+        var book = await AddBookAsync();
+        var reader = await AddReaderAsync("expired-card-lock@example.com", DateOnly.FromDateTime(DateTime.Today.AddDays(30)));
+        reader.LibraryCard!.Status = "Đang bị khoá";
+        reader.LibraryCard.LockReason = "Khoá có thời hạn";
+        reader.LibraryCard.LockedAtUtc = DateTime.UtcNow.AddDays(-2);
+        reader.LibraryCard.LockExpiresAtUtc = DateTime.UtcNow.AddDays(-1);
+        reader.LibraryCard.IsLockUntilManualUnlock = false;
+        var shelf = await AddShelfAsync();
+        db.BookCopies.Add(new BookCopy
+        {
+            BookId = book.Id,
+            ShelfId = shelf.Id,
+            CopyCode = "COPY-EXPIRED-LOCK",
+            Status = BookCopyStatus.Available
+        });
+        await db.SaveChangesAsync();
+
+        var outcome = await service.HoldDocumentAsync(reader.Id, book.Id);
+
+        Assert.True(outcome.IsAllowed);
+        Assert.Single(await db.BookHolds.Where(hold => hold.ReaderAccountId == reader.Id).ToListAsync());
+    }
+
+    [Fact]
     public async Task LockedAccountPreventsHoldWithSpecificReason()
     {
         var book = await AddBookAsync();

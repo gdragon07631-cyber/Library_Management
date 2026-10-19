@@ -242,10 +242,21 @@ public sealed class ReaderAccountAdminTests : IDisposable
     // ---------- Phân quyền ----------
 
     [Theory]
+    [InlineData(AccountRoles.SystemAdmin)]
+    [InlineData(AccountRoles.LibraryManager)]
+    public async Task SystemAdminAndLibraryManagerCanOpenReaderAccounts(string role)
+    {
+        var reader = await AddReaderAsync("open@example.com", code: "R-OPEN");
+        var controller = AdminController(role);
+
+        Assert.IsType<ViewResult>(await controller.Index(null, null));
+        Assert.IsType<ViewResult>(await controller.Details(reader.Id));
+    }
+
+    [Theory]
     [InlineData(null)]
     [InlineData(AccountRoles.Librarian)]
-    [InlineData(AccountRoles.LibraryManager)]
-    public async Task OnlySystemAdminCanOpenReaderAccounts(string? role)
+    public async Task OtherRolesCannotOpenReaderAccounts(string? role)
     {
         var controller = AdminController(role);
 
@@ -295,6 +306,151 @@ public sealed class ReaderAccountAdminTests : IDisposable
         Assert.Contains(await db.AuditLogs.Select(log => log.Action).ToListAsync(), action => action == AuditActions.IssueCard);
     }
 
+    [Fact]
+    public async Task CardLockPersistsTimedMetadataAndExpiresAutomatically()
+    {
+        var (reader, card, admin) = await AddReaderWithCardAndAdminAsync();
+        var expiry = DateTime.UtcNow.AddHours(1);
+
+        var result = await service.SetCardLockedAsync(reader.Id, "  Vi phạm nội quy  ", expiry, false, admin.Id);
+
+        Assert.True(result.IsSuccess);
+        db.ChangeTracker.Clear();
+        var stored = await db.LibraryCards.SingleAsync(item => item.Id == card.Id);
+        Assert.Equal("Đang bị khoá", stored.Status);
+        Assert.Equal("Vi phạm nội quy", stored.LockReason);
+        Assert.NotNull(stored.LockedAtUtc);
+        Assert.Equal(expiry, stored.LockExpiresAtUtc);
+        Assert.False(stored.IsLockUntilManualUnlock);
+        Assert.Equal(admin.Id, stored.LockedByAdminAccountId);
+        Assert.True(LibraryCardStatusHelper.IsCardLocked(stored, DateTime.UtcNow));
+        Assert.False(LibraryCardStatusHelper.IsCardLocked(stored, expiry.AddSeconds(1)));
+        Assert.True(LibraryCardStatusHelper.IsCardAvailable(stored, expiry.AddSeconds(1)));
+        Assert.Equal("Đang hoạt động", LibraryCardStatusHelper.GetEffectiveStatus(stored, expiry.AddSeconds(1)));
+    }
+
+    [Fact]
+    public async Task ManualCardLockHasNoExpiryAndCannotBeBypassedByRepeatingRequest()
+    {
+        var (reader, card, admin) = await AddReaderWithCardAndAdminAsync();
+
+        var first = await service.SetCardLockedAsync(reader.Id, "Vi phạm nghiêm trọng", null, true, admin.Id);
+        var second = await service.SetCardLockedAsync(reader.Id, "Lý do khác", null, true, admin.Id);
+
+        Assert.True(first.IsSuccess);
+        Assert.Equal(ReaderAccountAdminStatus.NoChange, second.Status);
+        db.ChangeTracker.Clear();
+        var stored = await db.LibraryCards.SingleAsync(item => item.Id == card.Id);
+        Assert.True(stored.IsLockUntilManualUnlock);
+        Assert.Null(stored.LockExpiresAtUtc);
+        Assert.True(LibraryCardStatusHelper.IsCardLocked(stored, DateTime.UtcNow.AddYears(10)));
+        Assert.Equal("Vi phạm nghiêm trọng", stored.LockReason);
+    }
+
+    [Fact]
+    public async Task CardLockRejectsBlankReasonAndInvalidExpiryWithoutChangingCard()
+    {
+        var (reader, card, admin) = await AddReaderWithCardAndAdminAsync();
+
+        var blankReason = await service.SetCardLockedAsync(reader.Id, " \t ", DateTime.UtcNow.AddHours(1), false, admin.Id);
+        var invalidExpiry = await service.SetCardLockedAsync(reader.Id, "Vi phạm", DateTime.UtcNow.AddMinutes(-1), false, admin.Id);
+
+        Assert.Equal(ReaderAccountAdminStatus.MissingReason, blankReason.Status);
+        Assert.Equal(ReaderAccountAdminStatus.MissingReason, invalidExpiry.Status);
+        db.ChangeTracker.Clear();
+        var stored = await db.LibraryCards.SingleAsync(item => item.Id == card.Id);
+        Assert.Equal("Đang hoạt động", stored.Status);
+        Assert.Null(stored.LockedAtUtc);
+        Assert.Null(stored.LockReason);
+    }
+
+    [Fact]
+    public async Task LibraryManagerCanLockCardThroughController()
+    {
+        var (reader, card, admin) = await AddReaderWithCardAndAdminAsync();
+        var expiry = DateTime.Now.AddDays(3);
+
+        var result = await AdminController(AccountRoles.LibraryManager)
+            .SetCardLocked(reader.Id, "Làm hỏng sách", "temporary", expiry);
+
+        Assert.IsType<RedirectToActionResult>(result);
+        db.ChangeTracker.Clear();
+        var stored = await db.LibraryCards.SingleAsync(item => item.Id == card.Id);
+        Assert.Equal("Đang bị khoá", stored.Status);
+        Assert.Equal("Làm hỏng sách", stored.LockReason);
+        Assert.False(stored.IsLockUntilManualUnlock);
+        Assert.NotNull(stored.LockExpiresAtUtc);
+        Assert.Equal(admin.Id, stored.LockedByAdminAccountId);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData(AccountRoles.Librarian)]
+    public async Task UnauthorizedRolesCannotCallCardLockActionDirectly(string? role)
+    {
+        var (reader, card, _) = await AddReaderWithCardAndAdminAsync();
+
+        var controller = AdminController(role, out var context);
+        var result = await controller.SetCardLocked(reader.Id, "Lý do", "manual", null);
+
+        if (role is null) Assert.IsType<RedirectToActionResult>(result);
+        else
+        {
+            Assert.IsType<ViewResult>(result);
+            Assert.Equal(StatusCodes.Status403Forbidden, context.Response.StatusCode);
+        }
+        db.ChangeTracker.Clear();
+        var stored = await db.LibraryCards.SingleAsync(item => item.Id == card.Id);
+        Assert.Equal("Đang hoạt động", stored.Status);
+        Assert.Null(stored.LockedAtUtc);
+    }
+
+    [Fact]
+    public async Task LibraryManagerCannotCallSystemAdminOnlyAccountActions()
+    {
+        var reader = await AddReaderAsync("manager-cannot-edit@example.com", code: "R-MANAGER");
+        var form = ReaderAccountAdminService.ToForm(reader);
+        form.PhoneNumber = "0999888777";
+
+        var editController = AdminController(AccountRoles.LibraryManager, out var editContext);
+        Assert.IsType<ViewResult>(await editController.Edit(reader.Id, form));
+        Assert.Equal(StatusCodes.Status403Forbidden, editContext.Response.StatusCode);
+
+        var lockController = AdminController(AccountRoles.LibraryManager, out var lockContext);
+        Assert.IsType<ViewResult>(await lockController.SetLocked(reader.Id, true, "Lý do"));
+        Assert.Equal(StatusCodes.Status403Forbidden, lockContext.Response.StatusCode);
+
+        db.ChangeTracker.Clear();
+        var stored = await db.ReaderAccounts.SingleAsync(item => item.Id == reader.Id);
+        Assert.Equal("0912345678", stored.PhoneNumber);
+        Assert.False(stored.IsLocked);
+    }
+
+    private async Task<(ReaderAccount Reader, LibraryCard Card, AdminAccount Admin)> AddReaderWithCardAndAdminAsync()
+    {
+        var reader = await AddReaderAsync("card-lock@example.com", code: "R-CARD-LOCK");
+        var cardType = new LibraryCardType { Name = "Thẻ khoá kiểm thử" };
+        var card = new LibraryCard
+        {
+            CardCode = "CARD-LOCK-TEST",
+            ReaderAccount = reader,
+            LibraryCardType = cardType,
+            IssuedOn = DateOnly.FromDateTime(DateTime.Today.AddYears(-1)),
+            ExpiresOn = DateOnly.FromDateTime(DateTime.Today.AddYears(1)),
+            Status = "Đang hoạt động"
+        };
+        var admin = new AdminAccount
+        {
+            Email = "card-lock-admin@example.test",
+            Role = AccountRoles.SystemAdmin,
+            IsActive = true,
+            PasswordHash = "hash"
+        };
+        db.AddRange(card, admin);
+        await db.SaveChangesAsync();
+        return (reader, card, admin);
+    }
+
     private async Task<ReaderAccount> AddReaderAsync(string email, string name = "Bạn đọc", string phone = "0912345678", string code = "R-1")
     {
         var reader = new ReaderAccount
@@ -323,9 +479,11 @@ public sealed class ReaderAccountAdminTests : IDisposable
         return controller;
     }
 
-    private ReaderAccountController AdminController(string? role)
+    private ReaderAccountController AdminController(string? role) => AdminController(role, out _);
+
+    private ReaderAccountController AdminController(string? role, out DefaultHttpContext context)
     {
-        var context = new DefaultHttpContext();
+        context = new DefaultHttpContext();
         context.Connection.RemoteIpAddress = IPAddress.Parse("203.0.113.5");
         var emailSender = new NoEmailSender();
         var verification = new ReaderEmailVerificationService(db, emailSender, registration, NullLogger<ReaderEmailVerificationService>.Instance);

@@ -559,6 +559,22 @@ namespace Project.Migrations
                     b.Property<int>("LibraryCardTypeId")
                         .HasColumnType("int");
 
+                    b.Property<bool>("IsLockUntilManualUnlock")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime?>("LockedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("LockedByAdminAccountId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("LockExpiresAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("LockReason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
                     b.Property<int>("ReaderAccountId")
                         .HasColumnType("int");
 
@@ -575,6 +591,8 @@ namespace Project.Migrations
                         .IsUnique();
 
                     b.HasIndex("LibraryCardTypeId");
+
+                    b.HasIndex("LockedByAdminAccountId");
 
                     b.HasIndex("ReaderAccountId")
                         .IsUnique();
@@ -682,6 +700,11 @@ namespace Project.Migrations
                     b.Property<int>("Id")
                         .HasColumnType("int");
 
+                    b.Property<decimal>("DebtLockThreshold")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("decimal(18,2)")
+                        .HasDefaultValue(500000m);
+
                     b.Property<int>("LoanDays")
                         .HasColumnType("int");
 
@@ -696,6 +719,7 @@ namespace Project.Migrations
                         new
                         {
                             Id = 1,
+                            DebtLockThreshold = 500000m,
                             LoanDays = 14,
                             UpdatedAtUtc = new DateTime(2026, 9, 29, 0, 0, 0, 0, DateTimeKind.Utc)
                         });
@@ -1296,11 +1320,18 @@ namespace Project.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("Project.Models.AdminAccount", "LockedByAdminAccount")
+                        .WithMany()
+                        .HasForeignKey("LockedByAdminAccountId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.HasOne("Project.Models.ReaderAccount", "ReaderAccount")
                         .WithOne("LibraryCard")
                         .HasForeignKey("Project.Models.LibraryCard", "ReaderAccountId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+
+                    b.Navigation("LockedByAdminAccount");
 
                     b.Navigation("LibraryCardType");
 

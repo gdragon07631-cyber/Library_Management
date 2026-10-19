@@ -29,6 +29,30 @@ public sealed class BookLoanReturnTests
     }
 
     [Fact]
+    public async Task LockedCardDoesNotPreventBookReturn()
+    {
+        await using var db = CreateInMemoryDb();
+        var (loan, copy, _) = await SeedLoanAsync(db, 3);
+        loan.ReaderAccount!.LibraryCard = new LibraryCard
+        {
+            CardCode = "RETURN-LOCKED-CARD",
+            Status = "Đang bị khoá",
+            LockReason = "Vi phạm nội quy",
+            LockedAtUtc = DateTime.UtcNow,
+            IsLockUntilManualUnlock = true
+        };
+        await db.SaveChangesAsync();
+
+        var result = await CreateService(db).ReturnAsync(loan.Id, DateTime.UtcNow);
+
+        Assert.True(result.IsSuccess);
+        Assert.NotNull((await db.BookLoans.AsNoTracking().SingleAsync(item => item.Id == loan.Id)).ReturnedAtUtc);
+        Assert.Equal(BookCopyStatuses.Available,
+            (await db.BookCopies.AsNoTracking().SingleAsync(item => item.Id == copy.Id)).Status);
+        Assert.True(LibraryCardStatusHelper.IsCardLocked(loan.ReaderAccount.LibraryCard, DateTime.UtcNow));
+    }
+
+    [Fact]
     public async Task Return_AlreadyReturnedLoan_DoesNotOverwriteDateOrCopyState()
     {
         await using var db = CreateInMemoryDb();
