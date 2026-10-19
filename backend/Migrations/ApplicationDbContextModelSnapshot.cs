@@ -700,6 +700,11 @@ namespace Project.Migrations
                     b.Property<int>("Id")
                         .HasColumnType("int");
 
+                    b.Property<decimal>("DebtLockThreshold")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("decimal(18,2)")
+                        .HasDefaultValue(500000m);
+
                     b.Property<int>("LoanDays")
                         .HasColumnType("int");
 
@@ -714,6 +719,7 @@ namespace Project.Migrations
                         new
                         {
                             Id = 1,
+                            DebtLockThreshold = 500000m,
                             LoanDays = 14,
                             UpdatedAtUtc = new DateTime(2026, 9, 29, 0, 0, 0, 0, DateTimeKind.Utc)
                         });

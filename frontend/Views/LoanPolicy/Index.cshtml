@@ -46,48 +46,136 @@
         </div>
     </div>
 
-    <div class="card shadow-sm border-0 mt-4">
+    <div class="card shadow-sm border-0 mt-4" id="lock-proposals">
         <div class="card-header bg-white">
             <h2 class="h5 mb-1">Đề xuất khoá thẻ</h2>
-            <p class="text-muted small mb-0">Danh sách bạn đọc đủ điều kiện đề xuất khoá theo quá hạn trên 30 ngày hoặc nợ phí vượt ngưỡng.</p>
+            <p class="text-muted small mb-0">
+                Bạn đọc có phiếu chưa trả quá hạn <strong>trên 30 ngày</strong> hoặc nợ phí <strong>lớn hơn</strong> ngưỡng
+                @Model.DebtLockThreshold.ToString("#,##0") VND, tính lại từ dữ liệu mượn trả mỗi lần mở trang.
+                Hệ thống chỉ đề xuất, không tự khoá thẻ; thẻ đang bị khoá không xuất hiện ở đây.
+            </p>
         </div>
         <div class="table-responsive">
-            <table class="table align-middle mb-0">
+            <table class="table align-middle mb-0" id="lockProposalTable">
                 <thead class="table-light">
                     <tr>
                         <th>Mã bạn đọc</th>
                         <th>Họ tên</th>
                         <th>Mã thẻ</th>
-                        <th>Số ngày quá hạn</th>
-                        <th>Số tiền nợ</th>
+                        <th class="text-end">Số ngày quá hạn</th>
+                        <th class="text-end">Số tiền nợ</th>
                         <th>Lý do đề xuất</th>
                         <th>Trạng thái thẻ</th>
+                        <th class="text-end">Thao tác</th>
                     </tr>
                 </thead>
                 <tbody>
                 @if (Model.LockProposals.Count == 0)
                 {
-                    <tr><td colspan="7" class="text-center text-muted py-4">Không có bạn đọc nào đang đủ điều kiện đề xuất khoá thẻ.</td></tr>
+                    <tr><td colspan="8" class="text-center text-muted py-4">Không có bạn đọc nào đang đủ điều kiện đề xuất khoá thẻ.</td></tr>
                 }
                 @foreach (var proposal in Model.LockProposals)
                 {
+                    var detailId = $"lockProposalDetail{proposal.ReaderAccountId}";
                     <tr>
-                        <td>@proposal.ReaderAccountId</td>
-                        <td>@proposal.ReaderName</td>
-                        <td>@(proposal.CardCode ?? "-")</td>
-                        <td>@proposal.MaxOverdueDays</td>
-                        <td>@proposal.OutstandingDebt.ToString("#,##0")</td>
+                        <td class="font-monospace">@proposal.ReaderCode</td>
+                        <td><a asp-controller="ReaderAccount" asp-action="Details" asp-route-id="@proposal.ReaderAccountId">@proposal.ReaderName</a></td>
+                        <td class="font-monospace">@(proposal.CardCode ?? "-")</td>
+                        <td class="text-end @(proposal.IsOverdueViolation ? "text-danger fw-semibold" : "")">@proposal.MaxOverdueDays</td>
+                        <td class="text-end @(proposal.IsDebtViolation ? "text-danger fw-semibold" : "")">@proposal.OutstandingDebt.ToString("#,##0")</td>
                         <td>
-                            @foreach (var reason in proposal.Reasons)
+                            @if (proposal.IsOverdueViolation)
                             {
-                                <span class="badge bg-warning-subtle text-warning-emphasis me-1">@reason</span>
+                                <span class="badge bg-warning-subtle text-warning-emphasis me-1">@LockProposalViewModel.OverdueReason</span>
+                            }
+                            @if (proposal.IsDebtViolation)
+                            {
+                                <span class="badge bg-danger-subtle text-danger-emphasis me-1">@LockProposalViewModel.DebtReason</span>
                             }
                         </td>
                         <td>@proposal.Status</td>
+                        <td class="text-end text-nowrap">
+                            <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="collapse" data-bs-target="#@detailId"
+                                    aria-expanded="false" aria-controls="@detailId">Chi tiết</button>
+                            <button type="button" class="btn btn-sm btn-outline-danger" data-bs-toggle="modal" data-bs-target="#proposalLockModal"
+                                    data-reader-id="@proposal.ReaderAccountId"
+                                    data-reader-name="@proposal.ReaderName"
+                                    data-card-code="@proposal.CardCode"
+                                    data-reasons="@string.Join("; ", proposal.Reasons)"
+                                    data-detail-id="@detailId">Khoá thẻ</button>
+                        </td>
+                    </tr>
+                    <tr class="collapse" id="@detailId">
+                        <td colspan="8" class="bg-light small">
+                            <div class="row g-3">
+                                <div class="col-md-7">
+                                    <div class="fw-semibold mb-1">Phiếu mượn quá hạn trên 30 ngày</div>
+                                    @if (proposal.OverdueLoans.Count == 0)
+                                    {
+                                        <div class="text-muted">Không có phiếu nào quá hạn trên 30 ngày@(proposal.MaxOverdueDays > 0 ? $" (lâu nhất {proposal.MaxOverdueDays} ngày)" : "").</div>
+                                    }
+                                    else
+                                    {
+                                        <ul class="mb-0 ps-3">
+                                            @foreach (var loan in proposal.OverdueLoans)
+                                            {
+                                                <li>Phiếu #@loan.LoanId – @loan.BookTitle@(loan.CopyCode is null ? "" : $" ({loan.CopyCode})"): hạn trả @loan.DueDate.ToString("dd/MM/yyyy"), quá hạn <strong>@loan.OverdueDays ngày</strong></li>
+                                            }
+                                        </ul>
+                                    }
+                                </div>
+                                <div class="col-md-5">
+                                    <div class="fw-semibold mb-1">Nợ phí</div>
+                                    Còn nợ <strong>@proposal.OutstandingDebt.ToString("#,##0") VND</strong> / ngưỡng @proposal.DebtThreshold.ToString("#,##0") VND
+                                    – @(proposal.IsDebtViolation ? "vượt ngưỡng" : "chưa vượt ngưỡng").
+                                </div>
+                            </div>
+                        </td>
                     </tr>
                 }
                 </tbody>
             </table>
+        </div>
+    </div>
+
+    @* Dùng chung chức năng khoá thẻ của Lát 1 (ReaderAccount/SetCardLocked); backend kiểm tra lại quyền và trạng thái thẻ. *@
+    <div class="modal fade" id="proposalLockModal" tabindex="-1" aria-labelledby="proposalLockModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <form method="post" id="proposalLockForm" novalidate data-action-base="@Url.Action("SetCardLocked", "ReaderAccount")">
+                    @Html.AntiForgeryToken()
+                    <input type="hidden" name="returnUrl" value="@(Url.Action("Index", "LoanPolicy") + "#lock-proposals")" />
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="proposalLockModalLabel">Khoá thẻ <span id="proposalLockCard" class="font-monospace"></span></h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Đóng"></button>
+                    </div>
+                    <div class="modal-body">
+                        <p class="mb-2">Bạn đọc: <strong id="proposalLockReader"></strong></p>
+                        <div class="alert alert-warning small py-2" id="proposalLockViolations"></div>
+                        <div class="mb-3">
+                            <label for="proposalLockReason" class="form-label">Lý do khoá</label>
+                            <textarea id="proposalLockReason" name="reason" class="form-control" rows="3" maxlength="1000" required></textarea>
+                            <div class="invalid-feedback">Vui lòng nhập lý do khoá thẻ.</div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="proposalLockType" class="form-label">Hình thức khoá</label>
+                            <select id="proposalLockType" name="lockType" class="form-select">
+                                <option value="temporary" selected>Có thời hạn</option>
+                                <option value="manual">Đến khi mở thủ công</option>
+                            </select>
+                        </div>
+                        <div id="proposalLockExpiryGroup">
+                            <label for="proposalLockExpiry" class="form-label">Ngày và giờ hết hạn</label>
+                            <input id="proposalLockExpiry" name="lockExpiresAt" type="datetime-local" class="form-control" />
+                            <div class="invalid-feedback">Vui lòng chọn ngày và giờ hết hạn sau thời điểm hiện tại.</div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Huỷ</button>
+                        <button type="submit" class="btn btn-danger" id="proposalLockSubmit">Xác nhận khoá</button>
+                    </div>
+                </form>
+            </div>
         </div>
     </div>
 
@@ -124,4 +212,53 @@
         </div>
     </div>
 </div>
-@section Scripts { <partial name="_ValidationScriptsPartial" /> }
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+    <script>
+        (function () {
+            const modal = document.getElementById('proposalLockModal');
+            if (!modal) return;
+            const form = document.getElementById('proposalLockForm');
+            const reason = document.getElementById('proposalLockReason');
+            const type = document.getElementById('proposalLockType');
+            const expiryGroup = document.getElementById('proposalLockExpiryGroup');
+            const expiry = document.getElementById('proposalLockExpiry');
+            const submit = document.getElementById('proposalLockSubmit');
+
+            const syncType = () => {
+                const manual = type.value === 'manual';
+                expiry.disabled = manual;
+                expiryGroup.hidden = manual;
+                if (manual) { expiry.value = ''; expiry.classList.remove('is-invalid'); }
+            };
+
+            modal.addEventListener('show.bs.modal', event => {
+                const button = event.relatedTarget;
+                form.action = form.dataset.actionBase + '/' + button.dataset.readerId;
+                document.getElementById('proposalLockReader').textContent = button.dataset.readerName;
+                document.getElementById('proposalLockCard').textContent = button.dataset.cardCode || '';
+                document.getElementById('proposalLockViolations').textContent = 'Vi phạm phát hiện: ' + button.dataset.reasons + '.';
+                // Gợi ý lý do theo vi phạm; Quản lý có thể sửa trước khi xác nhận.
+                reason.value = button.dataset.reasons;
+                type.value = 'temporary';
+                expiry.value = '';
+                [reason, expiry].forEach(input => input.classList.remove('is-invalid'));
+                submit.disabled = false;
+                submit.textContent = 'Xác nhận khoá';
+                syncType();
+            });
+            type.addEventListener('change', syncType);
+
+            form.addEventListener('submit', event => {
+                const reasonInvalid = reason.value.trim() === '';
+                const expiryInvalid = type.value === 'temporary' && (!expiry.value || new Date(expiry.value) <= new Date());
+                reason.classList.toggle('is-invalid', reasonInvalid);
+                expiry.classList.toggle('is-invalid', expiryInvalid);
+                if (reasonInvalid || expiryInvalid) { event.preventDefault(); return; }
+                // Chặn bấm lặp trong lúc chờ backend xác nhận.
+                submit.disabled = true;
+                submit.textContent = 'Đang khoá...';
+            });
+        })();
+    </script>
+}

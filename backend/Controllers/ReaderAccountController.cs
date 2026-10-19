@@ -108,7 +108,7 @@ public sealed class ReaderAccountController(
 
     [HttpPost]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> SetCardLocked(int id, string? reason, string? lockType, DateTime? lockExpiresAt, CancellationToken cancellationToken = default)
+    public async Task<IActionResult> SetCardLocked(int id, string? reason, string? lockType, DateTime? lockExpiresAt, string? returnUrl = null, CancellationToken cancellationToken = default)
     {
         var (admin, denied) = await RequireCardManagerAsync(cancellationToken);
         if (denied is not null) return denied;
@@ -116,11 +116,15 @@ public sealed class ReaderAccountController(
         var details = await readerAccountService.GetDetailsAsync(id, cancellationToken);
         if (details is null) return NotFound("Không tìm thấy tài khoản bạn đọc.");
 
+        // Khoá từ danh sách đề xuất: mọi kết quả đều quay lại danh sách kèm thông báo thay vì trang chi tiết.
+        var backToList = IsLocalPath(returnUrl);
+        IActionResult Back() => backToList ? LocalRedirect(returnUrl!) : RedirectToAction(nameof(Details), new { id });
+
         var card = details.Reader.LibraryCard;
         if (card is null)
         {
             TempData["ErrorMessage"] = "Bạn đọc chưa được cấp thẻ thư viện để khoá.";
-            return RedirectToAction(nameof(Details), new { id });
+            return Back();
         }
 
         var useManualUnlock = string.Equals(lockType, "manual", StringComparison.OrdinalIgnoreCase);
@@ -151,7 +155,13 @@ public sealed class ReaderAccountController(
             }
         }
 
-        if (!ModelState.IsValid) return View(nameof(Details), details);
+        if (!ModelState.IsValid)
+        {
+            if (!backToList) return View(nameof(Details), details);
+            TempData["ErrorMessage"] = $"Chưa khoá thẻ {card.CardCode}: " + string.Join(" ",
+                ModelState.Values.SelectMany(value => value.Errors).Select(error => error.ErrorMessage));
+            return Back();
+        }
 
         var result = await readerAccountService.SetCardLockedAsync(id, reason, useManualUnlock ? null : lockExpiresAtUtc, useManualUnlock, admin!.Id, cancellationToken);
         if (!result.IsSuccess)
@@ -159,7 +169,12 @@ public sealed class ReaderAccountController(
             if (result.Status == ReaderAccountAdminStatus.NoChange)
             {
                 TempData["ErrorMessage"] = result.ErrorMessage ?? "Thẻ hiện không thể khoá lại.";
-                return RedirectToAction(nameof(Details), new { id });
+                return Back();
+            }
+            if (backToList)
+            {
+                TempData["ErrorMessage"] = result.ErrorMessage ?? "Không thể khoá thẻ.";
+                return Back();
             }
             ModelState.AddModelError(string.Empty, result.ErrorMessage ?? "Không thể khoá thẻ.");
             return View(nameof(Details), details);
@@ -170,8 +185,12 @@ public sealed class ReaderAccountController(
         TempData["SuccessMessage"] = useManualUnlock
             ? $"Đã khoá thẻ {card.CardCode}. Thẻ sẽ tiếp tục bị khoá đến khi được mở thủ công."
             : $"Đã khoá thẻ {card.CardCode}. Thẻ sẽ bị khoá tới {lockExpiresAtUtc!.Value.ToLocalTime():dd/MM/yyyy HH:mm}.";
-        return RedirectToAction(nameof(Details), new { id });
+        return Back();
     }
+
+    /// <summary>Chỉ chấp nhận đường dẫn nội bộ ("/..."), chặn chuyển hướng ra ngoài ("//host", "/\host").</summary>
+    private static bool IsLocalPath(string? url) =>
+        !string.IsNullOrEmpty(url) && url[0] == '/' && (url.Length == 1 || (url[1] != '/' && url[1] != '\\'));
 
     [HttpPost]
     [ValidateAntiForgeryToken]
