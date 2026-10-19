@@ -112,6 +112,7 @@ public sealed class BookIncidentController(
         IFormFile? photo = null,
         CancellationToken ct = default)
     {
+        BindFormModelPrefixIfNeeded(model, ref photo);
         var effectivePhoto = photo ?? model.Photo;
 
         if (!ModelState.IsValid)
@@ -180,6 +181,7 @@ public sealed class BookIncidentController(
         IFormFile? photo = null,
         CancellationToken ct = default)
     {
+        BindFormModelPrefixIfNeeded(model, ref photo);
         var effectivePhoto = photo ?? model.Photo;
 
         if (!ModelState.IsValid)
@@ -356,5 +358,53 @@ public sealed class BookIncidentController(
         }
 
         return (AccountRoles.Librarian, "Thủ thư");
+    }
+
+    private void BindFormModelPrefixIfNeeded(RecordBookIncidentViewModel model, ref IFormFile? photo)
+    {
+        if (Request is null || !Request.HasFormContentType) return;
+
+        var form = Request.Form;
+        var updated = false;
+
+        if (model.LoanId <= 0 && long.TryParse(form["FormModel.LoanId"].FirstOrDefault(), out var loanId) && loanId > 0)
+        {
+            model.LoanId = loanId;
+            updated = true;
+        }
+
+        if (model.BookCopyId <= 0 && long.TryParse(form["FormModel.BookCopyId"].FirstOrDefault(), out var copyId) && copyId > 0)
+        {
+            model.BookCopyId = copyId;
+            updated = true;
+        }
+
+        var incidentType = form["FormModel.IncidentType"].FirstOrDefault();
+        if (!string.IsNullOrWhiteSpace(incidentType))
+        {
+            model.IncidentType = incidentType;
+            updated = true;
+        }
+
+        var description = form["FormModel.Description"].FirstOrDefault();
+        if (string.IsNullOrWhiteSpace(model.Description) && !string.IsNullOrWhiteSpace(description))
+        {
+            model.Description = description;
+            updated = true;
+        }
+
+        var formPhoto = form.Files.GetFile("FormModel.Photo") ?? form.Files.GetFile("Photo");
+        if (photo is null && model.Photo is null && formPhoto is not null)
+        {
+            model.Photo = formPhoto;
+            photo = formPhoto;
+            updated = true;
+        }
+
+        if (updated)
+        {
+            ModelState.Clear();
+            TryValidateModel(model);
+        }
     }
 }

@@ -8,6 +8,11 @@
     const result = document.getElementById("copyLoanLookupResult");
     const lookupLabel = lookupButton.querySelector(".lookup-button-label");
     const lookupLoading = lookupButton.querySelector(".lookup-loading");
+    const readerSearchInput = document.getElementById("readerLoanSearchInput");
+    const readerSearchButton = document.getElementById("readerLoanSearchButton");
+    const readerSearchResult = document.getElementById("readerLoanSearchResult");
+    const readerSearchLabel = readerSearchButton?.querySelector(".reader-search-label");
+    const readerSearchLoading = readerSearchButton?.querySelector(".reader-search-loading");
     const scanner = document.getElementById("returnSessionScanner");
     const activeSession = document.getElementById("returnSessionActive");
     const activeCount = document.getElementById("returnSessionCount");
@@ -229,6 +234,9 @@
             }
             result.replaceChildren(returned);
             input.value = "";
+            if (readerSearchInput?.value.trim()) {
+                await searchReaders(readerSearchInput.value.trim(), true);
+            }
         } catch {
             button.disabled = false;
             button.textContent = "Xác nhận nhận trả";
@@ -238,16 +246,235 @@
             const isActive = currentSession.status === "active";
             input.disabled = !isActive;
             lookupButton.disabled = !isActive;
+            if (readerSearchInput) readerSearchInput.disabled = !isActive;
+            if (readerSearchButton) readerSearchButton.disabled = !isActive;
             finishButton.disabled = currentSession.results.length === 0;
             if (isActive) input.focus();
         }
     };
+
+    const renderReaderSearchResults = (readers) => {
+        if (!readerSearchResult) return;
+        readerSearchResult.replaceChildren();
+
+        const wrapper = document.createElement("div");
+        wrapper.className = "d-flex flex-column gap-3";
+
+        readers.forEach((reader) => {
+            const card = document.createElement("div");
+            card.className = "card border shadow-sm";
+
+            const header = document.createElement("div");
+            header.className = "card-header bg-light d-flex flex-wrap justify-content-between align-items-center gap-2";
+
+            const info = document.createElement("div");
+            const nameStrong = document.createElement("strong");
+            nameStrong.textContent = reader.readerName || "Bạn đọc";
+            const meta = document.createElement("span");
+            meta.className = "text-muted ms-2 small";
+            meta.textContent = [
+                reader.readerCode ? `Mã: ${reader.readerCode}` : null,
+                reader.cardCode ? `Thẻ: ${reader.cardCode}` : null,
+                reader.email || null
+            ].filter(Boolean).join(" · ");
+            info.append(nameStrong, meta);
+
+            const badgeWrap = document.createElement("div");
+            badgeWrap.className = "d-flex align-items-center gap-2";
+            const openBadge = document.createElement("span");
+            openBadge.className = reader.openLoanCount > 0 ? "badge bg-primary" : "badge bg-secondary";
+            openBadge.textContent = `Đang mượn: ${reader.openLoanCount} cuốn`;
+            const totalBadge = document.createElement("span");
+            totalBadge.className = "badge bg-light text-dark border";
+            totalBadge.textContent = `Tổng phiếu: ${reader.totalLoanCount}`;
+            badgeWrap.append(openBadge, totalBadge);
+
+            header.append(info, badgeWrap);
+            card.append(header);
+
+            const body = document.createElement("div");
+            body.className = "card-body p-0";
+
+            if (!Array.isArray(reader.loans) || reader.loans.length === 0) {
+                const empty = document.createElement("p");
+                empty.className = "text-muted p-3 mb-0";
+                empty.textContent = "Bạn đọc này chưa có lịch sử mượn sách.";
+                body.append(empty);
+            } else {
+                const tableWrap = document.createElement("div");
+                tableWrap.className = "table-responsive";
+                const table = document.createElement("table");
+                table.className = "table table-hover align-middle mb-0";
+
+                const thead = document.createElement("thead");
+                thead.className = "table-light";
+                thead.innerHTML = "<tr><th>Mã phiếu</th><th>Mã vạch</th><th>Tên sách</th><th>Ngày mượn</th><th>Hạn trả</th><th>Trạng thái</th><th>Phí trễ hạn</th><th class=\"text-end\">Thao tác</th></tr>";
+                table.append(thead);
+
+                const tbody = document.createElement("tbody");
+                reader.loans.forEach((loan) => {
+                    const tr = document.createElement("tr");
+
+                    const tdId = document.createElement("td");
+                    tdId.textContent = `#${loan.loanId}`;
+
+                    const tdCopy = document.createElement("td");
+                    const codeEl = document.createElement("code");
+                    codeEl.textContent = loan.copyCode || "Chưa gán";
+                    tdCopy.append(codeEl);
+
+                    const tdTitle = document.createElement("td");
+                    tdTitle.className = "fw-semibold";
+                    tdTitle.textContent = loan.bookTitle || "Không có dữ liệu";
+
+                    const tdLoanDate = document.createElement("td");
+                    tdLoanDate.textContent = formatDate(loan.loanDate);
+
+                    const tdDueDate = document.createElement("td");
+                    tdDueDate.textContent = formatDate(loan.dueDate);
+
+                    const tdStatus = document.createElement("td");
+                    const statusBadge = document.createElement("span");
+                    if (loan.isOpen) {
+                        if (Number(loan.overdueDays) > 0) {
+                            statusBadge.className = "badge bg-danger";
+                            statusBadge.textContent = `Đang mượn · Quá hạn ${loan.overdueDays} ngày`;
+                        } else {
+                            statusBadge.className = "badge bg-warning text-dark";
+                            statusBadge.textContent = "Đang mượn";
+                        }
+                    } else {
+                        statusBadge.className = "badge bg-success";
+                        const returnedText = loan.returnedAtUtc ? ` (${formatTimestamp(loan.returnedAtUtc)})` : "";
+                        statusBadge.textContent = `${loan.closeReason || "Đã trả"}${returnedText}`;
+                    }
+                    tdStatus.append(statusBadge);
+
+                    const tdFee = document.createElement("td");
+                    const feeAmount = Number(loan.estimatedOverdueFee) || 0;
+                    tdFee.textContent = feeAmount > 0
+                        ? `${new Intl.NumberFormat("vi-VN").format(feeAmount)} VNĐ${loan.isOpen ? " (dự kiến)" : ""}`
+                        : "0 VNĐ";
+                    if (feeAmount > 0) tdFee.className = "text-danger fw-semibold";
+
+                    const tdAction = document.createElement("td");
+                    tdAction.className = "text-end";
+                    if (loan.isOpen && loan.copyCode) {
+                        const btnGroup = document.createElement("div");
+                        btnGroup.className = "d-inline-flex gap-1";
+
+                        const selectBtn = document.createElement("button");
+                        selectBtn.type = "button";
+                        selectBtn.className = "btn btn-sm btn-outline-primary";
+                        selectBtn.textContent = "Xem trước";
+                        selectBtn.addEventListener("click", () => {
+                            input.value = loan.copyCode;
+                            showBorrowed(loan, loan.copyCode);
+                            result.scrollIntoView({ behavior: "smooth", block: "nearest" });
+                        });
+
+                        const returnNowBtn = document.createElement("button");
+                        returnNowBtn.type = "button";
+                        returnNowBtn.className = "btn btn-sm btn-success";
+                        returnNowBtn.textContent = "Nhận trả";
+                        returnNowBtn.addEventListener("click", () => {
+                            confirmReturn(returnNowBtn, loan, loan.copyCode);
+                        });
+
+                        btnGroup.append(selectBtn, returnNowBtn);
+                        tdAction.append(btnGroup);
+                    } else {
+                        const doneSpan = document.createElement("span");
+                        doneSpan.className = "text-muted small";
+                        doneSpan.textContent = "—";
+                        tdAction.append(doneSpan);
+                    }
+
+                    tr.append(tdId, tdCopy, tdTitle, tdLoanDate, tdDueDate, tdStatus, tdFee, tdAction);
+                    tbody.append(tr);
+                });
+                table.append(tbody);
+                tableWrap.append(table);
+                body.append(tableWrap);
+            }
+
+            card.append(body);
+            wrapper.append(card);
+        });
+
+        readerSearchResult.append(wrapper);
+    };
+
+    const searchReaders = async (queryText, silent = false) => {
+        if (!readerSearchResult || !form.dataset.readerSearchUrl) return;
+        const term = (queryText ?? readerSearchInput?.value ?? "").trim();
+        if (!term) {
+            if (!silent) {
+                const warn = document.createElement("div");
+                warn.className = "alert alert-warning mb-0";
+                warn.textContent = "Vui lòng nhập tên bạn đọc, mã bạn đọc, mã thẻ hoặc email.";
+                readerSearchResult.replaceChildren(warn);
+                readerSearchInput?.focus();
+            }
+            return;
+        }
+
+        if (readerSearchButton) readerSearchButton.disabled = true;
+        readerSearchLabel?.classList.add("d-none");
+        readerSearchLoading?.classList.remove("d-none");
+
+        try {
+            const url = new URL(form.dataset.readerSearchUrl, window.location.origin);
+            url.searchParams.set("query", term);
+            if (returnDateInput?.value) url.searchParams.set("returnDate", returnDateInput.value);
+            const response = await fetch(url, { headers: { Accept: "application/json" } });
+            const payload = await response.json().catch(() => ({}));
+
+            if (payload.status === "notFound") {
+                const info = document.createElement("div");
+                info.className = "alert alert-warning mb-0";
+                info.textContent = payload.message || "Không tìm thấy bạn đọc phù hợp.";
+                readerSearchResult.replaceChildren(info);
+            } else if (payload.status === "ok" && Array.isArray(payload.readers)) {
+                renderReaderSearchResults(payload.readers);
+            } else {
+                const err = document.createElement("div");
+                err.className = "alert alert-danger mb-0";
+                err.textContent = payload.message || "Không thể tìm kiếm bạn đọc lúc này.";
+                readerSearchResult.replaceChildren(err);
+            }
+        } catch {
+            const err = document.createElement("div");
+            err.className = "alert alert-danger mb-0";
+            err.textContent = "Không thể kết nối để tìm kiếm bạn đọc. Vui lòng thử lại.";
+            readerSearchResult.replaceChildren(err);
+        } finally {
+            if (readerSearchButton) readerSearchButton.disabled = currentSession.status !== "active";
+            readerSearchLabel?.classList.remove("d-none");
+            readerSearchLoading?.classList.add("d-none");
+        }
+    };
+
+    readerSearchButton?.addEventListener("click", () => {
+        searchReaders(readerSearchInput?.value);
+    });
+
+    readerSearchInput?.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") {
+            event.preventDefault();
+            searchReaders(readerSearchInput.value);
+        }
+    });
 
     form.addEventListener("submit", async (event) => {
         event.preventDefault();
         result.replaceChildren();
         const barcode = input.value.trim();
         if (!barcode) {
+            if (readerSearchInput?.value.trim()) {
+                await searchReaders(readerSearchInput.value.trim());
+                return;
+            }
             message("warning", "Vui lòng nhập mã vạch bản sao.");
             input.focus();
             return;
@@ -269,6 +496,10 @@
             const payload = await response.json().catch(() => ({}));
             if (payload.status === "notFound") {
                 message("warning", payload.message || "Không tìm thấy bản sao có mã vạch này.");
+                if (readerSearchInput && form.dataset.readerSearchUrl) {
+                    readerSearchInput.value = barcode;
+                    await searchReaders(barcode, true);
+                }
             } else if (payload.status === "notBorrowed") {
                 message("info", payload.message || "Bản sao này hiện không có ai mượn.");
             } else if (payload.status === "borrowed" && response.ok) {
@@ -288,6 +519,7 @@
 
     returnDateInput?.addEventListener("change", () => {
         if (input.value.trim()) form.requestSubmit();
+        if (readerSearchInput?.value.trim()) searchReaders(readerSearchInput.value.trim(), true);
     });
 
     finishButton.addEventListener("click", () => {
@@ -301,6 +533,8 @@
         currentSession = makeSession();
         persistSession();
         result.replaceChildren();
+        readerSearchResult?.replaceChildren();
+        if (readerSearchInput) readerSearchInput.value = "";
         renderSession();
         input.focus();
     });

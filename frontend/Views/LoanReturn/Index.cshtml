@@ -12,22 +12,37 @@
 
     <section id="returnSessionScanner" class="card border-0 shadow-sm mb-4">
         <div class="card-body">
-            <form id="copyLoanLookupForm" data-lookup-url="@Url.Action("Lookup", "LoanReturn")" data-return-url="/api/loan-returns">
+            <form id="copyLoanLookupForm" data-lookup-url="@Url.Action("Lookup", "LoanReturn")" data-reader-search-url="@Url.Action("SearchReaders", "LoanReturn")" data-return-url="/api/loan-returns">
                 @Html.AntiForgeryToken()
                 <div class="mb-3" style="max-width: 18rem">
                     <label for="returnDatePreview" class="form-label fw-semibold">Ngày trả thử</label>
                     <input id="returnDatePreview" type="date" class="form-control" value="@returnDate" />
                     <div class="form-text">Dùng để xem trước. Khi xác nhận, hệ thống ghi nhận ngày thực tế tại thời điểm nhận trả.</div>
                 </div>
-                <label for="copyLoanBarcode" class="form-label fw-semibold">Mã vạch bản sao</label>
-                <div class="input-group">
-                    <input id="copyLoanBarcode" class="form-control" maxlength="50" autocomplete="off" autofocus placeholder="Quét hoặc nhập mã vạch" />
-                    <button id="copyLoanLookupButton" class="btn btn-primary" type="submit">
-                        <span class="lookup-button-label">Tra cứu</span>
-                        <span class="lookup-loading d-none" role="status">Đang tra cứu…</span>
-                    </button>
+                <div class="row g-3">
+                    <div class="col-12 col-lg-6">
+                        <label for="copyLoanBarcode" class="form-label fw-semibold">Mã vạch bản sao</label>
+                        <div class="input-group">
+                            <input id="copyLoanBarcode" class="form-control" maxlength="50" autocomplete="off" autofocus placeholder="Quét hoặc nhập mã vạch bản sao" />
+                            <button id="copyLoanLookupButton" class="btn btn-primary" type="submit">
+                                <span class="lookup-button-label">Tra cứu mã vạch</span>
+                                <span class="lookup-loading d-none" role="status">Đang tra cứu…</span>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="col-12 col-lg-6">
+                        <label for="readerLoanSearchInput" class="form-label fw-semibold">Tra cứu theo tên bạn đọc / mã thẻ / email</label>
+                        <div class="input-group">
+                            <input id="readerLoanSearchInput" class="form-control" maxlength="150" autocomplete="off" placeholder="Nhập tên bạn đọc, mã SV/CB, mã thẻ hoặc email..." />
+                            <button id="readerLoanSearchButton" class="btn btn-outline-primary" type="button">
+                                <span class="reader-search-label">Tìm bạn đọc</span>
+                                <span class="reader-search-loading d-none" role="status">Đang tìm…</span>
+                            </button>
+                        </div>
+                    </div>
                 </div>
             </form>
+            <div id="readerLoanSearchResult" class="mt-3" aria-live="polite"></div>
         </div>
     </section>
 

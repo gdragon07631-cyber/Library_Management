@@ -54,7 +54,7 @@
                             <label asp-for="FormModel.LoanId" class="form-label fw-semibold">
                                 Chọn phiếu mượn đang mở <span class="text-danger">*</span>
                             </label>
-                            <select asp-for="FormModel.LoanId" id="loanSelect" class="form-select" required>
+                            <select asp-for="FormModel.LoanId" name="LoanId" id="loanSelect" class="form-select" required>
                                 <option value="">-- Chọn phiếu mượn --</option>
                                 @foreach (var loan in Model.OpenLoans)
                                 {
@@ -96,7 +96,7 @@
                             <label asp-for="FormModel.BookCopyId" class="form-label fw-semibold">
                                 Bản sao sách gặp sự cố <span class="text-danger">*</span>
                             </label>
-                            <select asp-for="FormModel.BookCopyId" id="copySelect" class="form-select" required>
+                            <select asp-for="FormModel.BookCopyId" name="BookCopyId" id="copySelect" class="form-select" required>
                                 <option value="">-- Chọn bản sao --</option>
                                 @foreach (var copy in Model.SelectedLoanCopies)
                                 {
@@ -127,13 +127,13 @@
                             </label>
                             <div class="d-flex gap-4">
                                 <div class="form-check">
-                                    <input class="form-check-input" type="radio" asp-for="FormModel.IncidentType" id="typeLost" value="@Project.Models.BookIncidentType.Lost" checked />
+                                    <input class="form-check-input" type="radio" asp-for="FormModel.IncidentType" name="IncidentType" id="typeLost" value="@Project.Models.BookIncidentType.Lost" checked />
                                     <label class="form-check-label fw-semibold text-danger" for="typeLost">
                                         <span>✗</span> Mất
                                     </label>
                                 </div>
                                 <div class="form-check">
-                                    <input class="form-check-input" type="radio" asp-for="FormModel.IncidentType" id="typeDamaged" value="@Project.Models.BookIncidentType.Damaged" />
+                                    <input class="form-check-input" type="radio" asp-for="FormModel.IncidentType" name="IncidentType" id="typeDamaged" value="@Project.Models.BookIncidentType.Damaged" />
                                     <label class="form-check-label fw-semibold text-warning" for="typeDamaged">
                                         <span>⚠</span> Hỏng nặng
                                     </label>
@@ -147,7 +147,7 @@
                             <label asp-for="FormModel.Description" class="form-label fw-semibold">
                                 Mô tả tình trạng cụ thể <span class="text-danger">*</span>
                             </label>
-                            <textarea asp-for="FormModel.Description" id="incidentDescription" class="form-control" rows="3"
+                            <textarea asp-for="FormModel.Description" name="Description" id="incidentDescription" class="form-control" rows="3"
                                       placeholder="Ví dụ: Bạn đọc báo làm rơi mất sách trên xe buýt; hoặc sách bị rách nát hoàn toàn, ướt sũng..." required maxlength="1000"></textarea>
                             <span asp-validation-for="FormModel.Description" class="text-danger small"></span>
                             <div class="form-text">Mô tả chi tiết nguyên nhân, hiện trạng hư hỏng hoặc hoàn cảnh thất lạc.</div>
@@ -158,7 +158,7 @@
                             <label asp-for="FormModel.Photo" class="form-label fw-semibold">
                                 Ảnh chụp hiện trạng <span class="text-muted fw-normal">(Tùy chọn)</span>
                             </label>
-                            <input type="file" asp-for="FormModel.Photo" id="incidentPhoto" class="form-control" accept=".jpg,.jpeg,.png,.webp" />
+                            <input type="file" asp-for="FormModel.Photo" name="Photo" id="incidentPhoto" class="form-control" accept=".jpg,.jpeg,.png,.webp" />
                             <div class="form-text">Chấp nhận JPG, PNG hoặc WEBP (tối đa 5MB).</div>
                             <div id="photoPreviewContainer" class="mt-2 d-none">
                                 <img id="photoPreview" src="#" alt="Xem trước ảnh chụp" class="img-thumbnail" style="max-height: 150px;" />
@@ -557,8 +557,8 @@
 
                 const rawPrice = selectedCopyOption.getAttribute('data-coverprice');
                 const coverPrice = rawPrice ? parseFloat(rawPrice) : null;
-                const incidentTypeInput = document.querySelector('input[name="FormModel.IncidentType"]:checked');
-                const isLost = !incidentTypeInput || incidentTypeInput.value === 'Lost' || incidentTypeInput.value === '1';
+                const incidentTypeInput = document.querySelector('input[name="IncidentType"]:checked, input[name="FormModel.IncidentType"]:checked');
+                const isLost = !incidentTypeInput || incidentTypeInput.value === 'Mất' || incidentTypeInput.value === 'Lost' || incidentTypeInput.value === '1';
                 const appliedRate = isLost ? policyLostRate : policyDamagedRate;
 
                 if (policyRateBadge) {
@@ -712,7 +712,7 @@
                 copySelect.addEventListener('change', updateCompensationPreview);
             }
 
-            document.querySelectorAll('input[name="FormModel.IncidentType"]').forEach(function (radio) {
+            document.querySelectorAll('input[name="IncidentType"], input[name="FormModel.IncidentType"]').forEach(function (radio) {
                 radio.addEventListener('change', updateCompensationPreview);
             });
 
