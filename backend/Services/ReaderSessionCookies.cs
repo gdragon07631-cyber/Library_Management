@@ -44,25 +44,29 @@ public static class ReaderSessionCookies
             return -1;
         }
 
-        var sessionVersion = 0;
-        if (request.Cookies.TryGetValue(SessionVersionCookie, out var stamp))
+        // reader_id là cookie thường nên có thể bị sửa tay; chỉ tin khi có kèm chữ ký phiên (Append luôn ghi cả hai).
+        if (!request.Cookies.TryGetValue(SessionVersionCookie, out var stamp))
         {
-            try
-            {
-                var unprotected = dataProtectionProvider.CreateProtector(ProtectorPurpose).Unprotect(stamp);
-                var values = unprotected.Split(':', 2);
-                if (values.Length != 2 || !int.TryParse(values[0], out var stampedReaderId) || stampedReaderId != id ||
-                    !int.TryParse(values[1], out sessionVersion))
-                {
-                    Clear(context.Response);
-                    return -1;
-                }
-            }
-            catch (CryptographicException)
+            Clear(context.Response);
+            return -1;
+        }
+
+        int sessionVersion;
+        try
+        {
+            var unprotected = dataProtectionProvider.CreateProtector(ProtectorPurpose).Unprotect(stamp);
+            var values = unprotected.Split(':', 2);
+            if (values.Length != 2 || !int.TryParse(values[0], out var stampedReaderId) || stampedReaderId != id ||
+                !int.TryParse(values[1], out sessionVersion))
             {
                 Clear(context.Response);
                 return -1;
             }
+        }
+        catch (CryptographicException)
+        {
+            Clear(context.Response);
+            return -1;
         }
 
         var reader = await findReader(id, cancellationToken);

@@ -90,6 +90,8 @@ public static class LibraryCardStatusHelper
         if (card.IsLockUntilManualUnlock || !card.LockExpiresAtUtc.HasValue)
             return $"Thẻ bạn đọc đang bị khoá. Lý do: {reason}. Tới khi được mở khoá thủ công.";
 
-        return $"Thẻ bạn đọc đang bị khoá. Lý do: {reason}. Hạn khoá: {card.LockExpiresAtUtc.Value:dd/MM/yyyy HH:mm}.";
+        // Giá trị lưu theo UTC; hiển thị theo giờ thư viện để khớp với ngày giờ Quản lý đã chọn khi khoá.
+        var expiresLocal = DateTime.SpecifyKind(card.LockExpiresAtUtc.Value, DateTimeKind.Utc).ToLocalTime();
+        return $"Thẻ bạn đọc đang bị khoá. Lý do: {reason}. Hạn khoá: {expiresLocal:dd/MM/yyyy HH:mm}.";
     }
 }

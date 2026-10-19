@@ -258,10 +258,17 @@ public sealed class ReaderRegistrationController(
             return "Chưa có thẻ";
         }
 
-        return LibraryCardStatusHelper.IsCardLocked(card)
-            ? "Đang bị khoá"
-            : string.IsNullOrWhiteSpace(card.Status) ? "Đang hoạt động" : card.Status.Trim();
+        if (LibraryCardStatusHelper.IsCardLocked(card))
+            return "Đang bị khoá";
+
+        // Khoá có thời hạn đã hết hạn được coi là đang hoạt động, đúng như khi kiểm tra mượn/đặt giữ/gia hạn.
+        var status = LibraryCardStatusHelper.GetEffectiveStatus(card);
+        return string.IsNullOrWhiteSpace(status) ? "Đang hoạt động" : status.Trim();
     }
+
+    /// <summary>EF đọc datetime2 với Kind = Unspecified; đánh dấu UTC để JSON có hậu tố "Z" và trình duyệt đổi đúng giờ.</summary>
+    private static DateTime? AsUtc(DateTime? value) =>
+        value.HasValue ? DateTime.SpecifyKind(value.Value, DateTimeKind.Utc) : null;
 
     [HttpPost]
     [ValidateAntiForgeryToken]
@@ -331,8 +338,8 @@ public sealed class ReaderRegistrationController(
                 status = ResolveCardStatus(card),
                 isLocked = card is not null && LibraryCardStatusHelper.IsCardLocked(card),
                 lockReason = card?.LockReason,
-                lockedAtUtc = card?.LockedAtUtc,
-                lockExpiresAtUtc = card?.LockExpiresAtUtc,
+                lockedAtUtc = AsUtc(card?.LockedAtUtc),
+                lockExpiresAtUtc = AsUtc(card?.LockExpiresAtUtc),
                 isLockUntilManualUnlock = card?.IsLockUntilManualUnlock ?? false,
                 lockMessage = card is null ? null : LibraryCardStatusHelper.GetLockMessage(card)
             }
