@@ -1,6 +1,7 @@
 {
     "version": "0.2.0",
     "configurations": [
+        
         {
             // Build, chạy app rồi tự mở Chrome khi server sẵn sàng.
             "name": "Chạy app và mở Chrome",
